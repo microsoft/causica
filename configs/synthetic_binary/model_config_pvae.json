@@ -1,0 +1,27 @@
+{
+    "model_hyperparams": {
+        "embedding_dim": 10,
+        "set_embedding_dim": 20,
+        "set_embedding_multiply_weights": true,
+        "metadata_filename": null,
+        "latent_dim": 10,
+        "encoder_layers": [100,50],
+        "decoder_layers": [50, 100],
+        "encoding_function": "sum",
+        "decoder_variances": 0.02,
+        "random_seed": [0],
+        "categorical_likelihood_coefficient": 1,
+        "kl_coefficient": 1,
+        "variance_autotune": false
+    },
+    "training_hyperparams": {
+        "epochs": 3000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": true
+    }
+}

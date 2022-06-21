@@ -1,0 +1,6 @@
+{
+    "sample_count": 100,
+    "use_vamp_prior": true,
+    "imputation_method": null,
+    "batch_size": 100
+}

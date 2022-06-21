@@ -1,0 +1,28 @@
+{
+    "model_hyperparams": {
+        "elementwise_transform_type": "single",
+        "embedding_dim": 10,
+        "transformer_embedding_dim": 64,
+        "metadata_filepath": null,
+        "multihead_init_type": "xavier",
+        "num_blocks": 6,
+        "num_heads": 4,
+        "num_inducing_points": 16,
+        "random_seed": 0,
+        "use_layer_norm": true,
+        "use_isab": true,
+        "share_readout_weights": true
+    },
+    "training_hyperparams": {
+        "batch_size": 512,
+        "early_stopping_patience_epochs": 1000,
+        "epochs": 6000,
+        "iterations": -1,
+        "learning_rate": 0.0001,
+        "lr_warmup_epochs": 50,
+        "max_p_train_dropout": 0.5,
+        "rewind_to_best_epoch": true,
+        "score_imputation": true,
+        "score_reconstruction": false
+    }
+}

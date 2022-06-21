@@ -1,0 +1,7 @@
+{
+    "dataset_format": "sparse_csv",
+    "use_predefined_dataset": true,
+    "split_type": "elements",
+    "random_seed": [0],
+    "negative_sample": false
+}

@@ -1,0 +1,19 @@
+{
+
+    "model_hyperparams": {
+
+        "lag_order": 2,
+
+        "prune": true,
+
+        "criterion": null,
+
+        "random_seed": [0]
+
+    },
+
+    "training_hyperparams": {
+
+    }
+
+}

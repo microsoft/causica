@@ -1,0 +1,14 @@
+{
+    "training_hyperparams": {
+        "dep_epochs": 5,
+        "dep_iterations": -1,
+        "dep_batch_size": 100,
+        "dep_learning_rate": 1e-3,
+        "marginal_epochs": 5,
+        "marginal_iterations": 1,
+        "marginal_batch_size": 100,
+        "marginal_learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "save_vamp_prior": false
+    }
+}

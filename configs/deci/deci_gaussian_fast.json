@@ -1,0 +1,41 @@
+{
+    "model_hyperparams": {
+        "imputation": false,
+        "lambda_dag": 100.0,
+        "lambda_sparse": 5.0,
+        "var_dist_A_mode": "three",
+        "mode_adjacency": "learn",
+        "norm_layers": true,
+        "res_connection": true,
+        "random_seed": [
+            42
+        ],
+        "cate_rff_n_features": 3000,
+        "cate_rff_lengthscale": 1,
+        "encoder_layer_sizes": [
+            32,
+            32
+        ],
+        "decoder_layer_sizes": [
+            32,
+            32
+        ]
+    },
+    "training_hyperparams": {
+        "learning_rate": 3e-2,
+        "batch_size": 512,
+        "stardardize_data_mean": false,
+        "stardardize_data_std": false,
+        "rho": 10.0,
+        "safety_rho": 1e13,
+        "alpha": 0.0,
+        "safety_alpha": 1e13,
+        "tol_dag": 1e-3,
+        "progress_rate": 0.25,
+        "max_steps_auglag": 20,
+        "max_auglag_inner_epochs": 1000,
+        "max_p_train_dropout": 0.25,
+        "reconstruction_loss_factor": 1.0,
+        "anneal_entropy": "noanneal"
+    }
+}

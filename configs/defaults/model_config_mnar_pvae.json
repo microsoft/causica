@@ -1,0 +1,48 @@
+{
+    "model_hyperparams": {
+        "embedding_dim": 20,
+        "set_embedding_dim": 20,
+        "set_embedding_multiply_weights": true,
+        "latent_dim": 2,
+        "encoder_layers": [10],
+        "decoder_layers": [10],
+        "non_linearity": "Tanh",
+        "activation_for_continuous": "Identity",
+        "init_method": "xavier_uniform",
+        "encoding_function": "sum",
+        "decoder_variances": 0.01,
+        "random_seed": [1],
+        "categorical_likelihood_coefficient": 1.0,
+        "kl_coefficient": 1.0,
+        "variance_autotune": false,
+        "use_importance_sampling":true,
+        "squash_input": false,
+        "metadata_filepath": null,
+        "mask_net_config": {
+          "decoder_layers": [10],
+          "mask_net_coefficient": 1.0,
+          "latent_connection": true
+        },
+        "prior_net_config": {
+            "use_prior_net_to_train": true,
+            "encoder_layers": [],
+            "use_prior_net_to_impute": false,
+            "degenerate_prior": "mask"
+        }
+    },
+    "training_hyperparams": {
+        "epochs": 5000,
+        "iterations": 1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.00,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": false,
+        "rewind_to_best_epoch": false,
+        "save_latent_plots_period_epochs": 100,
+        "early_stopping_patience_epochs": null,
+        "score_imputation": false,
+        "score_reconstruction": true
+    }
+}

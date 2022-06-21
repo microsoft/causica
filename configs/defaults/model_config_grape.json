@@ -1,0 +1,41 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0],
+        "n_layer": 3,
+        "aggregate_function": "mean",
+        "prediction_activation": "sigmoid",
+        "node_init": "random",
+        "normalize_embeddings": false,
+        "node_input_dim": 16,
+        "node_dim": 16,
+        "edge_input_dim": 1,
+        "update_edge_embeddings": true,
+        "message_dim": 16,
+        "use_edge_metadata": false,
+        "node_update_dims": [256],
+        "prediction_dims": [256],
+        "node_update_dropout": 0.5,
+        "prediction_dropout": 0.5,
+        "use_discrete_edge_value": false,
+        "separate_msg_channels_by_labels": false,
+        "use_edge_metadata_for_prediction": false,
+        "prediction_metadata_dim": 0,
+        "num_heads": 1,
+        "item_meta_dim": 0,
+        "use_transformer": false,
+        "corgi_attention_method": "NONE",
+        "max_transformer_length": 0,
+        "is_inductive_task": true,
+        "aggregation_type": "CONV"
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "n_split": 16,
+        "learning_rate": 1e-3,
+        "loss_function": "BCE",
+        "neighbor_sampling_sizes": [-1, -1, -1],
+        "inference_at_every": 16,
+        "edge_dropout": 0.5,
+        "test_val_heldout_ratio": 0.5
+    }
+}

@@ -1,0 +1,40 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0],
+        "marginal_encoder_layers": [50, 100],
+        "marginal_latent_dim": 1,
+        "marginal_decoder_layers": [50, 100],
+        "marginal_decoder_variances": 0.02,
+        "marginal_categorical_likelihood_coefficient": 1,
+        "marginal_kl_coefficient": 0.1,
+        "dep_embedding_dim": 10,
+        "dep_set_embedding_dim": 20,
+        "dep_set_embedding_multiply_weights": true,
+        "dep_encoding_function": "sum",
+        "dep_encoder_layers": [500, 200],
+        "dep_latent_dim": 10,
+        "dep_decoder_layers": [50, 100],
+        "dep_decoder_variances": 0.02,
+        "dep_categorical_likelihood_coefficient": 1,
+        "dep_kl_coefficient": 1,
+        "dep_variance_autotune": false,
+        "metadata_filepath": null
+    },
+    "training_hyperparams": {
+        "dep_epochs": 1000,
+        "dep_iterations": -1,
+        "dep_batch_size": 100,
+        "dep_learning_rate": 1e-3,
+        "marginal_epochs": 1000,
+        "marginal_iterations": 1,
+        "marginal_batch_size": 100,
+        "marginal_learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": true,
+        "rewind_to_best_epoch": false,
+        "score_imputation": false,
+        "score_reconstruction": true
+    }
+}

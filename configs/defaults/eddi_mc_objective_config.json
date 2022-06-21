@@ -1,0 +1,5 @@
+{
+    "sample_count": 20,
+    "use_vamp_prior": true,
+    "imputation_method": null
+}

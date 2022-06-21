@@ -1,0 +1,25 @@
+[
+	{
+		"name": "model_decoder_variances",
+		"type": "range",
+		"value_type": "float",
+		"bounds": [1e-3, 1.0],
+		"log_scale": true
+	}, {
+		"name": "training_batch_size",
+		"type": "choice",
+		"value_type": "int",
+		"values": [10, 50, 100, 500, 1000]
+	}, {
+		"name": "training_learning_rate",
+		"type": "range",
+		"value_type": "float",
+		"bounds": [1e-5, 1.0],
+		"log_scale": true
+	}, {
+		"name": "training_max_p_train_dropout",
+		"type": "range",
+		"value_type": "float",
+		"bounds": [0.75, 0.99]
+	}
+]

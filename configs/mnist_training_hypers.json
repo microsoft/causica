@@ -1,0 +1,10 @@
+{
+    "training_hyperparams":
+        {
+        "epochs": 1,
+        "iterations": 20,
+        "batch_size": 100,
+        "learning_rate": 1e-4,
+        "max_p_train_dropout": 0.7
+        }
+}

@@ -1,0 +1,7 @@
+{
+    "training_hyperparams": {
+        "epochs": 10000,
+        "early_stopping_patience_epochs": null,
+        "rewind_to_best_epoch": false
+    }
+}

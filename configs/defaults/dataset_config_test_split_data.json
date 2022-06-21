@@ -1,0 +1,7 @@
+{
+    "dataset_format": "csv",
+    "use_predefined_dataset": false,
+    "test_fraction": 0.2,
+    "val_fraction": 0.2,
+    "random_seed": [0]
+}

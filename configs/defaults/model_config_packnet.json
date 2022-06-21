@@ -1,0 +1,25 @@
+{
+    "model_hyperparams": {
+        "input_dim": 784,
+        "output_dim": 1,
+        "hidden_dims": [256,256],
+        "prune_pct": [0.75, 0.75, 0.75, 0.75],
+        "no_prune": false,
+        "random_seed": [0],
+        "use_memory": false,
+        "expand_mask": false,
+        "use_generative": false,
+        "generative_init_config": null,
+        "generative_train_config": null
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": false
+    }
+}

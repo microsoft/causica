@@ -1,0 +1,6 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0, 1, 2, 3, 4]
+    },
+    "training_hyperparams": {}
+}

@@ -1,0 +1,18 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0],
+        "input_dim_user_i": 948,
+        "input_dim_item_j": 6148,
+        "layers_user_i": [1000, 500],
+        "layers_item_j": [5000, 300],
+        "output_dim": 100
+    },
+    "training_hyperparams": {
+        "epochs": 200,
+        "iterations": 20,
+        "batch_size": 1000,
+        "learning_rate": 1e-3,
+        "loss_function": "BCE",
+        "missing_fill_val": 0.5
+    }
+}

@@ -1,0 +1,11 @@
+{
+   "model_hyperparams": {
+       "set_encoder_type": "transformer",
+       "num_heads": 1,
+       "num_blocks": 2,
+       "num_seed_vectors": 1,
+       "use_isab": true,
+       "num_inducing_points": 32,
+       "set_embedding_multiply_weights": false
+   }
+}

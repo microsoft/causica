@@ -1,0 +1,7 @@
+{
+    "model_hyperparams": {
+    },
+    "training_hyperparams": {
+        "epochs": 300
+    }
+}

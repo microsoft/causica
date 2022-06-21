@@ -1,0 +1,8 @@
+{   
+    "model_hyperparams": {
+        "set_embedding_dim": 21
+    },
+    "training_hyperparams": {
+        "epochs": 1001
+    }
+}

@@ -1,0 +1,5 @@
+{
+    "training_hyperparams": {
+        "learning_rate": 5e-2
+    }
+}

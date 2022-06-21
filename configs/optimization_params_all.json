@@ -1,0 +1,33 @@
+[
+    {
+		"name": "model_embedding_dim",
+		"type": "choice",
+		"bounds": [5, 10, 20, 40, 100]
+	}, {
+		"name": "model_set_embedding_dim",
+		"type": "choice",
+		"values": [5, 10, 20, 40, 100]
+	}, {
+		"name": "model_latent_dim",
+		"type": "choice",
+		"values": [5, 10, 20, 40, 100]
+	}, {
+		"name": "model_decoder_variances",
+		"type": "range",
+		"bounds": [1e-3, 1],
+		"log_scale": true
+	}, {
+		"name": "training_batch_size",
+		"type": "choice",
+		"values": [10, 50, 100, 500, 1000]
+	}, {
+		"name": "training_learning_rate",
+		"type": "range",
+		"bounds": [1e-5, 1],
+		"log_scale": true
+	}, {
+		"name": "training_max_p_train_dropout",
+		"type": "range",
+		"bounds": [0.75, 0.99]
+	}
+]

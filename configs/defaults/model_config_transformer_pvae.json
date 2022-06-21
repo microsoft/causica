@@ -1,0 +1,34 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0],
+        "categorical_likelihood_coefficient": 1.0,
+        "kl_coefficient": 0.1,
+        "embedding_dim": 10,
+        "transformer_embedding_dim": 64,
+        "num_heads": 4,
+        "num_blocks": 4,
+        "use_isab": false,
+        "num_inducing_points": 16,
+        "multihead_init_type": "kaiming",
+        "use_layer_norm": true,
+        "elementwise_transform_type": "single"
+    },
+    "training_hyperparams": {
+        "epochs": 100000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": true,
+        "rewind_to_best_epoch": true,
+        "early_stopping_patience_epochs": 5000,
+        "improvement_ratio_threshold": 1e-4,
+        "score_imputation": true,
+        "score_reconstruction": true,
+        "save_latent_plots_period_epochs": null,
+        "lr_warmup_epochs": 1000,
+        "use_lr_decay": true
+    }
+}

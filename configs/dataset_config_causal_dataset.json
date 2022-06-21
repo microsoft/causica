@@ -1,0 +1,6 @@
+{
+    "dataset_format": "causal_csv",
+    "use_predefined_dataset": true,
+    "random_seed": [0],
+    "negative_sample": false
+}

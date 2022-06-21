@@ -1,0 +1,9 @@
+{
+    "model_hyperparams": 
+    {
+        "random_seed": [0],
+        "max_iter": 10,
+        "initial_strategy": "mean"
+    },
+    "training_hyperparams": {}
+}

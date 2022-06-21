@@ -1,0 +1,47 @@
+{ 
+    "model_hyperparams": {
+    "embedding_dim": 10,
+    "set_embedding_dim": 20,
+    "set_embedding_multiply_weights": true,
+    "latent_dim": 10,
+    "encoder_layers": [200, 200],
+    "decoder_layers": [200, 200],
+    "encoding_function": "sum",
+    "decoder_variances": 0.02,
+    "random_seed": [0],
+    "categorical_likelihood_coefficient": 1.0,
+    "kl_coefficient": 1.0,
+    "variance_autotune": false,
+    "metadata_filepath": null,
+    "inference_config": {
+        "inference": {
+            "Linear": {"inference": "inducing",
+                       "inducing_rows": 50,
+                       "inducing_cols": 50}
+            },
+        "bnn_kl_beta": 1.0,
+        "whitened_u": true,
+        "q_inducing": "diagonal",
+        "learn_lamda": true,
+        "init_lamda": 0.001,
+        "max_lamda": 0.03,
+        "max_sd_u": 0.1,
+        "prior_sd": 1.0,
+        "sqrt_width_scaling": true
+        },
+    "dataset_size": 1
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": true,
+        "rewind_to_best_epoch": false,
+        "score_reconstruction": true,
+        "score_imputation": false
+    }
+}

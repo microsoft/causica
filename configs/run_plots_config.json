@@ -1,0 +1,29 @@
+{
+    "lk_info_config": {
+        "con_sample_count": 500,
+        "impute_config": {
+            "sample_count": 1
+        },
+        "sample_count": 500
+    },
+    "metric_drop_config": {
+        "impute_config": {
+            "sample_count": 50
+        }
+    },
+    "model_info_config": {
+        "objective_config": {
+            "sample_count": 50,
+            "use_vamp_prior": false
+        }
+    },
+    "pred_ll_config": {
+        "sample_count": 50
+    },
+    "sk_model_info_config": {
+        "impute_config": {
+            "sample_count": 1
+        },
+        "num_samples": 50
+    }
+}

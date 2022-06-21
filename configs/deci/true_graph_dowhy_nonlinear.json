@@ -1,0 +1,20 @@
+{
+
+    "model_hyperparams": {
+
+        "random_seed": [0, 1, 2, 3, 4],
+        
+        "inference_config": {
+            "linear": false,
+            "polynomial_order": 2,
+            "polynomial_bias": true
+        }
+
+    },
+
+    "training_hyperparams": {
+
+
+    }
+
+}

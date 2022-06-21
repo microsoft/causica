@@ -1,0 +1,21 @@
+{
+    "model_hyperparams": {
+        "random_seed": [0],
+        "categorical_likelihood_coefficient": 1.0,
+        "kl_coefficient": 0.1,
+        "transformer_embedding_dim": 64,
+        "num_heads": 4,
+        "num_blocks": 4,
+        "use_isab": false,
+        "num_inducing_points": 16,
+        "multihead_init_type": "kaiming",
+        "use_layer_norm": true,
+        "elementwise_transform_type": "single"
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3
+    }
+}

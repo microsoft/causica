@@ -1,0 +1,16 @@
+{
+    "sample_count": 100,
+    "use_vamp_prior": false,
+    "use_model": true,
+    "imputation_method": "question_similarity",
+    "similarity_metric": "topics", 
+    "max_steps": 3,
+    "binoculars_sampling": false,
+    "binoculars_method": "rewards",
+    "dpp_binoculars": true,
+    "size_DPP": 10,
+    "n_samples_glasses": 1,
+    "data_dir": "data/synthetic_binary",
+    "delta": 0.2,
+    "aggregate_values": false
+}                                                                                                                                                                                                                        

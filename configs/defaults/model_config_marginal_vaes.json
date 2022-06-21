@@ -1,0 +1,18 @@
+{
+    "model_hyperparams": {
+        "latent_dim": 10,
+        "encoder_layers": [100,50],
+        "decoder_layers": [50, 100],
+        "decoder_variances": 0.02,
+        "random_seed": 0,
+        "categorical_likelihood_coefficient": 1.0,
+        "kl_coefficient": 1.0
+
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3
+    }
+}

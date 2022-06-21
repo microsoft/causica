@@ -1,0 +1,49 @@
+name: project-causica
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python==3.8.13
+  - tqdm==4.64.0
+  # ML packages
+  - numpy==1.22.4
+  - pytorch==1.11.0
+  - pyro-ppl==1.8.1
+  - jaxlib==0.3.10
+  - cudatoolkit=11.5
+  - scipy==1.8.1
+  - scikit-learn==1.1.1
+  - pandas==1.4.2
+  - matplotlib==3.5.2
+  - seaborn==0.11.2
+  - tensorboard==2.9.0
+  - jupyter==1.0.0
+  - jupytext==1.13.8
+  # Dev tools (testing, static analysis, styling etc.):
+  - pytest==7.1.2
+  - pytest-cov==3.0.0
+  - mypy==0.961
+  - gitpython==3.1.27
+  - black==22.3.0
+  - flake8==3.8.4
+  - pylint==2.13.5
+  - pre-commit==2.9.3
+  - dependency_injector==4.39.1
+  - networkx==2.8.3
+  - python-igraph==0.9.10
+  - numpyro==0.9.2
+  - econml==0.12.0
+  - python-graphviz==0.17
+  - pip==21.2.4
+  - pip:
+    # DI framework
+    # gcastle for causality baselines
+    # Should be updated to the Huawei codebase once they release new full-pytorch version (#21024)
+    - git+https://github.com/tomsons22/trustworthyAI.git@c2e3535eba28cabf8e1309f55bffc3e4d4d78c00#subdirectory=gcastle
+    # For float32 (bug #20930)
+    # - git+https://github.com/tomsons22/trustworthyAI.git@bf6e050b6c2511d857ac687fe8c01fcf5fe32f02#subdirectory=gcastle
+    # For DoWhy baseline
+    # Use DoWhy from Github to allow for faster integration of new features
+    - git+https://github.com/microsoft/dowhy.git@8b2cf6a
+    - lingam==1.5.5

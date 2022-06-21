@@ -1,0 +1,20 @@
+{
+    "model_hyperparams": {
+            "embedding_dim": 10,
+            "encoding_function": "sum",
+            "mlp_activation": "linear",
+            "mlp_layers": [
+                500,
+                200
+            ],
+            "mlp_non_linearity": "relu",
+            "set_embedding_dim": 20,
+            "set_embedding_multiply_weights": true
+    },
+    "training_hyperparams": {
+            "epochs": 1000,
+            "iterations": -1,
+            "batch_size": 100,
+            "learning_rate": 1e-4
+    }
+}

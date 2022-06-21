@@ -1,0 +1,27 @@
+{
+    "model_hyperparams": {
+        "seed": 42,
+        "encoder_hidden": 256,
+        "decoder_hidden": 256,
+        "temp": 0.5,
+        "num_atoms": 5,
+        "encoder_dropout": 0.0,
+        "decoder_dropout": 0.0,
+        "edge_types": 2,
+        "dims": 4,
+        "timesteps": 49,
+        "skip_first": false,
+        "var": 5e-5,
+        "prior": false,
+        "random_seed": 0
+    },
+    "training_hyperparams": {
+        "epochs": 500,
+        "batch_size": 128,
+        "lr": 0.0005,
+        "prediction_steps": 10,
+        "lr_decay": 200,
+        "gamma": 0.5,
+        "hard": false
+    }
+}

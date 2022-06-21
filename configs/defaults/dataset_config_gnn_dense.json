@@ -1,0 +1,8 @@
+{
+    "dataset_format": "gnn_csv",
+    "use_predefined_dataset": false,
+    "split_type": "rows",
+    "test_fraction": 0.1,
+    "val_fraction": 0.1,
+    "random_seed": [0]
+}

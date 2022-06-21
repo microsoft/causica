@@ -1,0 +1,10 @@
+{
+    "model_hyperparams": {
+        "embedding_dim": 32,
+        "init_prob": 0.2
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "batch_size": 25
+    }
+}

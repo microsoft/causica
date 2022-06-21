@@ -1,0 +1,27 @@
+{
+    "model_hyperparams": {
+        "network_config": {
+            "architecture": "fcn",
+            "sizes": [784, 256, 256, 10]
+        },
+        "input_shape": [784],
+        "inference_config": {
+            "inference": "ffg",
+            "prior_mean": 0.0,
+            "prior_weight_sd": 1.0
+        },
+        "seed": 42,
+        "ensemble_size": 10,
+        "random_seed": 0
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": false
+    }
+}

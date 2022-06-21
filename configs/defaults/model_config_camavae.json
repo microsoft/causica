@@ -1,0 +1,26 @@
+{
+    "model_hyperparams": {
+        "latent_dim": 64,
+        "encoder_layers": [],
+        "decoder_layers": [],
+        "decoder_variances": 0.02,
+        "random_seed": [0],
+        "categorical_likelihood_coefficient": 1,
+        "kl_coefficient": 1,
+        "variance_autotune": false,
+        "task_dim": 5,
+        "objective_dim": 1,
+        "manipulation_dim": 32,
+        "manipulation_type": null
+    },
+    "training_hyperparams": {
+        "epochs": 1000,
+        "iterations": -1,
+        "batch_size": 100,
+        "learning_rate": 1e-3,
+        "max_p_train_dropout": 0.99,
+        "vamp_prior_inducing_points": 50,
+        "vamp_prior_reward_samples": 1000,
+        "save_vamp_prior": false
+    }
+}

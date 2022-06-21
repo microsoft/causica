@@ -1,0 +1,8 @@
+{
+    "model_hyperparams": {
+        "simpler": "forward"
+    },
+    "training_hyperparams": {
+	    "use_dag_loss": true
+    }
+}
