@@ -12,17 +12,26 @@ from logging import Logger
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
-from lingam import VARLiNGAM
 from scipy.sparse import csr_matrix, issparse
 
-from ...utils.causality_utils import get_ate_rms, get_ite_evaluation_results, get_treatment_data_logprob
+from ...baselines.varlingam import VARLiNGAM
 from ...datasets.dataset import CausalDataset, Dataset, InterventionData, SparseDataset, TemporalDataset
+from ..imetrics_logger import IMetricsLogger
 from ...models.imodel import (
     IModelForCausalInference,
     IModelForCounterfactuals,
     IModelForImputation,
 )
 from ...models.deci.deci import DECI
+from ...models.deci.fold_time_deci import FoldTimeDECI
+from ...utils.metrics import (
+    compute_target_metrics,
+    save_confusion_plot,
+    save_train_val_test_metrics,
+)
+from ...utils.plot_functions import violin_plot_imputations
+from ...utils.torch_utils import set_random_seeds
+from ...utils.causality_utils import get_ate_rms, get_ite_evaluation_results, get_treatment_data_logprob
 from ...utils.evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
 from ...utils.imputation import (
     eval_imputation,
@@ -30,20 +39,12 @@ from ...utils.imputation import (
     plot_pairwise_comparison,
     run_imputation_with_stats,
 )
-from ...utils.metrics import (
-    compute_target_metrics,
-    save_confusion_plot,
-    save_train_val_test_metrics,
-)
 from ...utils.nri_utils import (
     convert_temporal_to_static_adjacency_matrix,
     edge_prediction_metrics,
     edge_prediction_metrics_multisample,
     make_temporal_adj_matrix_compatible,
 )
-from ...utils.plot_functions import violin_plot_imputations
-from ...utils.torch_utils import set_random_seeds
-from ..imetrics_logger import IMetricsLogger
 
 ALL_INTRVS = "all interventions"
 

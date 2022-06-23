@@ -89,7 +89,8 @@ class PVAEBaseModel(TorchModel, IModelForObjective):
                 the form {arg_name: arg_value}. e.g. {"learning_rate": 1e-3, "epochs": 100}
             report_progress_callback: Function to report model progress for API.
         """
-
+        if train_config_dict is None:
+            train_config_dict = {}
         train_config_dict, vamp_prior_config = self._split_vamp_prior_config(train_config_dict)
         processed_dataset = self.data_processor.process_dataset(dataset)
         self._train(

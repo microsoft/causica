@@ -147,7 +147,7 @@ class CategoricalLikelihood(nn.Module):
         Returns:
             log_prob (batch, input_dim)
         """
-        dist = td.OneHotCategorical(logits=self.base_logits + logit_deltas)
+        dist = td.OneHotCategorical(logits=self.base_logits + logit_deltas, validate_args=False)
         return dist.log_prob(x)
 
     def sample(self, n_samples: int):
@@ -216,7 +216,7 @@ class BinaryLikelihood(nn.Module):
         Returns:
             log_prob (batch, input_dim)
         """
-        dist = td.Bernoulli(logits=self.base_logits + logit_deltas)
+        dist = td.Bernoulli(logits=self.base_logits + logit_deltas, validate_args=False)
         return dist.log_prob(x)
 
     def sample(self, n_samples: int):

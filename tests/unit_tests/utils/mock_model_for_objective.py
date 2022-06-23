@@ -9,6 +9,7 @@ from causica.datasets.variables import Variables
 from causica.models.imodel import IModel, IModelForObjective
 
 
+# pylint: disable=unused-argument
 class MockModelForObjective(IModelForObjective):
     @classmethod
     def create(

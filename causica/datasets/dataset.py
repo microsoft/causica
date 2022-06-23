@@ -286,6 +286,13 @@ class CausalDataset(Dataset):
             raise TypeError("Adjacency matrix is None. No adjacency matrix has been loaded.")
         return self._adjacency_data
 
+    @property
+    def has_adjacency_data_matrix(self) -> bool:
+        """
+        Returns: If the adjacency matrix is loaded
+        """
+        return self._adjacency_data is not None
+
     def get_known_subgraph_mask_matrix(self) -> np.ndarray:
         """
         Return the np.ndarray dag mask matrix.
