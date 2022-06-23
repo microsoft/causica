@@ -205,10 +205,7 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         return index_list_
 
     def load_predefined_dataset(
-        self,
-        max_num_rows: Optional[int] = None,
-        negative_sample: bool = False,
-        **kwargs,
+        self, max_num_rows: Optional[int] = None, negative_sample: bool = False, **kwargs,
     ) -> TemporalDataset:
         """
         Load the data from memory and use the predefined train/val/test split to instantiate a dataset.
@@ -302,8 +299,9 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         self, data: np.ndarray, mask: np.ndarray, timeseries_column_index: int
     ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, int]]]:
         """
-        This removes the first column of the data, where we store the time-series index.
+        This removes the column of the data where we store the time-series index.
         It also generates the corresponding index segmentations list.
+        NOTE: This assumes that the series indices are contiguous.
         Args:
             data: Temporal data.
             mask: the corresponding masks of the data

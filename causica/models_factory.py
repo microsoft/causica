@@ -24,6 +24,7 @@ from .models.deci.deci import DECI
 from .models.visl import VISL
 from .models.deci.deci_gaussian import DECIGaussian
 from .models.deci.deci_spline import DECISpline
+from .models.deci.fold_time_deci import FoldTimeDECI
 
 
 MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
@@ -34,6 +35,7 @@ MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
         VISL,
         DECIGaussian,
         DECISpline,
+        FoldTimeDECI,
         # Baselines
         DoWhy,
         GraNDAG,

@@ -1,0 +1,7 @@
+{
+    "dataset_format": "temporal_causal_csv",
+    "use_predefined_dataset": true,
+    "random_seed": [0],
+    "negative_sample": false,
+    "timeseries_column_index": 0
+}

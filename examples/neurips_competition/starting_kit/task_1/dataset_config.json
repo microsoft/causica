@@ -1,0 +1,4 @@
+{
+    "use_predefined_dataset": true,
+    "dataset_format": "temporal_causal_csv"
+}

@@ -245,7 +245,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                 device=self.device, input_dim=self.num_nodes, tau_gumbel=self.tau_gumbel
             )
         elif var_dist_A_mode == "enco":
-            var_dist_A = VarDistA_ENCO(device=self.device, input_dim=self.num_nodes, tau_gumbel=self.tau_gumbel)
+            var_dist_A = VarDistA_ENCO(
+                device=self.device, input_dim=self.num_nodes, tau_gumbel=self.tau_gumbel, dense_init=self.dense_init
+            )
         elif var_dist_A_mode == "true":
             var_dist_A = DeterministicAdjacency(device=self.device)
         elif var_dist_A_mode == "three":
@@ -848,44 +850,45 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         gumbel_max_regions = self.variables.processed_cols_by_type["categorical"]
         gt_zero_region = [j for i in self.variables.processed_cols_by_type["binary"] for j in i]
 
-        # Infer exogeneous noise variables - this currently only supports continuous variables.
-        predict = self.ICGNN.predict(X, W_adj)
-        noise_variable_posterior_samples = torch.zeros_like(X)
+        with torch.no_grad():
+            # Infer exogeneous noise variables - this currently only supports continuous variables.
+            predict = self.ICGNN.predict(X, W_adj)
+            noise_variable_posterior_samples = torch.zeros_like(X)
 
-        typed_regions = self.variables.processed_cols_by_type
-        # Continuous
-        continuous_range = [i for region in typed_regions["continuous"] for i in region]
-        if continuous_range:
-            # Additive Noise Model applies
-            noise_variable_posterior_samples[..., continuous_range] = (
-                X[..., continuous_range] - predict[..., continuous_range]
-            )
-
-        # Categorical
-        if "categorical" in typed_regions:
-            for region, likelihood in zip(typed_regions["categorical"], self.likelihoods["categorical"]):
-                noise_variable_posterior_samples[..., region] = likelihood.posterior(
-                    X[..., region], predict[..., region]
+            typed_regions = self.variables.processed_cols_by_type
+            # Continuous
+            continuous_range = [i for region in typed_regions["continuous"] for i in region]
+            if continuous_range:
+                # Additive Noise Model applies
+                noise_variable_posterior_samples[..., continuous_range] = (
+                    X[..., continuous_range] - predict[..., continuous_range]
                 )
 
-        # Binary: this operation can be done in parallel, so no loop over individual variables
-        binary_range = [i for region in typed_regions["binary"] for i in region]
-        if binary_range:
-            noise_variable_posterior_samples[..., binary_range] = self.likelihoods["binary"].posterior(
-                X[..., binary_range], predict[..., binary_range]
+            # Categorical
+            if "categorical" in typed_regions:
+                for region, likelihood in zip(typed_regions["categorical"], self.likelihoods["categorical"]):
+                    noise_variable_posterior_samples[..., region] = likelihood.posterior(
+                        X[..., region], predict[..., region]
+                    )
+
+            # Binary: this operation can be done in parallel, so no loop over individual variables
+            binary_range = [i for region in typed_regions["binary"] for i in region]
+            if binary_range:
+                noise_variable_posterior_samples[..., binary_range] = self.likelihoods["binary"].posterior(
+                    X[..., binary_range], predict[..., binary_range]
+                )
+
+            # Get counterfactual by intervening on the graph and forward propagating using the inferred noise variable
+            X_cf = self.ICGNN.simulate_SEM(
+                noise_variable_posterior_samples,
+                W_adj,
+                intervention_mask,
+                intervention_values,
+                gumbel_max_regions,
+                gt_zero_region,
             )
 
-        # Get counterfactual by intervening on the graph and forward propagating using the inferred noise variable
-        X_cf = self.ICGNN.simulate_SEM(
-            noise_variable_posterior_samples,
-            W_adj,
-            intervention_mask,
-            intervention_values,
-            gumbel_max_regions,
-            gt_zero_region,
-        )
-
-        return X_cf
+            return X_cf
 
     def log_prob(
         self,
@@ -1204,6 +1207,8 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         num_below_tol = 0
         num_max_rho = 0
         num_not_done = 0
+        # control the stopping criterion
+
         for step in range(train_config_dict["max_steps_auglag"]):
 
             # stopping if DAG conditions satisfied
@@ -1255,7 +1260,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     alpha = min([alpha, train_config_dict["safety_alpha"]])
 
                     # logging outer progress and adjacency matrix
-                    if isinstance(dataset, CausalDataset):
+                    if isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
                         adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
                         adj_true = dataset.get_adjacency_data_matrix()
                         if isinstance(dataset, TemporalDataset):

@@ -1,6 +1,7 @@
 # This is required in python 3 to allow return types of the same class.
 from __future__ import annotations
 
+import logging
 import os
 import pickle
 from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
@@ -8,13 +9,15 @@ from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
 import numpy as np
 from lingam import VARLiNGAM as varlingam_alg
 
-from ..datasets.dataset import Dataset
+from ..datasets.dataset import TemporalDataset
 from ..datasets.variables import Variables
 from ..models.imodel import IModelForCausalInference
 from ..models.model import Model
 from ..utils.io_utils import read_json_as, save_json, save_txt
 
 T = TypeVar("T", bound="VARLiNGAM")
+
+logger = logging.getLogger(__name__)
 
 
 class VARLiNGAM(Model, IModelForCausalInference):
@@ -74,14 +77,19 @@ class VARLiNGAM(Model, IModelForCausalInference):
 
     def run_train(
         self,
-        dataset: Dataset,
+        dataset: TemporalDataset,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
         # Get data
+
         data, _ = dataset.train_data_and_mask
+
+        # Extract data and fit on longest series.
+        longest_idx = np.argmax([seg[1] - seg[0] for seg in dataset.train_segmentation])
+        longest_series = data[dataset.train_segmentation[longest_idx][0] : dataset.train_segmentation[longest_idx][1]]
         # Training
-        self.learner.fit(data)
+        self.learner.fit(longest_series)
         # Save model
         self.save()
 
@@ -93,6 +101,7 @@ class VARLiNGAM(Model, IModelForCausalInference):
         # Cannot just save the adjacency matrix, since the VARLiNGaM learner class also has lags, residuals and causal_order properties.
         # It is easier to just store the entire model as .pkl
         model_path = os.path.join(self.save_dir, self.model_file)
+        logger.info(f"saved model to {model_path}")
         with open(f"{model_path}", "wb") as f:
             pickle.dump(self.learner, f)
 

@@ -9,6 +9,7 @@ from scipy.sparse import csr_matrix
 from causica.baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
 from causica.datasets.intervention_data import InterventionData
 from causica.models.deci.deci import DECI
+from causica.models.deci.fold_time_deci import FoldTimeDECI
 from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.variables import Variable, Variables
 from causica.experiment.steps.eval_step import (
@@ -380,6 +381,38 @@ def test_run_eval_causal_discovery(tmpdir_factory):
     assert "causal_accuracy" in results["test_data"]
     assert "shd" in results["test_data"]
     assert "nnz" in results["test_data"]
+
+    # Test for temporal causal model
+    temporal_model_config = {
+        "lag": 2,
+        "allow_instantaneous": True,
+        "treat_continuous": True,
+        "tau_gumbel": 0.25,
+        "lambda_dag": 100.0,
+        "lambda_sparse": 5.0,
+        "base_distribution_type": "gaussian",
+        "spline_bins": 8,
+        "var_dist_A_mode": "enco",
+        "mode_adjacency": "learn",
+        "random_seed": [0],
+    }
+    temporal_model = FoldTimeDECI.create(
+        model_id="model_id",
+        variables=variables,
+        save_dir=tmpdir_factory.mktemp("save_dir"),
+        device="cpu",
+        model_config_dict=temporal_model_config,
+    )
+    temporal_adj_matrix = np.zeros((5, 3, 3))
+    temporal_causal_dataset = dataset.to_temporal(
+        adjacency_data=temporal_adj_matrix, intervention_data=None, transition_matrix=None, counterfactual_data=None
+    )
+    eval_causal_discovery(temporal_causal_dataset, temporal_model, metrics_logger=None, conversion_type="full_time")
+    # expected assertion error
+    with pytest.raises(AssertionError):
+        eval_causal_discovery(
+            temporal_causal_dataset, temporal_model, metrics_logger=None, conversion_type="auto_regressive"
+        )
 
 
 @pytest.fixture

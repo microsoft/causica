@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import warnings
-from typing import List, Optional, Tuple, Union, cast
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -119,13 +119,14 @@ class CSVDatasetLoader(DatasetLoader):
         self._download_data_if_necessary(self._dataset_dir)
 
         # Loading train and test data - raise an error if not found
-        train_test_files_exist = all([os.path.exists(train_data_path), os.path.exists(test_data_path)])
-        if not train_test_files_exist:
-            raise FileNotFoundError(
-                f"At least one of the required data files not found: {[train_data_path, test_data_path]}."
-            )
+        if not os.path.exists(train_data_path):
+            raise FileNotFoundError(f"The required training data files not found: {train_data_path}.")
         train_data, train_mask = self.read_csv_from_file(train_data_path, max_num_rows=max_num_rows)
-        test_data, test_mask = self.read_csv_from_file(test_data_path, max_num_rows=max_num_rows)
+        if os.path.exists(test_data_path):
+            test_data, test_mask = self.read_csv_from_file(test_data_path, max_num_rows=max_num_rows)
+        else:
+            warnings.warn(f"Test data file not found: {test_data_path}.", UserWarning)
+            test_data, test_mask = None, None
 
         # Loading val data - make a warning if not found
         if not os.path.exists(val_data_path):
@@ -188,8 +189,7 @@ class CSVDatasetLoader(DatasetLoader):
 
     @classmethod
     def process_data(cls, data: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Replace missing values with zeros(/empty strings) and generate the corresponding mask.
+        """Replace missing values with zeros(/empty strings) and generate the corresponding mask.
 
         Args:
             data: Data with missing values (either floats or strings)
@@ -198,27 +198,18 @@ class CSVDatasetLoader(DatasetLoader):
             data: Data with missing values replaced by zeros(/empty strings).
             mask: Corresponding mask, where observed values are 1 and unobserved values are 0.
         """
+        if np.issubdtype(data.dtype, np.number):
+            return np.nan_to_num(data), ~np.isnan(data)
+        elif np.issubdtype(data.dtype, str):
+            return data, data != ""
 
-        v_is_value_present = np.vectorize(cls.is_value_present)
-        mask = cast(np.ndarray, v_is_value_present(data))
+        # Handle non-numeric arrays
+        na_mask = pd.isna(data)  # True for NaNs and works even in non-numeric array
+        missing = (data == "") | na_mask  # Consider empty strings to be missing data
 
-        def convert_nan_value(single_value):
-            if isinstance(single_value, str):
-                return single_value
-            else:
-                return np.nan_to_num(single_value, copy=False)
-
-        v_convert_nan_value = np.vectorize(convert_nan_value, otypes=[object])
-        data = v_convert_nan_value(data)
-        return data, mask
-
-    @classmethod
-    def is_value_present(cls, single_value: object):
-        """
-        Check whether the value is present (i.e. not missing)
-        """
-        if isinstance(single_value, str):
-            return single_value != ""
-        else:
-            # TODO: do right cast for np.isnan
-            return ~np.isnan(single_value)  # type: ignore
+        # Non-numeric arrays will not have NaNs converted using np.nan_to_num. Instead, convert each NA element
+        # individually by vectorizing it.
+        data = data.copy()
+        v_nan_to_num = np.vectorize(np.nan_to_num, otypes=[object])
+        data[na_mask] = v_nan_to_num(data[na_mask])
+        return data, ~missing

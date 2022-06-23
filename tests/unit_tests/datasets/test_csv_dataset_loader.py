@@ -403,19 +403,6 @@ def test_read_csv_from_strings():
     assert not np.isnan(processed_mask).any()
 
 
-def test_process_data():
-    data = np.array([[np.nan, 1.1, 2.1], [3.1, np.nan, 5.1]])
-
-    processed_data, processed_mask = CSVDatasetLoader.process_data(data)
-
-    expected_data = np.array([[0.0, 1.1, 2.1], [3.1, 0.0, 5.1]])
-    expected_mask = np.array([[0, 1, 1], [1, 0, 1]])
-
-    assert np.array_equal(processed_data, expected_data)
-    assert np.array_equal(processed_mask, expected_mask)
-    assert not np.isnan(processed_mask).any()
-
-
 def test_load_negative_sampling_levels_path_exists(tmpdir_factory):
     # Test scenario where column IDs in data are [10, 11, ..., 19] and we map to variable IDs [0, 1, ..., 9]
     dataset_dir = tmpdir_factory.mktemp("dataset_dir")
@@ -534,7 +521,30 @@ def test_apply_negative_sampling_no_file(tmpdir_factory):
         )
 
 
-def test_process_data_with_txt():
+def test_process_data_numeric():
+    data = np.array([[np.nan, 1.1, 2.1], [3.1, np.nan, 5.1]])
+
+    processed_data, processed_mask = CSVDatasetLoader.process_data(data)
+
+    expected_data = np.array([[0.0, 1.1, 2.1], [3.1, 0.0, 5.1]])
+    expected_mask = np.array([[0, 1, 1], [1, 0, 1]])
+
+    assert np.array_equal(processed_data, expected_data)
+    assert np.array_equal(processed_mask, expected_mask)
+    assert not np.isnan(processed_mask).any()
+
+
+def test_process_data_text():
+    data = np.array([["", "foo", "bar"], ["foo?", "", "bar!"], ["foobar", "!", ""]])
+    expected_mask = ~np.eye(3, dtype=bool)
+
+    processed_data, processed_mask = CSVDatasetLoader.process_data(data)
+
+    assert np.array_equal(processed_data, data)
+    assert np.array_equal(processed_mask, expected_mask)
+
+
+def test_process_data_mixed_types():
     data = np.array(
         [[np.nan, "I would like to leave on monday .", 1.1, 2.1], [3.1, "", np.nan, 5.1], [3.1, "NaN", np.nan, 5.1]],
         dtype=object,
@@ -553,12 +563,3 @@ def test_process_data_with_txt():
     assert np.array_equal(processed_data, expected_data)
     assert np.array_equal(processed_mask, expected_mask)
     assert not np.isnan(processed_mask).any()
-
-
-def test_is_value_present():
-    assert CSVDatasetLoader.is_value_present("Train leaves on Monday")
-    assert not CSVDatasetLoader.is_value_present("")
-    assert CSVDatasetLoader.is_value_present("NaN")
-    assert CSVDatasetLoader.is_value_present("uknown")
-    assert CSVDatasetLoader.is_value_present(3.4)
-    assert not CSVDatasetLoader.is_value_present(float("NaN"))

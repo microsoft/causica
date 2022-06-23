@@ -174,7 +174,8 @@ class DatasetLoader(ABC):
         negative_sampling_levels = self.load_negative_sampling_levels(negative_sampling_levels_path, variables)
 
         train_data, train_mask = self.negative_sample(train_data, train_mask, negative_sampling_levels)
-        test_data, test_mask = self.negative_sample(test_data, test_mask, negative_sampling_levels)
+        if test_data is not None and test_mask is not None:
+            test_data, test_mask = self.negative_sample(test_data, test_mask, negative_sampling_levels)
         if val_data is not None:
             val_data, val_mask = self.negative_sample(val_data, val_mask, negative_sampling_levels)
         else:
