@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import logging
+import os
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -11,15 +11,14 @@ from dependency_injector.wiring import Provide
 from torch import nn
 from torch.utils.data import DataLoader
 
-from ..torch_model import ONNXNotImplemented
-from ...utils.helper_functions import maintain_random_state
 from ...datasets.dataset import Dataset, TemporalDataset
 from ...datasets.temporal_tensor_dataset import TemporalTensorDataset
 from ...datasets.variables import Variables
 from ...experiment.azua_context import AzuaContext
 from ...utils.causality_utils import process_adjacency_mats
-from ...utils.helper_functions import to_tensors
+from ...utils.helper_functions import maintain_random_state, to_tensors
 from ...utils.nri_utils import convert_temporal_to_static_adjacency_matrix
+from ..torch_model import ONNXNotImplemented
 from .deci import DECI
 
 logger = logging.getLogger(__name__)

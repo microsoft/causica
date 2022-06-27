@@ -3,13 +3,10 @@ from math import sqrt
 import numpy as np
 
 from causica.datasets.intervention_data import InterventionData
+from causica.datasets.variables import Variable, Variables
 from causica.models.imodel import IModelForCounterfactuals
 from causica.utils import causality_utils
-from causica.datasets.variables import Variable, Variables
-from causica.utils.nri_utils import (
-    convert_temporal_to_static_adjacency_matrix,
-    make_temporal_adj_matrix_compatible,
-)
+from causica.utils.nri_utils import convert_temporal_to_static_adjacency_matrix, make_temporal_adj_matrix_compatible
 
 
 def test_approximate_maximal_acyclic_subgraph():

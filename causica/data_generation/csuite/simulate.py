@@ -1,24 +1,14 @@
 import os
 from typing import Callable, List, Optional
 
-from jax import nn
 import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
+from jax import nn
 
-from .pyro_utils import (
-    generate_dataset,
-    layer,
-    layerm,
-    plot_conditioning_and_interventions,
-)
-from .utils import (
-    extract_observations,
-    finalise,
-    make_coding_tensors,
-    to_counterfactual_dict_format,
-)
+from .pyro_utils import generate_dataset, layer, layerm, plot_conditioning_and_interventions
+from .utils import extract_observations, finalise, make_coding_tensors, to_counterfactual_dict_format
 
 
 def simulate_data(

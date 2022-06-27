@@ -1,3 +1,4 @@
+import warnings
 from typing import Iterable
 
 import numpy as np
@@ -31,9 +32,19 @@ class UnitScaler(FunctionTransformer):
                 provided in the same order as data columns.
         """
         # Collect limits for the variables
-        lower, upper = np.array([(variable.lower, variable.upper) for variable in variables]).T
-        self._lower = lower
-        self._range = upper - lower
+        lower = []
+        upper = []
+        for variable in variables:
+            lower.append(variable.lower)
+            upper.append(variable.upper)
+
+            if variable.lower == variable.upper:
+                warnings.warn(
+                    f"Variable with name '{variable.name}' has the same upper and lower values. Is this variable a constant?"
+                )
+
+        self._lower = np.array(lower)
+        self._range: np.ndarray = np.array(upper) - self._lower
         super().__init__(func=self.scale, inverse_func=self.unscale)
 
     def scale(self, values: np.ndarray) -> np.ndarray:

@@ -1,6 +1,7 @@
 import argparse
-import numpy as np
 import os
+
+import numpy as np
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -10,8 +11,8 @@ if __name__ == "__main__":
     args= parser.parse_args()
 
     CATE_list = []
-    for save_dir in args.save_dirs:
-        cur_cate = np.load(save_dir)
+    for load_file in args.load_files:
+        cur_cate = np.load(load_file)
         CATE_list.append(cur_cate)
 
     CATE_list = np.array(CATE_list)

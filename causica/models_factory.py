@@ -2,30 +2,27 @@ import os
 from typing import Any, Dict, Type, Union
 from uuid import uuid4
 
-from .datasets.variables import Variables
 from .baselines.do_why import DoWhy
-from .baselines.grandag import GraNDAG
-from .baselines.icalingam import ICALiNGAM
-from .baselines.end2end_causal.informed_deci import InformedDECI
-from .baselines.notears import NotearsLinear
-from .baselines.notears import NotearsMLP
-from .baselines.notears import NotearsSob
 from .baselines.end2end_causal.deci_dowhy import DECIDoWhy
-from .baselines.pc import PC
+from .baselines.end2end_causal.informed_deci import InformedDECI
 from .baselines.end2end_causal.pc_dowhy import PCDoWhy
 from .baselines.end2end_causal.pc_informed_deci import PCInformedDECI
 from .baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
+from .baselines.grandag import GraNDAG
+from .baselines.icalingam import ICALiNGAM
+from .baselines.notears import NotearsLinear, NotearsMLP, NotearsSob
+from .baselines.pc import PC
 from .baselines.varlingam import VARLiNGAM
+from .datasets.variables import Variables
+from .models.deci.deci import DECI
+from .models.deci.deci_gaussian import DECIGaussian
+from .models.deci.deci_spline import DECISpline
+from .models.deci.fold_time_deci import FoldTimeDECI
 from .models.imodel import IModel
 from .models.point_net import PointNet, SparsePointNet
 from .models.set_encoder_base_model import SetEncoderBaseModel
 from .models.transformer_set_encoder import TransformerSetEncoder
-from .models.deci.deci import DECI
 from .models.visl import VISL
-from .models.deci.deci_gaussian import DECIGaussian
-from .models.deci.deci_spline import DECISpline
-from .models.deci.fold_time_deci import FoldTimeDECI
-
 
 MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
     model.name(): model  # type: ignore
@@ -90,7 +87,9 @@ def create_model(
     os.makedirs(save_dir)
 
     try:
-        return MODEL_SUBCLASSES[model_name].create(model_id, save_dir, variables, model_config_dict, device=device)
+        return MODEL_SUBCLASSES[model_name].create(
+            model_id, save_dir, variables, model_config_dict, device=device
+        )
     except KeyError as e:
         raise ModelClassNotFound() from e
 

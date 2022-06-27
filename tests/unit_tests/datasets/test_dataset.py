@@ -6,9 +6,9 @@ import pytest
 import torch
 from scipy.sparse import csr_matrix
 
+from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
 from causica.datasets.temporal_tensor_dataset import TemporalTensorDataset
-from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.variables import Variables
 from causica.preprocessing.data_processor import DataProcessor
 from causica.utils.helper_functions import to_tensors

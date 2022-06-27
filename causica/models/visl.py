@@ -20,7 +20,7 @@ from ..models.imodel import IModelForCausalInference
 from ..utils.helper_functions import to_tensors
 from ..utils.io_utils import save_json
 from ..utils.nri_utils import compute_dag_loss, get_feature_indices_per_node, kl_categorical, piecewise_linear
-from ..utils.training_objectives import kl_divergence, negative_log_likelihood, get_input_and_scoring_masks
+from ..utils.training_objectives import get_input_and_scoring_masks, kl_divergence, negative_log_likelihood
 from .pvae_base_model import PVAEBaseModel
 
 

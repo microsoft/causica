@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Any, Callable, Dict, Optional, Tuple, Union, cast
+
 import numpy as np
 import torch
 from scipy.sparse import csr_matrix, issparse
@@ -10,15 +11,15 @@ from tqdm import tqdm
 
 from ..datasets.dataset import Dataset, SparseDataset
 from ..datasets.variables import Variables
-from .imodel import IModelForObjective
-from .torch_model import TorchModel
-from .torch_training_types import LossConfig
+from ..objectives.eddi import EDDIObjective
 from ..utils.data_mask_utils import restore_preserved_values, sample_inducing_points
 from ..utils.helper_functions import to_tensors
 from ..utils.torch_utils import create_dataloader
 from ..utils.training_objectives import gaussian_negative_log_likelihood, negative_log_likelihood
-from ..objectives.eddi import EDDIObjective
+from .imodel import IModelForObjective
 from .torch_imputation import impute
+from .torch_model import TorchModel
+from .torch_training_types import LossConfig
 
 EPSILON = 1e-5
 

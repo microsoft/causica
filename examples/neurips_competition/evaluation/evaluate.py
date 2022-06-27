@@ -1,12 +1,9 @@
 import argparse
 import os
-from sys import argv
 from typing import Any, Dict, Optional
 
 import numpy as np
-
-from .adjacency_utils import edge_prediction_metrics_multisample
-
+from adjacency_utils import edge_prediction_metrics_multisample
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -30,11 +27,11 @@ def load_submitted_adj(prediction_dir: str) -> np.ndarray:
         np.ndarray: Loaded adjacency matrix of shape [num_datasets, num_matrices, variables, variables]
     """
 
-    prediction_file = os.path.join(prediction_dir, "adj_matrices.npy")
+    prediction_file = os.path.join(prediction_dir, "adj_matrix.npy")
 
     adj_matrices = np.load(prediction_file)
 
-    assert adj_matrices.ndim == 4 or adj_matrices.ndim == 3, "Needs to be a 4D or 3D array"
+    assert adj_matrices.ndim in (3, 4), "Needs to be a 4D or 3D array"
 
     if adj_matrices.ndim == 3:
         adj_matrices = adj_matrices[:, np.newaxis, :, :]
@@ -44,10 +41,10 @@ def load_submitted_adj(prediction_dir: str) -> np.ndarray:
 
 def load_true_adj_matrix(reference_dir: str) -> np.ndarray:
     """Loads true adjacency matrix from the given directory.
-    
+
     Args:
         reference_dir (str): Reference directory with adj_matrix.npy file.
-        
+
     Returns:
         np.ndarray: Loaded adjacency matrix of shape [num_datasets, variables, variables]
     """
@@ -59,15 +56,15 @@ def load_true_adj_matrix(reference_dir: str) -> np.ndarray:
 
 def load_predicted_ate_estimate(prediction_dir: str) -> np.ndarray:
     """Loads predicted ATE estimate from the given directory.
-    
+
     Args:
         prediction_dir (str): Prediction directory with ate_estimate.npy file.
-        
+
     Returns:
         np.ndarray: Loaded ATE estimate of shape [num_datasets, num_interventions]
     """
 
-    prediction_file = os.path.join(prediction_dir, "ate_estimate.npy")
+    prediction_file = os.path.join(prediction_dir, "cate_estimate.npy")
 
     ate_predictions = np.load(prediction_file)
 
@@ -78,16 +75,15 @@ def load_predicted_ate_estimate(prediction_dir: str) -> np.ndarray:
 
 def load_true_ate_estimate(reference_dir: str) -> np.ndarray:
     """Loads true ATE estimate from the given directory.
-    
+
     Args:
         reference_dir (str): Reference directory with ate_estimate.npy file.
-        
+
     Returns:
         np.ndarray: Loaded ATE estimate of shape [num_datasets, num_interventions]
-        
     """
 
-    reference_file = os.path.join(reference_dir, "ate_estimate.npy")
+    reference_file = os.path.join(reference_dir, "cate_estimate.npy")
 
     ate_reference = np.load(reference_file)
 
@@ -102,9 +98,9 @@ def write_score_file(
     summarise: bool = True,
     page_header_name: str = "",
     detailed_dict: Optional[Dict[str, Any]] = None,
+    write_html: bool = False,
 ) -> None:
     """Writes the score dictionary to the given file.
-    
     Args:
         score_dir (str): Dir to write the score dictionary to.
         score_dict (dict[str, Any]): Score dictionary to write.
@@ -116,29 +112,32 @@ def write_score_file(
     score_file = os.path.join(score_dir, "scores.txt")
 
     if summarise:
-        avg_score = np.mean([v for v in score_dict.values()])
+        avg_score = np.mean(list(score_dict.values()))
 
-        with open(score_file, "w") as f:
-            f.write(f"score: {avg_score}\n")
+        with open(score_file, "w", encoding="utf-8") as f:
+            f.write(f"score:{avg_score}\n")
 
-        # output detailed results
-        detail_file = os.path.join(score_dir, "scores.html")
+        if write_html:
+            # output detailed results
+            detail_file = os.path.join(score_dir, "scores.html")
 
-        if len(page_header_name) > 0:
-            page_header_name = f": {page_header_name}"
+            if len(page_header_name) > 0:
+                page_header_name = f": {page_header_name}"
 
-        detailed_score_section = f"<p>Detailed Score{page_header_name}</p>\n</br>\n"
-        detailed_dict = detailed_dict or score_dict
-        for k, v in detailed_dict.items():
-            detailed_score_section += f"<p>{k}: {v}</p>\n"
+            detailed_score_section = f"<p>Detailed Score{page_header_name}</p>\n</br>\n"
+            detailed_dict = detailed_dict or score_dict
+            for k, v in detailed_dict.items():
+                detailed_score_section += f"<p>{k}: {v}</p>\n"
 
-        with open(detail_file, "w") as f:
-            detail_output = HTML_TEMPLATE.format(
-                page_header_section=page_header_name, avg_score=avg_score, detailed_score_section=detailed_score_section
-            )
-            f.write(detail_output)
+            with open(detail_file, "w", encoding="utf-8") as f:
+                detail_output = HTML_TEMPLATE.format(
+                    page_header_section=page_header_name,
+                    avg_score=avg_score,
+                    detailed_score_section=detailed_score_section,
+                )
+                f.write(detail_output)
     else:
-        with open(score_file, "w") as f:
+        with open(score_file, "w", encoding="utf-8") as f:
             for key, value in score_dict.items():
                 f.write(f"{key}: {value}\n")
 
@@ -183,7 +182,7 @@ def evaluate_ate(solution_dir: str, prediction_dir: str) -> Dict[str, Any]:
     # calculating RMSE across each intervention for each dataset.
     rmse = np.sqrt(np.mean(np.square(true_adj_matrix - submitted_adj_matrix), axis=1))
 
-    return [{f"ate_rmse": rmse_slice} for rmse_slice in rmse]
+    return [{"ate_rmse": rmse_slice} for rmse_slice in rmse]
 
 
 def evaluate_and_write_scores(
@@ -194,6 +193,8 @@ def evaluate_and_write_scores(
     eval_ate: bool = True,
     summarise: bool = True,
     page_header_name: str = "",
+    write_html: bool = False,
+    score_multiplier: float = 1.0,
 ) -> None:
     """Run main evaluation and write scores to file.
 
@@ -205,6 +206,8 @@ def evaluate_and_write_scores(
         evaluate_ate (bool, optional): Whether to evalaute ATEs. Defaults to True.
         summarise (bool, optional): Whether to summarise scores. Defaults to True.
         page_header_name (str, optional): Name of the page header. Defaults to "".
+        write_html (bool, optional): Whether to write the detailed HTML file.
+        score_multiplier: (float, optional): factor to use for multiplying the scores with.
     """
     if summarise and eval_adjacency and eval_ate:
         raise Exception("Cannot evaluate adjacency and ATE at the same time.")
@@ -214,13 +217,13 @@ def evaluate_and_write_scores(
         detailed_metrics = evaluate_adjacency(solution_dir, prediction_dir)
 
         for i, adj_metric in enumerate(detailed_metrics):
-            score_dict[f"orientation_fscore_dataset_{i}"] = adj_metric["orientation_fscore"]
+            score_dict[f"orientation_fscore_dataset_{i}"] = adj_metric["orientation_fscore"] * score_multiplier
 
     if eval_ate:
         detailed_metrics = evaluate_ate(solution_dir, prediction_dir)
 
         for i, ate_metric in enumerate(detailed_metrics):
-            score_dict[f"ate_rmse_dataset_{i}"] = ate_metric["ate_rmse"]
+            score_dict[f"neg_ate_rmse_dataset_{i}"] = -ate_metric["ate_rmse"] * score_multiplier
 
     if summarise:
         # convert list of dicts to flat dict
@@ -231,35 +234,40 @@ def evaluate_and_write_scores(
             summarise=True,
             page_header_name=page_header_name,
             detailed_dict=detailed_metrics_dict,
+            write_html=write_html,
         )
     else:
         write_score_file(score_dir, score_dict, summarise=False)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Evaluate the submitted adjacency matrices.")
-    parser.add_argument("input_dir", type=str, help="Directory with the input.")
-    parser.add_argument("score_dir", type=str, help="Directory to write the scores to.")
+    parser.add_argument("--submission_dir", type=str, help="Directory with the input.")
+    parser.add_argument("--reference_dir", type=str, help="Directory with the reference files.")
+    parser.add_argument("--score_dir", type=str, help="Directory to write the scores to.")
 
     parser.add_argument("--evaluate_adjacency", action="store_true", help="Evaluate adjacency matrices.")
     parser.add_argument("--evaluate_ate", action="store_true", help="Evaluate ATE.")
 
     parser.add_argument("--summarise", action="store_true", help="Summarise scores.")
-    parser.add_argument("--page_name", help="Name of the page.")
+    parser.add_argument("--write_html", action="store_true", help="Whether to write detailed scores.")
+    parser.add_argument("--score_multiplier", type=float, help="Multiplier for the score.", default=1.0)
 
     args = parser.parse_args()
-
-    solution_dir = os.path.join(args.input_dir, "ref")
-    prediction_dir = os.path.join(args.input_dir, "res")
-    score_dir = args.score_dir
+    args.page_name = "Detailed Results"
 
     evaluate_and_write_scores(
-        solution_dir,
-        prediction_dir,
-        score_dir,
+        args.reference_dir,
+        args.submission_dir,
+        args.score_dir,
         args.evaluate_adjacency,
         args.evaluate_ate,
         args.summarise,
         args.page_name,
+        args.write_html,
+        args.score_multiplier,
     )
 
+
+if __name__ == "__main__":
+    main()

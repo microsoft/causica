@@ -5,6 +5,7 @@ from scipy.sparse import csr_matrix, issparse
 from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.variables import Variable, Variables
 from causica.utils.imputation import eval_imputation, split_mask
+
 from .mock_model_for_objective import MockModelForObjective
 
 input_dim = 8  # count in the 5-class categorical variable and 3 other variables

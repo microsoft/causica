@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from dependency_injector.wiring import Provide, inject
 
+from . import experiment as cexperiment
 from . import models as cmodels
 from .argument_parser import get_parser, validate_args
 from .experiment.azua_context import AzuaContext
@@ -265,7 +266,7 @@ def main(user_args):
     validate_args(args)
 
     azua_context = AzuaContext()
-    azua_context.wire(modules=[sys.modules[__name__]], packages=[cmodels])
+    azua_context.wire(modules=[sys.modules[__name__]], packages=[cmodels, cexperiment])
     run_experiment_on_parsed_args(args)
 
 

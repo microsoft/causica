@@ -1,15 +1,14 @@
 import numpy as np
 import pytest
+import torch
 
 from causica.models.deci.variational_distributions import (
     DeterministicAdjacency,
+    TemporalThreeWayGrahpDist,
     ThreeWayGraphDist,
     VarDistA_ENCO,
     VarDistA_Simple,
-    TemporalThreeWayGrahpDist,
 )
-import torch
-
 
 # pylint: disable=redefined-outer-name
 

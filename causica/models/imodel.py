@@ -7,9 +7,9 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from ..preprocessing.data_processor import DataProcessor
 from ..datasets.dataset import Dataset
 from ..datasets.variables import Variables
+from ..preprocessing.data_processor import DataProcessor
 
 
 class IModel(ABC):

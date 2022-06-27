@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 
-from causica.utils.helper_functions import to_tensors
-from causica.utils.torch_utils import get_torch_device
 from causica.utils.helper_functions import (
     convert_dict_of_lists_to_ndarray,
     convert_dict_of_ndarray_to_lists,
+    to_tensors,
 )
+from causica.utils.torch_utils import get_torch_device
 
 cpu_torch_device = get_torch_device("cpu")
 

@@ -4,12 +4,11 @@ Helper functions.
 import os
 import sys
 from contextlib import contextmanager
-from typing import Tuple, overload, Dict, List, TypeVar
+from typing import Dict, List, Tuple, TypeVar, overload
 
 import git
 import numpy as np
 import torch
-
 
 T = TypeVar("T")
 

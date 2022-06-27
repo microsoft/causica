@@ -1,5 +1,5 @@
-from castle.algorithms import NotearsMLP as NotearsMLP_alg
 from castle.algorithms import Notears
+from castle.algorithms import NotearsMLP as NotearsMLP_alg
 from castle.algorithms import NotearsSob as NotearsSob_alg
 
 from ..datasets.variables import Variables

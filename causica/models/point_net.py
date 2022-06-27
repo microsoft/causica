@@ -4,9 +4,9 @@ from typing import Optional
 import torch
 from torch.nn import Linear, ReLU, Sequential
 
-from .torch_model import ONNXNotImplemented
 from .feature_embedder import FeatureEmbedder, SparseFeatureEmbedder
 from .set_encoder_base_model import SetEncoderBaseModel
+from .torch_model import ONNXNotImplemented
 
 
 class PointNet(SetEncoderBaseModel):

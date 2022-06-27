@@ -1,12 +1,19 @@
-import os
-import numpy as np
-import torch
 import logging
+import os
 from typing import Union
 
-from causica.models.deci.fold_time_deci import FoldTimeDECI
-from .task_2_util import get_parser, load_FT_DECI_model, load_interventions, validate_model, convert_to_FT_DECI_intervention
+import numpy as np
+import torch
 
+from causica.models.deci.fold_time_deci import FoldTimeDECI
+
+from .task_2_util import (
+    convert_to_FT_DECI_intervention,
+    get_parser,
+    load_FT_DECI_model,
+    load_interventions,
+    validate_model,
+)
 
 logger = logging.getLogger(__name__)
 log_format = "%(asctime)s %(filename)s:%(lineno)d[%(levelname)s]%(message)s"

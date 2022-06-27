@@ -2,12 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from causica.utils.torch_utils import (
-    LinearModel,
-    MultiROFFeaturiser,
-    create_dataloader,
-    generate_fully_connected,
-)
+from causica.utils.torch_utils import LinearModel, MultiROFFeaturiser, create_dataloader, generate_fully_connected
 
 
 def test_create_dataloader():

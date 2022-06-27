@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 import torch
 
+from causica.datasets.variables import Variable, Variables
 from causica.models.deci.base_distributions import BinaryLikelihood, CategoricalLikelihood
 from causica.models.deci.deci import DECI
 from causica.utils.causality_utils import process_adjacency_mats
-from causica.datasets.variables import Variable, Variables
 
 five_cts_ungrouped_variables = Variables(
     [

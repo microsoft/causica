@@ -19,7 +19,6 @@ from torch.utils.tensorboard import SummaryWriter
 from ...datasets.dataset import CausalDataset, Dataset, TemporalDataset
 from ...datasets.variables import Variables
 from ...experiment.azua_context import AzuaContext
-from ...preprocessing.data_processor import DataProcessor
 from ...models.imodel import (
     IModelForCausalInference,
     IModelForCounterfactuals,
@@ -27,16 +26,7 @@ from ...models.imodel import (
     IModelForInterventions,
 )
 from ...models.torch_model import TorchModel
-from ...utils.helper_functions import to_tensors
-from ...utils.fast_data_loader import FastTensorDataLoader
-from ...utils.linprog import col_row_constrained_lin_prog
-from ...utils.nri_utils import (
-    convert_temporal_to_static_adjacency_matrix,
-    edge_prediction_metrics_multisample,
-    make_temporal_adj_matrix_compatible,
-)
-from ...utils.torch_utils import generate_fully_connected
-from ...utils.training_objectives import get_input_and_scoring_masks
+from ...preprocessing.data_processor import DataProcessor
 from ...utils.causality_utils import (
     get_ate_from_samples,
     get_cate_from_samples,
@@ -46,6 +36,16 @@ from ...utils.causality_utils import (
     intervention_to_tensor,
     process_adjacency_mats,
 )
+from ...utils.fast_data_loader import FastTensorDataLoader
+from ...utils.helper_functions import to_tensors
+from ...utils.linprog import col_row_constrained_lin_prog
+from ...utils.nri_utils import (
+    convert_temporal_to_static_adjacency_matrix,
+    edge_prediction_metrics_multisample,
+    make_temporal_adj_matrix_compatible,
+)
+from ...utils.torch_utils import generate_fully_connected
+from ...utils.training_objectives import get_input_and_scoring_masks
 from .base_distributions import BinaryLikelihood, CategoricalLikelihood, DiagonalFLowBase, GaussianBase
 from .generation_functions import ContractiveInvertibleGNN
 from .variational_distributions import (

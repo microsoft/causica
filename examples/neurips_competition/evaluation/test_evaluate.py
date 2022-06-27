@@ -1,6 +1,7 @@
-from tempfile import TemporaryDirectory, tempdir
-import numpy as np
 import os
+from tempfile import TemporaryDirectory
+
+import numpy as np
 
 from .evaluate import evaluate_and_write_scores
 
@@ -35,7 +36,7 @@ def test_evaluate_and_write_score():
             os.path.join(input_dir, "ref"), os.path.join(input_dir, "res"), score_dir, summarise=False
         )
 
-        with open(os.path.join(score_dir, "scores.txt"), "r") as f:
+        with open(os.path.join(score_dir, "scores.txt"), "r", encoding="utf-8") as f:
             lines = f.readlines()
 
         assert lines[0].startswith("orientation_fscore_dataset_0: 0.66")

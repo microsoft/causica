@@ -5,9 +5,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 from scipy.sparse import csr_matrix, issparse
 
+from ..utils.io_utils import save_json
 from .intervention_data import InterventionData
 from .variables import Variables
-from ..utils.io_utils import save_json
 
 T = Union[csr_matrix, np.ndarray]
 

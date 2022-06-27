@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from causica.datasets.temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
 from causica.datasets.dataset import TemporalDataset
+from causica.datasets.temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
 
 
 # pylint: disable=protected-access

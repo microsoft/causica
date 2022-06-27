@@ -2,6 +2,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+
 import numpy as np
 import pandas as pd
 from dependency_injector.wiring import Provide, inject

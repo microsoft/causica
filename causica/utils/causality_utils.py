@@ -4,12 +4,12 @@ import numpy as np
 import scipy
 import torch
 
+from ..datasets.intervention_data import InterventionData
 from ..datasets.variables import Variables
 from ..models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForInterventions
 from ..utils.helper_functions import to_tensors
-from .evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
 from ..utils.torch_utils import LinearModel, MultiROFFeaturiser
-from ..datasets.intervention_data import InterventionData
+from .evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
 
 
 def intervene_graph(adj_matrix: torch.Tensor, intervention_idxs: torch.Tensor, copy_graph: bool = True) -> torch.Tensor:

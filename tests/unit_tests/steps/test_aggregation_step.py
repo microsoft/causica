@@ -1,9 +1,6 @@
 import pandas as pd
 
-from causica.experiment.steps.aggregation_step import (
-    _get_summary_dict_from_dataframe,
-    _get_summary_dicts_from_groupby,
-)
+from causica.experiment.steps.aggregation_step import _get_summary_dict_from_dataframe, _get_summary_dicts_from_groupby
 
 
 def get_df():

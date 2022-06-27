@@ -4,8 +4,8 @@ from typing import Any, Dict, Optional, Union
 from ...datasets.dataset import Dataset, SparseDataset
 from ...datasets.variables import Variables
 from ...models.imodel import IModel
-from ...models_factory import create_model
 from ...models.torch_model import TorchModel
+from ...models_factory import create_model
 from ..imetrics_logger import IMetricsLogger
 
 

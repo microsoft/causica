@@ -1,8 +1,8 @@
 import os
 import random
 
-import igraph as ig
 import graphviz
+import igraph as ig
 import numpy as np
 import torch
 from scipy.special import softmax

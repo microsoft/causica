@@ -4,10 +4,10 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
+from .causal_csv_dataset_loader import CausalCSVDatasetLoader
 from .csv_dataset_loader import CSVDatasetLoader
 from .dataset import TemporalDataset
 from .variables import Variables
-from .causal_csv_dataset_loader import CausalCSVDatasetLoader
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +205,10 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         return index_list_
 
     def load_predefined_dataset(
-        self, max_num_rows: Optional[int] = None, negative_sample: bool = False, **kwargs,
+        self,
+        max_num_rows: Optional[int] = None,
+        negative_sample: bool = False,
+        **kwargs,
     ) -> TemporalDataset:
         """
         Load the data from memory and use the predefined train/val/test split to instantiate a dataset.

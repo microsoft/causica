@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def is_there_adjacency(adj_matrix):
     """
     If input is (n,n), this returns a 1D array of size n*(n-1)/2 indicating whether each edge is present or not (not
@@ -138,10 +139,10 @@ def edge_prediction_metrics_multisample(
     for i in range(adj_matrices_predicted.shape[0]):
         adj_matrix_predicted = adj_matrices_predicted[i, :, :]  # (n, n)
         results_local = edge_prediction_metrics(adj_matrix_true, adj_matrix_predicted, adj_matrix_mask=adj_matrix_mask)
-        for k in results_local:
+        for k, result in results_local.items():
             if k not in results:
                 results[k] = []
-            results[k].append(results_local[k])
+            results[k].append(result)
 
     if compute_mean:
         return {key: np.mean(val) for key, val in results.items()}

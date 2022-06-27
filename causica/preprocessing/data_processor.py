@@ -11,9 +11,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.utils.validation import check_is_fitted
 from tqdm import tqdm
 
-from ..datasets.itext_embedding_model import ITextEmbeddingModel
-from ..datasets.intervention_data import InterventionData
 from ..datasets.dataset import CausalDataset, Dataset, SparseDataset, TemporalDataset
+from ..datasets.intervention_data import InterventionData
+from ..datasets.itext_embedding_model import ITextEmbeddingModel
 from ..datasets.variables import Variables
 from .transforms import IdentityTransform, UnitScaler
 

@@ -7,10 +7,8 @@ import pytest
 from scipy.sparse import csr_matrix
 
 from causica.baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
-from causica.datasets.intervention_data import InterventionData
-from causica.models.deci.deci import DECI
-from causica.models.deci.fold_time_deci import FoldTimeDECI
 from causica.datasets.dataset import Dataset, SparseDataset
+from causica.datasets.intervention_data import InterventionData
 from causica.datasets.variables import Variable, Variables
 from causica.experiment.steps.eval_step import (
     eval_causal_discovery,
@@ -19,10 +17,12 @@ from causica.experiment.steps.eval_step import (
     evaluate_treatment_effect_estimation,
     run_eval_main,
 )
+from causica.models.deci.deci import DECI
+from causica.models.deci.fold_time_deci import FoldTimeDECI
 from causica.models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForInterventions
 from causica.utils.io_utils import read_json_as, save_json
-from ..utils.mock_model_for_objective import MockModelForObjective
 
+from ..utils.mock_model_for_objective import MockModelForObjective
 
 # pylint: disable=redefined-outer-name
 

@@ -1,5 +1,6 @@
-import torch
 import pytest
+import torch
+
 from causica.models.deci.generation_functions import TemporalContractiveInvertibleGNN, TemporalFGNNI
 
 

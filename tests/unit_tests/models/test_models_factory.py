@@ -1,9 +1,9 @@
 import pytest
 
 from causica.datasets.variables import Variable, Variables
-from causica.models_factory import create_set_encoder, create_model
 from causica.models.point_net import PointNet, SparsePointNet
 from causica.models.transformer_set_encoder import TransformerSetEncoder
+from causica.models_factory import create_model, create_set_encoder
 
 
 @pytest.mark.parametrize(

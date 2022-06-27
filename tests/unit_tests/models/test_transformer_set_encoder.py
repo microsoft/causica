@@ -1,14 +1,7 @@
 import pytest
 import torch
 
-from causica.models.transformer_set_encoder import (
-    ISAB,
-    MAB,
-    PMA,
-    SAB,
-    SetTransformer,
-    TransformerSetEncoder,
-)
+from causica.models.transformer_set_encoder import ISAB, MAB, PMA, SAB, SetTransformer, TransformerSetEncoder
 
 
 # pylint: disable=protected-access

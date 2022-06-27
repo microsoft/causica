@@ -17,7 +17,6 @@ from tqdm import trange
 
 from ..datasets.variables import Variable, Variables
 
-
 logger = logging.getLogger()
 
 

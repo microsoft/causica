@@ -1,12 +1,13 @@
-import os
 import argparse
+import os
+from typing import List, Optional, Tuple, Union
+
 import torch
-from typing import Union, List, Tuple, Optional
 
 from causica.models.deci.fold_time_deci import FoldTimeDECI
 from causica.models_factory import load_model
-from causica.utils.io_utils import read_json_as
 from causica.utils.helper_functions import convert_dict_of_lists_to_ndarray
+from causica.utils.io_utils import read_json_as
 
 
 def get_parser() -> argparse.ArgumentParser:

@@ -1,7 +1,8 @@
 from typing import Dict, Tuple
-import torch
+
 import pyro
 import pyro.distributions as dist
+import torch
 
 from .single_confounding_root import Parameters, SingleConfoundingRoot
 
