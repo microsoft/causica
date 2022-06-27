@@ -1,3 +1,5 @@
+[![Causica CI Build](https://github.com/microsoft/causica/actions/workflows/ci-build.yml/badge.svg)](https://github.com/microsoft/causica/actions/workflows/ci-build.yml)
+
 # Project Causica
 
 ## Overview

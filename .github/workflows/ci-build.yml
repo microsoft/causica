@@ -2,9 +2,9 @@ name: Causica CI Build
 
 on:
   push:
-    branches: [ $default-branch ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ $default-branch ]
+    branches: [ "main" ]
 
 jobs:
   build-linux:
@@ -14,17 +14,28 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Set up Python 3.8
-      uses: actions/setup-python@v3
       with:
-        python-version: 3.8
-    - name: Add conda to system path
-      run: |
-        # $CONDA is an environment variable pointing to the root of the miniconda directory
-        echo $CONDA/bin >> $GITHUB_PATH
+        path: "repo"
+
+    - uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: "project-causica"
+        auto-activate-base: false
+        use-only-tar-bz2: true
+
+    - uses: actions/cache@v3
+      with:
+        path: /usr/share/miniconda/envs/project-causica
+        key: ${{ hashFiles('repo/environment.yml') }}
+      id: cache
+
     - name: Install dependencies
       run: |
-        conda env update --file environment.yml --name base
+        $CONDA/bin/conda env update --file repo/environment.yml
+      if: steps.cache.outputs.cache-hit != 'true'
+
     - name: Test with pytest
+      shell: bash -l {0}
       run: |
-        pytest tests/unit_tests
+        cd repo
+        python -m pytest ./tests/unit_tests
