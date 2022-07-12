@@ -87,9 +87,7 @@ def create_model(
     os.makedirs(save_dir)
 
     try:
-        return MODEL_SUBCLASSES[model_name].create(
-            model_id, save_dir, variables, model_config_dict, device=device
-        )
+        return MODEL_SUBCLASSES[model_name].create(model_id, save_dir, variables, model_config_dict, device=device)
     except KeyError as e:
         raise ModelClassNotFound() from e
 

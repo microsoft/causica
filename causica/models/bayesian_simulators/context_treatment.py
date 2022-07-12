@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import pyro
 import torch
@@ -66,7 +66,11 @@ class BayesianContextTreatmentModel(ABC, torch.nn.Module):
 
     @abstractmethod
     def sample_counterfactual_data(
-        self, parameters: Parameters, context: torch.Tensor, effect_variable: str, factual_outcome: str,
+        self,
+        parameters: Parameters,
+        context: torch.Tensor,
+        effect_variable: str,
+        factual_outcome: str,
     ):
         raise NotImplementedError()
 
@@ -81,7 +85,7 @@ class BayesianContextTreatmentModel(ABC, torch.nn.Module):
 
     def sample_joint(
         self, context_obs: torch.Tensor, context_test: Optional[torch.Tensor] = None, effect_variable: str = "y"
-    ) -> Tuple[torch.Tensor, ...]:
+    ) -> Tuple[Dict[str, torch.Tensor], Any, Any]:
         """
         Sample from the joint
             p(𝛙)p(y, m | c_obs, a_obs, c_test, 𝛙) if test context_test is specified
@@ -109,7 +113,7 @@ class BayesianContextTreatmentModel(ABC, torch.nn.Module):
             else:
                 return parameters, observations, optimal_treatment
 
-        return parameters, observations
+        return parameters, observations, None
 
     def forward(self, context_obs: torch.Tensor, context_test: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """

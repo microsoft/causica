@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -128,7 +128,7 @@ class DeterministicAdjacency(AdjMatrix):
         Args:
             device: Device used.
         """
-        self.adj_matrix = None
+        self.adj_matrix: Optional[torch.Tensor] = None
         self.device = device
 
     def set_adj_matrix(self, adj_matrix: np.ndarray) -> None:
@@ -141,6 +141,7 @@ class DeterministicAdjacency(AdjMatrix):
         """
         Returns the adjacency matrix.
         """
+        assert self.adj_matrix is not None
         return self.adj_matrix
 
     def entropy(self) -> torch.Tensor:
@@ -153,6 +154,7 @@ class DeterministicAdjacency(AdjMatrix):
         """
         Returns the adjacency matrix.
         """
+        assert self.adj_matrix is not None
         return self.adj_matrix
 
 
@@ -403,7 +405,7 @@ class TemporalThreeWayGrahpDist(ThreeWayGraphDist):
         input_dim: int,
         lag: int,
         tau_gumbel: float = 1.0,
-        init_logits: Optional[Tuple[float, float]] = None,
+        init_logits: Optional[List[float]] = None,
     ):
         """
         This creates an instance of variational distribution for temporal adjacency matrix.

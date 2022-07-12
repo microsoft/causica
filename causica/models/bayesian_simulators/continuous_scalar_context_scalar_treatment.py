@@ -59,7 +59,7 @@ class ContinuousContextAndTreatment(SingleConfoundingRoot):
         Returns:
             A tensor of shape [batch_size_psi, batch_size_context]
         """
-        return parameters["psi0"] + parameters["psi1"] * context - parameters["psi2"] * context ** 2
+        return parameters["psi0"] + parameters["psi1"] * context - parameters["psi2"] * context**2
 
     def sample_observational_data(
         self,
@@ -124,6 +124,6 @@ class ContinuousContextAndTreatment(SingleConfoundingRoot):
                 )
                 ** 2
             )
-            - self.cost_weight * optimal_treatment ** 2
+            - self.cost_weight * optimal_treatment**2
         )
         return max_reward, optimal_treatment

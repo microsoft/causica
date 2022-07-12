@@ -1,7 +1,7 @@
 # This is temporary file to keep logic (as functions), which probably
 # shouldn't be steps on their own, but rather be part of each step (i.e. dataset loading)
 import os
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Callable, Dict, Tuple, Union
 
 from ...datasets.dataset import CausalDataset, Dataset, SparseDataset
 from ...datasets.datasets_factory import create_dataset_loader
@@ -14,6 +14,7 @@ def load_data(
     dataset_config: Dict[str, Any],
     model_config: Dict[str, Any],
     tiny: bool,
+    download_dataset: Callable[[str, str], None],
 ):
     use_predefined_dataset = dataset_config.get("use_predefined_dataset", False)
     dataset_test_fraction = dataset_config.get("test_fraction", 0.1) if not use_predefined_dataset else None
@@ -28,6 +29,11 @@ def load_data(
 
     dataset_loader = create_dataset_loader(data_dir=data_dir, dataset_name=dataset_name, dataset_format=dataset_format)
     max_num_rows = 10 if tiny else None
+
+    if not os.path.isdir(dataset_loader.dataset_dir):
+        dataset_dir, dataset_name = os.path.split(dataset_loader.dataset_dir)
+        download_dataset(dataset_name, dataset_dir)
+
     if use_predefined_dataset:
         dataset = dataset_loader.load_predefined_dataset(
             max_num_rows=max_num_rows,
@@ -36,7 +42,6 @@ def load_data(
             negative_sample=negative_sample,
             timeseries_column_index=timeseries_column_index,
         )
-
     if not use_predefined_dataset:
         dataset = dataset_loader.split_data_and_load_dataset(
             test_frac=dataset_test_fraction,

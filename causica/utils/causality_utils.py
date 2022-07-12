@@ -12,7 +12,9 @@ from ..utils.torch_utils import LinearModel, MultiROFFeaturiser
 from .evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
 
 
-def intervene_graph(adj_matrix: torch.Tensor, intervention_idxs: torch.Tensor, copy_graph: bool = True) -> torch.Tensor:
+def intervene_graph(
+    adj_matrix: torch.Tensor, intervention_idxs: Optional[torch.Tensor], copy_graph: bool = True
+) -> torch.Tensor:
     """
     Simulates an intervention by removing all incoming edges for nodes being intervened
 
@@ -31,11 +33,27 @@ def intervene_graph(adj_matrix: torch.Tensor, intervention_idxs: torch.Tensor, c
     return adj_matrix
 
 
-def intervention_to_tensor(intervention_idxs, intervention_values, group_mask, device):
+def intervention_to_tensor(
+    intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]],
+    intervention_values: Optional[Union[torch.Tensor, np.ndarray]],
+    group_mask,
+    device,
+    is_temporal: bool = False,
+) -> Tuple[Optional[torch.Tensor], ...]:
     """
     Maps empty interventions to nan and np.ndarray intervention data to torch tensors.
-    Converts indices to a mask using the group_mask.
+    Converts indices to a mask using the group_mask. If the intervention format is temporal, set is_temporal to True.
+    Args:
+        intervention_idxs: np.ndarray or torch.Tensor with shape [num_interventions] (for static data) or [num_interventions, 2] (for temporal data).
+        intervention_values: np.ndarray or torch.Tensor with shape [proc_dims] storing the intervention values corresponding to the intervention_idxs.
+        group_mask: np.ndarray, a mask of shape (num_groups, num_processed_cols) indicating which column
+            corresponds to which group.
+        is_temporal: Whether intervention_idxs in temporal 2D format.
+
+    Returns:
+
     """
+
     intervention_mask = None
 
     if intervention_idxs is not None and intervention_values is not None:
@@ -50,10 +68,49 @@ def intervention_to_tensor(intervention_idxs, intervention_values, group_mask, d
 
         intervention_mask = get_mask_from_idxs(intervention_idxs, group_mask, device)
 
-    return intervention_idxs, intervention_mask, intervention_values
+        if is_temporal:
+            raise NotImplementedError
+        #     intervention_mask = get_mask_from_idxs(intervention_idxs, group_mask, device)
+        # else:
+        #     intervention_idxs, intervention_mask, intervention_values = get_mask_and_value_from_temporal_idxs(
+        #         intervention_idxs, intervention_values, group_mask, device
+        #     )
+
+    assert intervention_idxs is None or isinstance(intervention_idxs, torch.Tensor)
+    assert intervention_values is None or isinstance(intervention_values, torch.Tensor)
+    return intervention_idxs, intervention_mask, intervention_values  # type: ignore
 
 
-def get_mask_from_idxs(idxs, group_mask, device):
+def get_mask_and_value_from_temporal_idxs(
+    intervention_idxs: torch.Tensor,
+    intervention_values: Optional[torch.Tensor],
+    group_mask: np.ndarray,
+    device: torch.device,
+) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    """
+    This is to generate re-ordered intervention_idxs, intervention_mask and intervention_values from original intervention_idxs. This can handle
+    arbitrary ordering in original intervention_idxs.
+    Args:
+        intervention_idxs: torch.Tensor with shape [num_interventions, 2], storing the indices of intervened variable and time step
+        intervention_values: torch.Tensor with shape [proc_dim], storing the intervention values corresponding to intervention_idxs. If None, return None as well.
+        group_mask: np.ndarray, a mask of shape (num_groups, num_processed_cols) indicating which column
+            corresponds to which group.
+    Returns:
+        intervention_idxs: re-ordered intervention_idxs with shape [num_interventions, 2], corresponding to intervention_mask
+        intervention_mask: torch.Tensor, a binary mask with shape [time_length, data_proc_dim]
+        intervention_values: torch.Tensor with shape [proc_dim], this is a re-ordered version corresponding to intervention_mask
+    """
+    # The key issue is how to perform re-ordering according to intervention_mask. We adopt the following approach:
+    # (1) Create surrogate_intervention_values with shape [time_length, data_proc_dim] and value nan. (2) iterate through
+    # each intervened variables in original intervention_idxs, and assign True to corresponding intervention_mask and corresponding values
+    # to surrogate_intervention_values. (3) Then flatten the surrogate_intervention_values and remove all nan values in it, the resulting array will have
+    # the order that is consistent with intervention_mask. The re-ordering of intervention_idxs can be done in a similar way, where the surrogate_intervention_idxs
+    # (shape [time_length, num_nodes]) contains the indices instead.
+
+    raise NotImplementedError
+
+
+def get_mask_from_idxs(idxs, group_mask, device) -> torch.Tensor:
     """
     Generate mask for observations or samples from indices using group_mask
     """
@@ -231,7 +288,7 @@ def get_cate_from_samples(
     conditioning_mask: torch.Tensor,
     conditioning_values: torch.Tensor,
     effect_mask: torch.Tensor,
-    variables: Variables,
+    variables: Optional[Variables] = None,
     normalise: bool = False,
     rff_lengthscale: Union[int, float, List[float], Tuple[float, ...]] = (0.1, 1),
     rff_n_features: int = 3000,
@@ -560,7 +617,7 @@ def int2binlist(i: int, n_bits: int):
     return [int(i) for i in str_list]
 
 
-def approximate_maximal_acyclic_subgraph(adj_matrix: np.ndarray, n_samples: int = 10):
+def approximate_maximal_acyclic_subgraph(adj_matrix: np.ndarray, n_samples: int = 10) -> np.ndarray:
     """
     Compute an (approximate) maximal acyclic subgraph of a directed non-dag but removing at most 1/2 of the edges
     See Vazirani, Vijay V. Approximation algorithms. Vol. 1. Berlin: springer, 2001, Page 7;
@@ -587,7 +644,7 @@ def approximate_maximal_acyclic_subgraph(adj_matrix: np.ndarray, n_samples: int 
     return adj_dag
 
 
-def cpdag2dags(cp_mat: np.ndarray, samples: Optional[int] = None):
+def cpdag2dags(cp_mat: np.ndarray, samples: Optional[int] = None) -> np.ndarray:
     """
     Compute all possible DAGs contained within a Markov equivalence class, given by a CPDAG
     Args:

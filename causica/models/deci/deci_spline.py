@@ -34,7 +34,7 @@ class DECISpline(DECI):
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
         cate_rff_n_features: int = 3000,
-        cate_rff_lengthscale: Union[int, float, List[float], Tuple[float]] = (0.1, 1),
+        cate_rff_lengthscale: Union[int, float, List[float], Tuple[float, float]] = (0.1, 1),
         prior_A: Union[torch.Tensor, np.ndarray] = None,
         prior_A_confidence: float = 0.5,
     ):

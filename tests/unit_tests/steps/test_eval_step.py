@@ -10,6 +10,7 @@ from causica.baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
 from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.intervention_data import InterventionData
 from causica.datasets.variables import Variable, Variables
+from causica.experiment.run_context import MockMetricLogger
 from causica.experiment.steps.eval_step import (
     eval_causal_discovery,
     eval_individual_treatment_effects,
@@ -584,7 +585,7 @@ def test_evaluate_treatment_effect_estimation(
         },
     )
 
-    model.run_train(causal_dataset_no_conditioning)
+    model.run_train(causal_dataset_no_conditioning, metrics_logger=MockMetricLogger())
 
     with patch("causica.experiment.steps.eval_step.eval_treatment_effects") as mock_eval_treatment_effects:
         with patch(

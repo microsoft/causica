@@ -226,7 +226,7 @@ def get_parser() -> argparse.ArgumentParser:
         "-ct",
         type=str.lower,
         default="full_time",
-        choices=["ful_time", "auto_regressive"],
+        choices=["ful_time"],
         help="The type of conversion used for converting the temporal adjacency matrix to a static adjacency matrix during causal discovery evaluation",
     )
 

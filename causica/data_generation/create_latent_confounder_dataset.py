@@ -31,9 +31,7 @@ def is_confounder(adj_matrix: np.ndarray, idx: int) -> bool:
     return adj_matrix[:, idx].sum() == 0 and adj_matrix[idx, :].sum() > 1
 
 
-def move_confounder_idxs_last(
-    adj_matrix: np.ndarray, confounder_idxs: List[int]
-) -> np.ndarray:
+def move_confounder_idxs_last(adj_matrix: np.ndarray, confounder_idxs: List[int]) -> np.ndarray:
     """Updates the adjacency matrix by moving confounder indices to the end.
 
     Args:
@@ -59,9 +57,7 @@ def move_confounder_idxs_last(
     return new_adj_matrix
 
 
-def drop_variables_from_interventions(
-    intervention_data: np.ndarray, variable_idxs: List[int]
-) -> np.ndarray:
+def drop_variables_from_interventions(intervention_data: np.ndarray, variable_idxs: List[int]) -> np.ndarray:
     """Updates the intervention data by removing latent confounder information.
 
     Args:
@@ -91,22 +87,12 @@ def drop_variables_from_counterfactuals(
         Update counterfactual data.
     """
     for datum in counterfactual_data:
-        datum["conditioning"] = np.delete(
-            datum["conditioning"], variable_idxs, 1
-        ).tolist()
-        datum["effect_mask"] = np.delete(
-            datum["effect_mask"], variable_idxs, 0
-        ).tolist()
-        datum["intervention"] = np.delete(
-            datum["intervention"], variable_idxs, 0
-        ).tolist()
-        datum["intervention_samples"] = np.delete(
-            datum["intervention_samples"], variable_idxs, 1
-        ).tolist()
+        datum["conditioning"] = np.delete(datum["conditioning"], variable_idxs, 1).tolist()
+        datum["effect_mask"] = np.delete(datum["effect_mask"], variable_idxs, 0).tolist()
+        datum["intervention"] = np.delete(datum["intervention"], variable_idxs, 0).tolist()
+        datum["intervention_samples"] = np.delete(datum["intervention_samples"], variable_idxs, 1).tolist()
         datum["reference"] = np.delete(datum["reference"], variable_idxs, 0).tolist()
-        datum["reference_samples"] = np.delete(
-            datum["reference_samples"], variable_idxs, 1
-        ).tolist()
+        datum["reference_samples"] = np.delete(datum["reference_samples"], variable_idxs, 1).tolist()
 
     return counterfactual_data
 
@@ -121,52 +107,32 @@ def main(datadir: str, savedir: str):
     # Create directory to store the modified dataset.
     os.makedirs(savedir, exist_ok=False)
 
-    adj_matrix = pd.read_csv(
-        os.path.join(datadir, "adj_matrix.csv"), header=None
-    ).to_numpy()
+    adj_matrix = pd.read_csv(os.path.join(datadir, "adj_matrix.csv"), header=None).to_numpy()
     confounder_idxs = get_confounder_idxs(adj_matrix)
     adj_matrix = move_confounder_idxs_last(adj_matrix, confounder_idxs)
-    np.savetxt(
-        os.path.join(savedir, "adj_matrix.csv"), adj_matrix, delimiter=",", fmt="%i"
-    )
+    np.savetxt(os.path.join(savedir, "adj_matrix.csv"), adj_matrix, delimiter=",", fmt="%i")
 
     if os.path.exists(os.path.join(datadir, "intervention.csv")):
-        intervention_data = pd.read_csv(
-            os.path.join(datadir, "intervention.csv"), header=None
-        ).to_numpy()
-        intervention_data = drop_variables_from_interventions(
-            intervention_data, confounder_idxs
-        )
-        np.savetxt(
-            os.path.join(savedir, "interventions.csv"), intervention_data, delimiter=","
-        )
+        intervention_data = pd.read_csv(os.path.join(datadir, "intervention.csv"), header=None).to_numpy()
+        intervention_data = drop_variables_from_interventions(intervention_data, confounder_idxs)
+        np.savetxt(os.path.join(savedir, "interventions.csv"), intervention_data, delimiter=",")
 
     if os.path.exists(os.path.join(datadir, "counterfactuals.json")):
-        counterfactual_data = read_json_as(
-            os.path.join(datadir, "counterfactuals.json"), list
-        )
-        counterfactual_data = drop_variables_from_counterfactuals(
-            counterfactual_data, confounder_idxs
-        )
+        counterfactual_data = read_json_as(os.path.join(datadir, "counterfactuals.json"), list)
+        counterfactual_data = drop_variables_from_counterfactuals(counterfactual_data, confounder_idxs)
         save_json(counterfactual_data, os.path.join(savedir, "counterfactuals.json"))
 
     for name in ["all", "train", "test"]:
         if os.path.exists(os.path.join(datadir, f"{name}.csv")):
-            data = pd.read_csv(
-                os.path.join(datadir, f"{name}.csv"), header=None
-            ).to_numpy()
+            data = pd.read_csv(os.path.join(datadir, f"{name}.csv"), header=None).to_numpy()
             data = np.delete(data, confounder_idxs, 1)
             np.savetxt(os.path.join(savedir, f"{name}.csv"), data, delimiter=",")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-datadir", help="Directory containing the original dataset.", type=str
-    )
-    parser.add_argument(
-        "-savedir", help="Directory to save the new dataset to.", type=str
-    )
+    parser.add_argument("-datadir", help="Directory containing the original dataset.", type=str)
+    parser.add_argument("-savedir", help="Directory to save the new dataset to.", type=str)
     parsed_args = parser.parse_args()
 
     main(parsed_args.datadir, parsed_args.savedir)

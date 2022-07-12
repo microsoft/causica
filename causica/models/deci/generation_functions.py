@@ -1,9 +1,7 @@
-from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Type
 
 import torch
 from torch import nn
-from torch.nn import Module
 
 from ...utils.torch_utils import generate_fully_connected
 
@@ -17,7 +15,7 @@ class ContractiveInvertibleGNN(nn.Module):
         self,
         group_mask: torch.Tensor,
         device: torch.device,
-        norm_layer: Optional[Module] = None,
+        norm_layer: Optional[Type[nn.LayerNorm]] = None,
         res_connection: bool = True,
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
@@ -80,7 +78,7 @@ class ContractiveInvertibleGNN(nn.Module):
         intervention_mask: Optional[torch.Tensor] = None,
         intervention_values: Optional[torch.Tensor] = None,
         gumbel_max_regions: Optional[List[List[int]]] = None,
-        gt_zero_region: Optional[List[List[int]]] = None,
+        gt_zero_region: Optional[List[int]] = None,
     ):
         """
         Given exogenous noise Z, computes the corresponding set of observations X, subject to an optional intervention
@@ -130,7 +128,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         group_mask: torch.Tensor,
         lag: int,
         device: torch.device,
-        norm_layer: Optional[Module] = None,
+        norm_layer: Optional[Type[nn.LayerNorm]] = None,
         res_connection: bool = True,
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
@@ -210,6 +208,8 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         X_history: torch.Tensor,
         gumbel_max_regions: Optional[List[List[int]]] = None,
         gt_zero_region: Optional[List[List[int]]] = None,
+        intervention_mask: Optional[torch.Tensor] = None,
+        intervention_values: Optional[torch.Tensor] = None,
     ):
         """
         This method simulates the SEM of the AR-DECI model, given forward time span, conditioned history, and exogenous noise Z.
@@ -228,6 +228,9 @@ class TemporalContractiveInvertibleGNN(nn.Module):
                 sampled by applying the max operator.
             gt_zero_region: a list of indices such that X[a] should be thresholded to equal 1, if positive, 0 if negative. This is used to sample
                 binary random variables. This also uses the Gumbel max trick implicitly
+            intervention_mask: A mask of the interventions with shape [time_length, data_proc_dim]. If None or all elements are False, it means no interventions.
+            intervention_values: The values of the interventions with shape [proc_dim] (Note proc_dim is not the same as data_proc_dim since proc_dim depends on the num_intervened_variables).
+            If None, it means no interventions.
         Returns:
             The history+simulated observations with shape [batch_size, history_length+time_span, processed_dim_all].
             The simulated observations with shape [batch_size, time_span, processed_dim_all].
@@ -260,10 +263,18 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         # Loop over the entire time span to generate the observations for each time step. At each time step, we generate the observations
         # and update X_all and X_simulate accordingly. At the next time step, we use the updated X_all to generate the observations.
         # For future support of interventions, one can add the intervention logic before each generation, similar to static version.
+
+        if intervention_mask is not None and intervention_values is not None:
+            # Convert the time_length in intervention mask to be compatible with X_all
+            pass
+
         for time in range(time_span):
             # Loop over num_nodes to propagate the instantaneous effect
             for _ in range(self.num_nodes):
                 # Add intervention logic here.
+                if intervention_mask is not None and intervention_values is not None:
+                    # Assign the intervention values to the corresponding indices in X_all, specified by intervention_mask
+                    pass
                 # Generate the observations based on the history (given history + previously-generated observations)
                 # and exogenous noise Z.
                 start_idx = size_history + time - self.lag
@@ -282,54 +293,17 @@ class TemporalContractiveInvertibleGNN(nn.Module):
 
                 X_all[:, size_history + time, :] = generated_observations
 
-        X_simulate = X_all[:, size_history:, :].clone()  # shape [batch_size, time_span, proc_dim]
-
         # Add intervention logic here to make sure the generated observations respect the intervened values.
+        if intervention_mask is not None and intervention_values is not None:
+            # assign intervention_values to X_all at corresponding index specified by intervention_mask
+            pass
+
+        X_simulate = X_all[:, size_history:, :].clone()  # shape [batch_size, time_span, proc_dim]
 
         return X_all, X_simulate
 
 
-class FunctionSEM(ABC, nn.Module):
-    """
-    Function SEM. Defines the (possibly nonlinear) function f for the additive noise SEM.
-    """
-
-    def __init__(
-        self,
-        group_mask: torch.Tensor,
-        device: torch.device,
-    ):
-        """
-        Args:
-            group_mask: A mask of shape (num_nodes, num_processed_cols) such that group_mask[i, j] = 1 when col j is in group i.
-            device: Device used.
-        """
-        super().__init__()
-        self.group_mask = group_mask
-        self.num_nodes, self.processed_dim_all = group_mask.shape
-        self.device = device
-
-    @abstractmethod
-    def feed_forward(self, X: torch.Tensor, W_adj: torch.Tensor) -> torch.Tensor:
-        """
-        Computes function f(X) using the given weighted adjacency matrix.
-
-        Args:
-            X: Batched inputs, size (B, n).
-            W_adj: Weighted adjacency matrix, size (n, n).
-        """
-        raise NotImplementedError()
-
-    def initialize_embeddings(self) -> torch.Tensor:
-        """
-        Initialize the node embeddings.
-        """
-        aux = torch.randn(self.num_nodes, self.embedding_size, device=self.device) * 0.01  # (N, E)
-        return nn.Parameter(aux, requires_grad=True)
-
-
-# TODO: remove parent class, as it now has a single child
-class FGNNI(FunctionSEM):
+class FGNNI(nn.Module):
     """
     Defines the function f for the SEM. For each variable x_i we use
     f_i(x) = f(e_i, sum_{k in pa(i)} g(e_k, x_k)), where e_i is a learned embedding
@@ -342,7 +316,7 @@ class FGNNI(FunctionSEM):
         device: torch.device,
         embedding_size: Optional[int] = None,
         out_dim_g: Optional[int] = None,
-        norm_layer: Optional[Module] = None,
+        norm_layer: Optional[Type[nn.LayerNorm]] = None,
         res_connection: bool = False,
         layers_g: Optional[List[int]] = None,
         layers_f: Optional[List[int]] = None,
@@ -358,7 +332,10 @@ class FGNNI(FunctionSEM):
             layers_f: Size of the layers of NN f. Does not include input nor output dim. If none, default
                       is [a], with a = max(2 * input_dim, embedding_size, 10)
         """
-        super().__init__(group_mask, device)
+        super().__init__()
+        self.group_mask = group_mask
+        self.num_nodes, self.processed_dim_all = group_mask.shape
+        self.device = device
         # Initialize embeddings
         self.embedding_size = embedding_size or self.processed_dim_all
         self.embeddings = self.initialize_embeddings()  # Shape (input_dim, embedding_size)
@@ -425,6 +402,13 @@ class FGNNI(FunctionSEM):
         X_rec = X_rec * self.group_mask  # Shape (batch_size, num_nodes, processed_dim_all)
         return X_rec.sum(1)  # Shape (batch_size, processed_dim_all)
 
+    def initialize_embeddings(self) -> torch.Tensor:
+        """
+        Initialize the node embeddings.
+        """
+        aux = torch.randn(self.num_nodes, self.embedding_size, device=self.device) * 0.01  # (N, E)
+        return nn.Parameter(aux, requires_grad=True)
+
 
 class TemporalFGNNI(FGNNI):
     """
@@ -442,7 +426,7 @@ class TemporalFGNNI(FGNNI):
         lag: int,
         embedding_size: Optional[int] = None,
         out_dim_g: Optional[int] = None,
-        norm_layer: Optional[Module] = None,
+        norm_layer: Optional[Type[nn.LayerNorm]] = None,
         res_connection: bool = False,
         layers_g: Optional[List[int]] = None,
         layers_f: Optional[List[int]] = None,

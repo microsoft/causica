@@ -8,6 +8,7 @@ import torch
 
 from ...datasets.dataset import CausalDataset
 from ...datasets.variables import Variables
+from ...experiment.imetrics_logger import IMetricsLogger
 from ..do_why import DoWhy
 from .end2end_causal import End2endCausal
 
@@ -44,6 +45,7 @@ class TrueGraphDoWhy(End2endCausal):
     def run_train(  # type:ignore
         self,
         dataset: CausalDataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -54,12 +56,16 @@ class TrueGraphDoWhy(End2endCausal):
 
         assert isinstance(dataset, CausalDataset)
         self.adjacency_matrix = dataset.get_adjacency_data_matrix()
+        assert isinstance(self.inference_model, DoWhy)
         self.inference_model.graph = DoWhy.str_to_dot(
             self.inference_model.graph_from_adjacency(self.adjacency_matrix).source
         )
 
         self.inference_model.run_train(
-            dataset=dataset, train_config_dict=inference_config, report_progress_callback=report_progress_callback
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=inference_config,
+            report_progress_callback=report_progress_callback,
         )
 
     # TODO: remove this method, use parent's implementation and change parent's implementation to create object of class it was called on by using relfection

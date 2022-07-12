@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "causica"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = []
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "~3.8"
+tqdm = "^4.64.0"
+numpy = "^1.22.4"
+torch = "^1.12.0"
+pyro-ppl = "^1.8.1"
+jaxlib = "^0.3.10"
+scipy = "^1.8.1"
+scikit-learn = "^1.1.1"
+pandas = "^1.4.2"
+matplotlib = "^3.5.2"
+seaborn = "^0.11.2"
+tensorboard = "^2.9.0"
+jupyter = "^1.0.0"
+jupytext = "^1.13.8"
+gitpython = "^3.1.27"
+networkx = "^2.8.3"
+igraph = "^0.9.10"
+numpyro = "^0.9.2"
+econml = "^0.12.0"
+graphviz = "^0.17"
+lingam = "1.5.5"
+gcastle = {git = "https://github.com/confoundry/trustworthyAI.git", rev = "a768c0a"}
+dowhy = {git = "https://github.com/microsoft/dowhy.git", rev = "8b2cf6a"}
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.1.2"
+pytest-cov = "^3.0.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

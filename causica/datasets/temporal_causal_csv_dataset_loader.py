@@ -63,8 +63,7 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         logger.info(
             f"Splitting temporal data to load the dataset: test fraction: {test_frac}, validation fraction: {val_frac}."
         )
-        data_path = os.path.join(self._dataset_dir, self._all_data_file)
-        self._download_data_if_necessary(self._dataset_dir)
+        data_path = os.path.join(self.dataset_dir, self._all_data_file)
 
         if not os.path.exists(data_path):
             raise FileNotFoundError(f"The required temporal data file not found: {data_path}.")
@@ -260,6 +259,17 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         train_data, train_mask = dataset._train_data, dataset._train_mask
         test_data, test_mask = dataset._test_data, dataset._test_mask
         val_data, val_mask = dataset._val_data, dataset._val_mask
+
+        # Process variable_dict by removing the index variable
+        variable_dict = self._load_variables_dict()
+        if variable_dict is not None:
+            assert "variables" in variable_dict, "variable dict must define variables."
+            assert (
+                len(variable_dict["variables"]) == train_data.shape[-1]
+            ), f"Variables dims ({len(variable_dict['variables'])}) must match the data dims ({train_data.shape[-1]})"
+            # Delete column index variable from variable_dict
+            del variable_dict["variables"][timeseries_column_index]
+
         # Process dataset
         proc_train_data, proc_train_mask, train_segmentation = self._remove_series_index_and_generate_segmentation(
             train_data, train_mask, timeseries_column_index
@@ -273,8 +283,8 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
                 val_data, val_mask, timeseries_column_index
             )
 
-        # Re-infer the variables without the series index
-        variables = Variables.create_from_data_and_dict(proc_train_data, proc_train_mask, variables_dict=None)
+        # Re-infer the variables through the processed variable dict
+        variables = Variables.create_from_data_and_dict(proc_train_data, proc_train_mask, variables_dict=variable_dict)
 
         # Modify the dataset
         dataset._train_data, dataset._train_mask, dataset.train_segmentation = (
@@ -375,7 +385,7 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
 
     def _get_adjacency_data(self):
 
-        adjacency_data_path = os.path.join(self._dataset_dir, self._adjacency_data_file)
+        adjacency_data_path = os.path.join(self.dataset_dir, self._adjacency_data_file)
 
         adjacency_file_exists = all([os.path.exists(adjacency_data_path)])
 
@@ -393,7 +403,7 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         Return the stored adjacency prior with its corresponding mask.
         """
 
-        prior_adjacency_data_path = os.path.join(self._dataset_dir, self._adjacency_prior)
+        prior_adjacency_data_path = os.path.join(self.dataset_dir, self._adjacency_prior)
 
         if os.path.exists(prior_adjacency_data_path):
             logger.info("DAG prior adjacency matrix found.")
@@ -408,7 +418,7 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
 
     def _get_transition_matrix(self):
 
-        transition_matrix_path = os.path.join(self._dataset_dir, self._transition_matrix_file)
+        transition_matrix_path = os.path.join(self.dataset_dir, self._transition_matrix_file)
 
         transition_matrix_file_exists = all([os.path.exists(transition_matrix_path)])
 

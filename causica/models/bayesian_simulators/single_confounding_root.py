@@ -24,11 +24,18 @@ class SingleConfoundingRoot(BayesianContextTreatmentModel):
         )
 
     def sample_interventional_data(
-        self, parameters: Parameters, context: torch.Tensor, effect_variable: str = "y",
+        self,
+        parameters: Parameters,
+        context: torch.Tensor,
+        effect_variable: str = "y",
     ):
         return self.sample_observational_data(parameters, context, effect_variable)
 
     def sample_counterfactual_data(
-        self, parameters: Parameters, context: torch.Tensor, effect_variable: str, factual_outcome,
+        self,
+        parameters: Parameters,
+        context: torch.Tensor,
+        effect_variable: str,
+        factual_outcome,
     ) -> torch.Tensor:
         raise NotImplementedError()

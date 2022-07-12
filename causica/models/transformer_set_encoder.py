@@ -350,7 +350,7 @@ class MAB(torch.nn.Module):
         query = query.permute(1, 0, 2)
         key = key.permute(1, 0, 2)
 
-        # PyTorch MultiheadAttention uses opposite convention to Azua for masks: 'True' means 'hidden'.
+        # PyTorch MultiheadAttention uses opposite convention to Causica for masks: 'True' means 'hidden'.
         if key_mask is None:
             # Everything is observed.
             inverted_key_mask = None

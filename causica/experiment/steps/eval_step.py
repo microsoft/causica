@@ -374,7 +374,7 @@ def eval_treatment_effects(
         name_prepend: Optional string that will be prepended to the json save name and logged metrics.
              This allows us to distinguish results from end2end models from results computed with downstream models (models that require graph as input, like DoWhy)
         eval_likelihood: Optional bool flag that will disable the log likelihood evaluation
-        process_data: Whether to apply the data processor to the interventional data. This is done for Azua-internal models such as DECI, and not for DoWhy.
+        process_data: Whether to apply the data processor to the interventional data. This is done for internal models such as DECI, and not for DoWhy.
 
     This requires the model to implement methods sample() to sample from the model distribution with interventions
      and log_prob() to evaluate the density of test samples under interventions

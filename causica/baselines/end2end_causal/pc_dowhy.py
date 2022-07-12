@@ -1,11 +1,13 @@
 # This is required in python 3 to allow return types of the same class.
 from __future__ import annotations
 
-from typing import Any, Dict, Type, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
 
 import torch
 
+from ...datasets.dataset import Dataset
 from ...datasets.variables import Variables
+from ...experiment.imetrics_logger import IMetricsLogger
 from ..do_why import DoWhy
 from ..pc import PC
 from .end2end_causal import End2endCausal
@@ -77,3 +79,33 @@ class PCDoWhy(End2endCausal):
     @classmethod
     def name(cls) -> str:
         return "pc_dowhy"
+
+    def run_train(
+        self,
+        dataset: Dataset,
+        metrics_logger: IMetricsLogger,
+        train_config_dict: Optional[Dict[str, Any]] = None,
+        report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    ) -> None:
+        if train_config_dict is None:
+            train_config_dict = {}
+
+        discovery_config, inference_config = self.split_configs(train_config_dict)
+        assert self.discovery_model is not None
+        self.discovery_model.run_train(
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=discovery_config,
+            report_progress_callback=report_progress_callback,
+        )
+        assert isinstance(self.inference_model, DoWhy)
+        self.inference_model.load_graph_from_discovery_model(
+            self.discovery_model, samples=inference_config["max_graph_samples"]
+        )
+
+        self.inference_model.run_train(
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=inference_config,
+            report_progress_callback=report_progress_callback,
+        )

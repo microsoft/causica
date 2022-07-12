@@ -14,7 +14,7 @@ The second type of decision made in many domains is intervention, which can be s
 With these decision-making goals, one can use our codebase in an end-to-end way for decision-making. We also provide the flexibility to use any core functionalities such as missing value prediction, best next question, causal discovery, causal inference, etc, separately depending on the users' needs.     
 
 Our technology has enabled personalized decision-making in real-world systems, combining multiple advanced research methodologies in simple APIs suitable 
-for research development in the research community, and commercial use by data scientists and developers. For commercial applications, please reach out to us at  azua-request@microsoft.com  if you are interested in using our technology as a service. 
+for research development in the research community, and commercial use by data scientists and developers. For commercial applications, please reach out to us at  causica-request@microsoft.com  if you are interested in using our technology as a service. 
 
 This project splits causal end to end code from the Azua repo found here [Azua](https://github.com/microsoft/project-azua).
 
@@ -301,3 +301,17 @@ If you have used the models in our code base, please consider to cite the corres
 Other references:
 - Louizos, Christos, et al. "Causal effect inference with deep latent-variable models." Advances in neural information processing systems 30 (2017).
 - Hill, Jennifer L. "Bayesian nonparametric modeling for causal inference." Journal of Computational and Graphical Statistics 20.1 (2011): 217-240.
+
+## Development
+
+### Poetry
+
+We use Poetry to manage the project dependencies, they're specified in the [pyproject.toml](pyproject.toml). To install poetry run:
+
+```
+    curl -sSL https://install.python-poetry.org | python3 -
+```
+
+To install the environment run `poetry install`, this will create a virtualenv that you can use by running either `poetry shell` or `poetry run {command}`. It's also a virtualenv that you can interact with in the normal way too.
+
+More information about poetry can be found [here](https://python-poetry.org/)

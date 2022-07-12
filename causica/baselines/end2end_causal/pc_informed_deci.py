@@ -7,7 +7,9 @@ import torch
 
 from ...datasets.dataset import Dataset
 from ...datasets.variables import Variables
+from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.deci.deci import DECI
+from ..castle_causal_learner import CastleCausalLearner
 from ..pc import PC
 from .end2end_causal import End2endCausal
 
@@ -47,6 +49,7 @@ class PCInformedDECI(End2endCausal):
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -56,21 +59,30 @@ class PCInformedDECI(End2endCausal):
         discovery_config, inference_config = self.split_configs(train_config_dict)
         assert self.discovery_model is not None
         self.discovery_model.run_train(
-            dataset=dataset, train_config_dict=discovery_config, report_progress_callback=report_progress_callback
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=discovery_config,
+            report_progress_callback=report_progress_callback,
         )
 
+        assert isinstance(self.inference_model, DECI)
+        assert isinstance(self.discovery_model, CastleCausalLearner)
         self.inference_model.prior_A.data = torch.tensor(self.discovery_model.causal_learner.causal_matrix).to(
             dtype=self.inference_model.prior_A.dtype, device=self.inference_model.prior_A.device
         )
         assert "prior_A_confidence" in self.inference_config.keys()
         self.inference_model.run_train(
-            dataset=dataset, train_config_dict=inference_config, report_progress_callback=report_progress_callback
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=inference_config,
+            report_progress_callback=report_progress_callback,
         )
 
     def get_adj_matrix(self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False):
         """
         Returns adjacency learnt by DECI (the discovery-inference model) as a numpy array
         """
+        assert isinstance(self.inference_model, DECI)
         return self.inference_model.get_adj_matrix(
             do_round=do_round, samples=samples, most_likely_graph=most_likely_graph
         )

@@ -269,14 +269,14 @@ def test_log_prob(tmpdir_factory, model_config, variables):
         if variable.type_ == "binary":
             X[:, region] = (X[:, region] > 0.5).float()
 
-    deterministic_log_p0 = model.log_prob(X, Nsamples=100, most_likely_graph=True)
+    deterministic_log_p0 = model.log_prob(X, Nsamples_per_graph=100, most_likely_graph=True)
 
-    deterministic_log_p1 = model.log_prob(X, Nsamples=1, most_likely_graph=True)
+    deterministic_log_p1 = model.log_prob(X, Nsamples_per_graph=1, most_likely_graph=True)
 
     assert np.allclose(deterministic_log_p1, deterministic_log_p0)
 
     # This just tests that the stochastic mode runs
-    _ = model.log_prob(X, Nsamples=10, most_likely_graph=False)
+    _ = model.log_prob(X, Nsamples_per_graph=10, most_likely_graph=False)
 
     intervention_idxs = torch.tensor([0])
     intervention_values = torch.tensor([0.0])
