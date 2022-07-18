@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from adjacency_utils import edge_prediction_metrics_multisample
@@ -142,7 +142,7 @@ def write_score_file(
                 f.write(f"{key}: {value}\n")
 
 
-def evaluate_adjacency(solution_dir: str, prediction_dir: str) -> Dict[str, Any]:
+def evaluate_adjacency(solution_dir: str, prediction_dir: str) -> List[Any]:
     """Evaluate adjacency matrices
 
     Args:
@@ -164,7 +164,7 @@ def evaluate_adjacency(solution_dir: str, prediction_dir: str) -> Dict[str, Any]
     return adj_metrics
 
 
-def evaluate_ate(solution_dir: str, prediction_dir: str) -> Dict[str, Any]:
+def evaluate_ate(solution_dir: str, prediction_dir: str) -> List[Dict[str, Any]]:
     """Evaluate adjacency matrices
 
     Args:

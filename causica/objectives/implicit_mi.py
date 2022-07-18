@@ -65,7 +65,8 @@ class ImplicitMutualInformation(ABC):
             Estimated mean and standard error.
         """
         res = [-self.evaluate_loss(*args, **kwargs) for _ in range(n_reps)]
-        return np.mean(res), np.std(res) / math.sqrt(n_reps)
+
+        return float(np.mean(res)), float(np.std(res)) / math.sqrt(n_reps)
 
     def train_step(self, optim: pyro.optim.PyroOptim, *args, **kwargs):
         with pyro.poutine.trace(param_only=True) as param_capture:  # pylint: disable=not-callable

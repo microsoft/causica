@@ -1,4 +1,6 @@
 """Classes to enable models to optimise treatments."""
+from typing import Union
+
 import torch
 
 
@@ -12,7 +14,7 @@ class IdentityTreatmentPolicy(torch.nn.Module):
         else:
             self.register_buffer("treatment", treatment)
 
-    def forward(self) -> torch.Tensor:
+    def forward(self) -> Union[torch.Tensor, torch.nn.Module]:
         """Return the parameter unmodified"""
         return self.treatment
 
@@ -34,7 +36,7 @@ class GumbelSoftMaxPolicy(torch.nn.Module):
         return self.forward().detach()
 
     def forward(self) -> torch.Tensor:
-        return torch.nn.functional.gumbel_softmax(self.log_prob, tau=self.tau, hard=self.hard)
+        return torch.nn.functional.gumbel_softmax(self.log_prob, tau=self.tau, hard=self.hard)  # type: ignore
 
 
 class RandomTreatmentPolicy(torch.nn.Module):

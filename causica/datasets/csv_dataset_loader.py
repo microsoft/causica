@@ -52,8 +52,7 @@ class CSVDatasetLoader(DatasetLoader):
         """
         logger.info(f"Splitting data to load the dataset: test fraction: {test_frac}, validation fraction: {val_frac}.")
 
-        data_path = os.path.join(self._dataset_dir, self._all_data_file)
-        self._download_data_if_necessary(self._dataset_dir)
+        data_path = os.path.join(self.dataset_dir, self._all_data_file)
 
         if not os.path.exists(data_path):
             raise FileNotFoundError(f"The required data file not found: {data_path}.")
@@ -113,10 +112,9 @@ class CSVDatasetLoader(DatasetLoader):
         logger.info("Using a predefined data split to load the dataset.")
 
         # Download data
-        train_data_path = os.path.join(self._dataset_dir, self._train_data_file)
-        test_data_path = os.path.join(self._dataset_dir, self._test_data_file)
-        val_data_path = os.path.join(self._dataset_dir, self._val_data_file)
-        self._download_data_if_necessary(self._dataset_dir)
+        train_data_path = os.path.join(self.dataset_dir, self._train_data_file)
+        test_data_path = os.path.join(self.dataset_dir, self._test_data_file)
+        val_data_path = os.path.join(self.dataset_dir, self._val_data_file)
 
         # Loading train and test data - raise an error if not found
         if not os.path.exists(train_data_path):

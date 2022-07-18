@@ -4,9 +4,11 @@ import os
 from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
 
 import numpy as np
+from castle.common import BaseLearner
 
 from ..datasets.dataset import Dataset
 from ..datasets.variables import Variables
+from ..experiment.imetrics_logger import IMetricsLogger
 from ..models.imodel import IModelForCausalInference
 from ..models.model import Model
 from ..utils.io_utils import save_json
@@ -30,19 +32,19 @@ class CastleCausalLearner(Model, IModelForCausalInference):
     model_file = "model.pt"
 
     def __init__(
-        self, model_id: str, variables: Variables, save_dir: str, causal_learner: T, random_seed: int = 0
+        self, model_id: str, variables: Variables, save_dir: str, causal_learner: BaseLearner, random_seed: int = 0
     ) -> None:
         _ = random_seed
         super().__init__(model_id, variables, save_dir)
         self.causal_learner = causal_learner
 
-    def get_adj_matrix(self, nsamples=1):
-        _ = nsamples
+    def get_adj_matrix(self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False):
         return self.causal_learner.causal_matrix.astype(np.float64)
 
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:

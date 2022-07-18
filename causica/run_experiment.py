@@ -24,13 +24,10 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from dependency_injector.wiring import Provide, inject
 
-from . import experiment as cexperiment
-from . import models as cmodels
 from .argument_parser import get_parser, validate_args
-from .experiment.azua_context import AzuaContext
 from .experiment.run_aggregation import run_aggregation
+from .experiment.run_context import RunContext
 from .experiment.run_single_seed_experiment import ExperimentArguments, run_single_seed_experiment
 from .utils.configs import get_configs
 from .utils.run_utils import create_models_dir, find_local_model_dir
@@ -61,10 +58,10 @@ def split_configs(
     return configs
 
 
-@inject
 def run_experiment(
     dataset_name: str,
     model_config_path: Optional[str],
+    run_context: RunContext,
     data_dir: str = "data",
     model_type: str = "pvae",
     model_dir: Optional[str] = None,
@@ -87,7 +84,6 @@ def run_experiment(
     tiny: bool = False,
     random_seed: Optional[int] = None,
     default_configs_dir: str = "configs",
-    azua_context: AzuaContext = Provide[AzuaContext],
     logger_level: str = "INFO",
     eval_likelihood: bool = True,
     conversion_type: str = "full_time",
@@ -119,7 +115,7 @@ def run_experiment(
         time.sleep(1)
         models_dir = create_models_dir(output_dir=output_dir, name=name)
     experiment_name = f"{dataset_name}.{model_type}" if name is None else name
-    metrics_logger = azua_context.metrics_logger()
+    metrics_logger = run_context.metrics_logger
     aml_tags = {
         "model_type": model_type,
         "dataset_name": dataset_name,
@@ -145,7 +141,7 @@ def run_experiment(
     configs = split_configs(model_config, dataset_config)
     metrics_logger.set_tags({"num_samples": len(configs)})
 
-    pipeline = azua_context.pipeline()
+    pipeline = run_context.pipeline
     pipeline_creation_mode = pipeline is not None
     if pipeline_creation_mode:
         train_step_outputs: List[Any] = []
@@ -179,11 +175,12 @@ def run_experiment(
             model_seed=model_seed,
             aml_tags=aml_tags,
             logger_level=logger_level,
+            run_context=run_context,
             eval_likelihood=eval_likelihood,
             conversion_type=conversion_type,
         )
 
-        kwargs_file = azua_context.aml_step(
+        kwargs_file = run_context.aml_step(
             (lambda **kwargs: run_single_seed_experiment(ExperimentArguments(**kwargs))), pipeline_creation_mode
         )(**kwargs_dict)
 
@@ -201,8 +198,12 @@ def run_experiment(
     # inputs dirs will be explicitly specified (as they are in remote runs)
     input_dirs = [f.path for f in os.scandir(models_dir) if f.is_dir()]
 
-    kwargs_file = azua_context.aml_step(run_aggregation, pipeline_creation_mode)(
-        input_dirs=input_dirs, output_dir=models_dir, experiment_name=experiment_name, aml_tags=aml_tags
+    kwargs_file = run_context.aml_step(run_aggregation, pipeline_creation_mode)(
+        input_dirs=input_dirs,
+        output_dir=models_dir,
+        experiment_name=experiment_name,
+        aml_tags=aml_tags,
+        run_context=run_context,
     )
     if pipeline_creation_mode:
         pipeline.add_step(
@@ -217,7 +218,7 @@ def run_experiment(
     return models_dir
 
 
-def run_experiment_on_parsed_args(args: argparse.Namespace):
+def run_experiment_on_parsed_args(args: argparse.Namespace, run_context: RunContext):
 
     # Expand args for active learning
     if args.active_learning is not None and "all" in args.active_learning:
@@ -232,6 +233,7 @@ def run_experiment_on_parsed_args(args: argparse.Namespace):
     run_experiment(
         dataset_name=args.dataset_name,
         model_config_path=args.model_config,
+        run_context=run_context,
         data_dir=args.data_dir,
         model_type=args.model_type,
         model_dir=args.model_dir,
@@ -265,9 +267,8 @@ def main(user_args):
     args = parser.parse_args(user_args)
     validate_args(args)
 
-    azua_context = AzuaContext()
-    azua_context.wire(modules=[sys.modules[__name__]], packages=[cmodels, cexperiment])
-    run_experiment_on_parsed_args(args)
+    run_context = RunContext()
+    run_experiment_on_parsed_args(args, run_context=run_context)
 
 
 if __name__ == "__main__":

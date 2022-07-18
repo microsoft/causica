@@ -4,7 +4,7 @@ Helper functions.
 import os
 import sys
 from contextlib import contextmanager
-from typing import Dict, List, Tuple, TypeVar, overload
+from typing import Dict, List, Tuple, TypeVar, Union
 
 import git
 import numpy as np
@@ -29,22 +29,9 @@ def convert_dict_of_ndarray_to_lists(dict_):
     return {k: v.tolist() if isinstance(v, np.ndarray) else v for k, v in dict_.items()}
 
 
-@overload
 def to_tensors(
-    array1: np.ndarray,
-    array2: np.ndarray,
-    device: torch.device,
-    dtype: torch.dtype = torch.float,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    ...
-
-
-@overload
-def to_tensors(*arrays: np.ndarray, device: torch.device, dtype: torch.dtype = torch.float) -> Tuple[torch.Tensor, ...]:
-    ...
-
-
-def to_tensors(*arrays, device, dtype=torch.float):
+    *arrays: Union[torch.Tensor, np.ndarray], device: torch.device, dtype: torch.dtype = torch.float
+) -> Tuple[torch.Tensor, ...]:
     return tuple(torch.as_tensor(array, dtype=dtype, device=device) for array in arrays)
 
 

@@ -372,7 +372,7 @@ class VISL(PVAEBaseModel, IModelForCausalInference):
     def reconstruct(
         self,
         data: torch.Tensor,
-        mask: torch.Tensor,
+        mask: Optional[torch.Tensor],
         sample: bool = True,
         count: int = 1,
         only_forward: bool = False,
@@ -393,6 +393,7 @@ class VISL(PVAEBaseModel, IModelForCausalInference):
         """
 
         # Filling non-available values before applying the GNN-based VAE
+        assert mask is not None
         data_zi = data.clone()
         assert ((mask == 0.0) | (mask == 1.0)).all()
         if self.var_types == "continuous":

@@ -40,7 +40,8 @@ class ContinuousContextBinaryTreatment(SingleConfoundingRoot):
         if priors_on_parameters is None:
             priors_on_parameters = {
                 f"psi_{i}": dist.MultivariateNormal(
-                    torch.zeros((1, self.TREATMENT_DIM, latent_dim)), torch.eye(latent_dim),
+                    torch.zeros((1, self.TREATMENT_DIM, latent_dim)),
+                    torch.eye(latent_dim),
                 ).to_event(2)
                 for i in range(2)  # 2 layer NN
             }
@@ -50,7 +51,10 @@ class ContinuousContextBinaryTreatment(SingleConfoundingRoot):
         self.noise_scale = noise_scale
 
     @staticmethod
-    def _get_mean(parameters: Parameters, context: torch.Tensor,) -> torch.Tensor:
+    def _get_mean(
+        parameters: Parameters,
+        context: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Get the mean of the output distribution, i.e. sample:
 

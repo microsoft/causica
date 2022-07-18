@@ -413,7 +413,7 @@ def test_load_negative_sampling_levels_path_exists(tmpdir_factory):
     variables = Variables(
         [Variable(f"var_{i}", False, "binary", 0, 1) for i in range(10)], used_cols=list(range(10, 20))
     )
-    negative_sampling_levels_path = os.path.join(dataset_loader._dataset_dir, dataset_loader._negative_sampling_file)
+    negative_sampling_levels_path = os.path.join(dataset_loader.dataset_dir, dataset_loader._negative_sampling_file)
     levels = dataset_loader.load_negative_sampling_levels(negative_sampling_levels_path, variables)
     assert levels == {i: i for i in range(10)}
 
@@ -426,7 +426,7 @@ def test_load_negative_sampling_levels_path_does_not_exist(tmpdir_factory):
     variables = Variables(
         [Variable(f"var_{i}", False, "binary", 0, 1) for i in range(10)], used_cols=list(range(10, 20))
     )
-    negative_sampling_levels_path = os.path.join(dataset_loader._dataset_dir, dataset_loader._negative_sampling_file)
+    negative_sampling_levels_path = os.path.join(dataset_loader.dataset_dir, dataset_loader._negative_sampling_file)
     with pytest.raises(FileNotFoundError):
         _ = dataset_loader.load_negative_sampling_levels(negative_sampling_levels_path, variables)
 

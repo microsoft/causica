@@ -11,6 +11,7 @@ import torch
 
 from ...datasets.dataset import Dataset
 from ...datasets.variables import Variables
+from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.imodel import IModel, IModelForCausalInference, IModelForInterventions
 from ...models.model import Model
 from ...models.torch_model import _set_random_seed_and_remove_from_config
@@ -59,27 +60,15 @@ class End2endCausal(Model, IModelForCausalInference, IModelForInterventions):
 
         self.inference_model.save_dir = os.path.join(save_dir, self._inference_model_save_dir)
 
+    @abstractmethod
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
-        if train_config_dict is None:
-            train_config_dict = {}
-
-        discovery_config, inference_config = self.split_configs(train_config_dict)
-        assert self.discovery_model is not None
-        self.discovery_model.run_train(
-            dataset=dataset, train_config_dict=discovery_config, report_progress_callback=report_progress_callback
-        )
-        self.inference_model.load_graph_from_discovery_model(
-            self.discovery_model, samples=inference_config["max_graph_samples"]
-        )
-
-        self.inference_model.run_train(
-            dataset=dataset, train_config_dict=inference_config, report_progress_callback=report_progress_callback
-        )
+        pass
 
     def sample(
         self,
@@ -100,18 +89,23 @@ class End2endCausal(Model, IModelForCausalInference, IModelForInterventions):
 
     def log_prob(
         self,
-        X: torch.Tensor,
-        Nsamples: int = 100,
-        most_likely_graph: bool = False,
+        X: Union[torch.Tensor, np.ndarray],
         intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
-    ) -> np.ndarray:
+        conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        Nsamples_per_graph: int = 1,
+        Ngraphs: Optional[int] = 1000,
+        most_likely_graph: bool = False,
+        fixed_seed: Optional[int] = None,
+    ):
+
         """
         Evaluate log probability of observations from distribution over observations learned by the model. Optionally modify the distribution through interventions.
         """
         return self.inference_model.log_prob(
             X=X,
-            Nsamples=Nsamples,
+            Nsamples_per_graph=Nsamples_per_graph,
             most_likely_graph=most_likely_graph,
             intervention_idxs=intervention_idxs,
             intervention_values=intervention_values,
@@ -128,6 +122,7 @@ class End2endCausal(Model, IModelForCausalInference, IModelForInterventions):
         Nsamples_per_graph: int = 1,
         Ngraphs: Optional[int] = 1000,
         most_likely_graph: bool = False,
+        fixed_seed: Optional[int] = None,
     ):
         """
         Evaluate (optionally conditional) average treatment effect given the learnt causal model.
@@ -150,7 +145,7 @@ class End2endCausal(Model, IModelForCausalInference, IModelForInterventions):
         """
         _ = most_likely_graph
         assert self.discovery_model is not None
-        return self.discovery_model.get_adj_matrix(round=do_round, samples=samples)
+        return self.discovery_model.get_adj_matrix(do_round=do_round, samples=samples)
 
     @classmethod
     @abstractmethod

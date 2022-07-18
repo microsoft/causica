@@ -9,8 +9,9 @@ from typing import Any, Callable, Dict, Optional, Type, TypeVar, Union
 import numpy as np
 from lingam import VARLiNGAM as varlingam_alg
 
-from ..datasets.dataset import TemporalDataset
+from ..datasets.dataset import Dataset, TemporalDataset
 from ..datasets.variables import Variables
+from ..experiment.imetrics_logger import IMetricsLogger
 from ..models.imodel import IModelForCausalInference
 from ..models.model import Model
 from ..utils.io_utils import read_json_as, save_json, save_txt
@@ -77,7 +78,8 @@ class VARLiNGAM(Model, IModelForCausalInference):
 
     def run_train(
         self,
-        dataset: TemporalDataset,
+        dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -86,6 +88,8 @@ class VARLiNGAM(Model, IModelForCausalInference):
         data, _ = dataset.train_data_and_mask
 
         # Extract data and fit on longest series.
+        assert isinstance(dataset, TemporalDataset)
+        assert dataset.train_segmentation is not None
         longest_idx = np.argmax([seg[1] - seg[0] for seg in dataset.train_segmentation])
         longest_series = data[dataset.train_segmentation[longest_idx][0] : dataset.train_segmentation[longest_idx][1]]
         # Training

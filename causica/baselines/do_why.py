@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Type, TypeVar,
 import graphviz
 import numpy as np
 import pandas as pd
+import torch
 from dowhy import CausalModel
 from dowhy.causal_identifier import CausalIdentifier
 from joblib import Parallel, delayed
@@ -18,6 +19,7 @@ from sklearn.preprocessing import PolynomialFeatures
 
 from ..datasets.dataset import Dataset
 from ..datasets.variables import Variables
+from ..experiment.imetrics_logger import IMetricsLogger
 from ..models.imodel import IModelForInterventions
 from ..models.model import Model
 from ..utils.io_utils import save_json, save_txt
@@ -120,6 +122,7 @@ class DoWhy(Model, IModelForInterventions):
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -432,18 +435,17 @@ class DoWhy(Model, IModelForInterventions):
 
     def cate(
         self,
-        intervention_idxs: np.ndarray,
-        intervention_values: np.ndarray,
+        intervention_idxs: Union[torch.Tensor, np.ndarray],
+        intervention_values: Union[torch.Tensor, np.ndarray],
         reference_values: Optional[np.ndarray] = None,
         effect_idxs: Optional[np.ndarray] = None,
-        conditioning_idxs: Optional[np.ndarray] = None,
-        conditioning_values: Optional[np.ndarray] = None,
+        conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         Nsamples_per_graph: int = 1,
         Ngraphs: Optional[int] = 1000,
         most_likely_graph: bool = False,
         fixed_seed: Optional[int] = None,
     ):
-
         """
         Returns average treatment effect for a given intervention. Optionally, can condition on additional variables
 
@@ -462,6 +464,12 @@ class DoWhy(Model, IModelForInterventions):
         Returns:
             (ate, ate_norm): (np.ndarray, np.ndarray) both of size (input_dim) average treatment effect computed on regular and normalised data
         """
+        assert isinstance(intervention_idxs, np.ndarray)
+        assert isinstance(intervention_values, np.ndarray)
+        if conditioning_idxs is not None:
+            assert isinstance(conditioning_idxs, np.ndarray)
+        if conditioning_values is not None:
+            assert isinstance(conditioning_values, np.ndarray)
 
         if most_likely_graph:
             assert isinstance(self.graph, str)
@@ -513,18 +521,20 @@ class DoWhy(Model, IModelForInterventions):
         self,
         Nsamples: int = 100,
         most_likely_graph: bool = False,
-        intervention_idxs: Optional[np.ndarray] = None,
-        intervention_values: Optional[np.ndarray] = None,
+        intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
     ):
         raise NotImplementedError()
 
     def log_prob(
         self,
-        X: np.ndarray,
-        intervention_idxs: np.ndarray,
-        intervention_values: np.ndarray,
-        conditioning_idxs: Optional[np.ndarray] = None,
-        conditioning_values: Optional[np.ndarray] = None,
+        X: Union[torch.Tensor, np.ndarray],
+        intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        Nsamples_per_graph: int = 1,
+        Ngraphs: Optional[int] = 1000,
         most_likely_graph: bool = False,
         fixed_seed: Optional[int] = None,
     ):
@@ -548,6 +558,13 @@ class DoWhy(Model, IModelForInterventions):
         Returns:
             log_prob: torch.tensor  (Nsamples)
         """
+        assert isinstance(intervention_idxs, np.ndarray)
+        assert isinstance(intervention_values, np.ndarray)
+        if conditioning_idxs is not None:
+            assert isinstance(conditioning_idxs, np.ndarray)
+        if conditioning_values is not None:
+            assert isinstance(conditioning_values, np.ndarray)
+
         assert self._train_data is not None
         assert isinstance(self.graph, str)
         Ntrain = self._train_data.shape[0]

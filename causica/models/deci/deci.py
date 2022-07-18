@@ -11,14 +11,13 @@ import numpy as np
 import scipy
 import torch
 import torch.distributions as td
-from dependency_injector.wiring import Provide
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from ...datasets.dataset import CausalDataset, Dataset, TemporalDataset
 from ...datasets.variables import Variables
-from ...experiment.azua_context import AzuaContext
+from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.imodel import (
     IModelForCausalInference,
     IModelForCounterfactuals,
@@ -257,14 +256,14 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
         return var_dist_A
 
-    def _create_ICGNN_for_deci(self) -> nn.Module:
+    def _create_ICGNN_for_deci(self) -> ContractiveInvertibleGNN:
         """
         This creates the SEM used for DECI. For models that inherited from DECI, this function may need to be overwritten
         to generate different types of SEM.
         Returns:
             An instance of the ICGNN network
         """
-        SEM = ContractiveInvertibleGNN(
+        return ContractiveInvertibleGNN(
             torch.tensor(self.variables.group_mask),
             self.device,
             norm_layer=self.norm_layer,
@@ -272,7 +271,6 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             encoder_layer_sizes=self.encoder_layer_sizes,
             decoder_layer_sizes=self.decoder_layer_sizes,
         )
-        return SEM
 
     def set_graph_constraint(self, graph_constraint_matrix: Optional[np.ndarray]):
         if graph_constraint_matrix is None:
@@ -318,7 +316,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         graph_list = [nx.convert_matrix.from_numpy_matrix(adj_mat, create_using=nx.DiGraph) for adj_mat in adj_mats]
         return graph_list, adj_weights
 
-    def _generate_error_likelihoods(self, base_distribution_string: str, variables: Variables):
+    def _generate_error_likelihoods(self, base_distribution_string: str, variables: Variables) -> Dict[str, nn.Module]:
         """
         Instantiate error likelihood models for each variable in the SEM.
         For continuous variables, the likelihood is for an additive noise model whose exact form is determined by
@@ -339,11 +337,12 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             A dictionary from variable type to the likelihood distribution(s) for variables of that type.
         """
 
-        conditional_dists = {}
+        conditional_dists: Dict[str, nn.Module] = {}
         typed_regions = variables.processed_cols_by_type
         # Continuous
         continuous_range = [i for region in typed_regions["continuous"] for i in region]
         if continuous_range:
+            dist: nn.Module
             if base_distribution_string == "fixed_gaussian":
                 dist = GaussianBase(len(continuous_range), device=self.device, train_base=False)
             if base_distribution_string == "gaussian":
@@ -425,7 +424,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
     def get_weighted_adj_matrix(
         self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False, squeeze: bool = False
-    ) -> np.ndarray:
+    ) -> torch.Tensor:
         """
         Returns the weighted adjacency matrix (or several) as a numpy array.
         """
@@ -564,45 +563,44 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         self,
         intervention_idxs: Union[torch.Tensor, np.ndarray],
         intervention_values: Union[torch.Tensor, np.ndarray],
-        reference_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
-        effect_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        reference_values: Optional[np.ndarray] = None,
+        effect_idxs: Optional[np.ndarray] = None,
         conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         Nsamples_per_graph: int = 2,
         Ngraphs: Optional[int] = 1000,
         most_likely_graph: bool = False,
+        fixed_seed: Optional[int] = None,
     ):
+
         """Returns average treatment effect for a given intervention.
 
         Computes and returns the average treatment effect for a given intervention with the option of conditioning on
         additional variables.
 
         Args:
-            intervention_idxs: torch.Tensor of shape (input_dim) array containing indices of variables that have been
-                intervened.
-            intervention_values: torch.Tensor of shape (input_dim) array containing values for variables that have been
-                iintervened.
-            reference_values: optional torch.Tensor containing a reference value for the treatment. If specified will
-                compute E[Y | do(T=k), X] - E[Y | do(T=k'), X]. Otherwise will compute
-                E[Y | do(T=k), X] - E[Y | X] = E[Y | do(T=k), X] - E[Y | do(T=mu_T), X]
+            intervention_idxs: torch.Tensor of shape (input_dim) array containing indices of variables that have been intervened.
+            intervention_values: torch.Tensor of shape (input_dim) array containing values for variables that have been iintervened.
+            reference_values: optional torch.Tensor containing a reference value for the treatment. If specified will compute E[Y | do(T=k), X] - E[Y | do(T=k'), X].
+                Otherwise will compute E[Y | do(T=k), X] - E[Y | X] = E[Y | do(T=k), X] - E[Y | do(T=mu_T), X]
             effect_idxs:  optional torch.Tensor containing indices on which treatment effects should be evaluated
-            conditioning_idxs: torch.Tensor of shape (input_dim) optional array containing indices of variables that we
-                condition on.
-            conditioning_values: torch.Tensor of shape (input_dim) optional array containing values for variables that
-                we condition on.
+            conditioning_idxs: torch.Tensor of shape (input_dim) optional array containing indices of variables that we condition on.
+            conditioning_values: torch.Tensor of shape (input_dim) optional array containing values for variables that we condition on.
             Nsamples_per_graph: int containing number of samples to draw
-            Ngraphs: Number of different graphs to sample for graph posterior marginalisation. If None, defaults to
-                Nsamples
-            most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the
-                approximate posterior or to draw a new graph for every sample
+            Ngraphs: Number of different graphs to sample for graph posterior marginalisation. If None, defaults to Nsamples
+            most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the approximate posterior or to draw a new graph for every sample
+            fixed_seed: The integer to seed the random number generator (unused)
 
 
         Returns:
             (ate, ate_norm): (np.ndarray, np.ndarray) both of size (input_dim) average treatment effect computed on
                 regular and normalised data
         """
+        if fixed_seed is not None:
+            raise NotImplementedError("Fixed seed not supported by DECI")
+
         assert Nsamples_per_graph > 1, "Nsamples_per_graph must be greater than 1"
-        intervention_idxs, _, intervention_values = intervention_to_tensor(
+        intervention_idxs_tensor, _, intervention_values_tensor = intervention_to_tensor(
             intervention_idxs, intervention_values, group_mask=self.variables.group_mask, device=self.device
         )
         assert Ngraphs is not None, "Ngraphs must be specified"
@@ -617,7 +615,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                 reference_samples = self.sample(
                     Nsamples=Nsamples,
                     most_likely_graph=most_likely_graph,
-                    intervention_idxs=intervention_idxs,
+                    intervention_idxs=intervention_idxs_tensor,
                     intervention_values=reference_values,
                     samples_per_graph=Nsamples_per_graph,
                 ).detach()
@@ -625,8 +623,8 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             model_intervention_samples = self.sample(
                 Nsamples=Nsamples,
                 most_likely_graph=most_likely_graph,
-                intervention_idxs=intervention_idxs,
-                intervention_values=intervention_values,
+                intervention_idxs=intervention_idxs_tensor,
+                intervention_values=intervention_values_tensor,
                 samples_per_graph=Nsamples_per_graph,
             ).detach()
 
@@ -649,6 +647,8 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     int(Ngraphs), int(Nsamples_per_graph), -1
                 )  # (Ngraphs, samples_per_graph, input_dim)
 
+                assert conditioning_mask is not None
+                assert conditioning_values is not None
                 model_cate = get_cate_from_samples(
                     intervened_samples=model_intervention_samples,
                     baseline_samples=reference_samples,
@@ -708,9 +708,12 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         reference_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        effect_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        Nsamples_per_graph: int = 1,
         Ngraphs: int = 100,
         most_likely_graph: bool = False,
-    ) -> np.ndarray:
+        fixed_seed: Optional[int] = None,
+    ):
         """Calculate the individual treatment effect on interventions on observations X.
 
         Args:
@@ -719,24 +722,34 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             intervention_values: torch.Tensor of shape (input_dim) optional array containing values for variables that have been intervened.
             reference_values: optional torch.Tensor containing a reference value for the treatment. If specified will compute
                 E_{graph}[X_{T=k} | X, T_obs] - E_{graph}[X_{T=k'} | X, T_obs]. Otherwise will compute E_{graph}[X_{T=k} | X, T_obs] - X
-            Nsamples: int containing number of graph samples to draw.
-            most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the approximate posterior instead of sampling graphs
+            effect_idxs:  optional torch.Tensor containing indices on which treatment effects should be evaluated
+            Nsamples_per_graph: int containing number of graph samples to draw.
+            Ngraphs: Number of different graphs to sample for graph posterior marginalisation. If None, defaults to Nsamples
+            most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the approximate posterior or to draw a new graph for every sample
+            fixed_seed: The integer to seed the random number generator (unused)
 
         Returns:
             two ndarrays of shape (Nsamples, input_dim) containing the unnormalised and normalised individual treatment effect
             calculated over interventions of observations X.
         """
+        if fixed_seed is not None:
+            raise NotImplementedError("Fixed seed not supported by DECI")
+
         with torch.no_grad():
             W_adjs = self.get_weighted_adj_matrix(do_round=True, samples=Ngraphs, most_likely_graph=most_likely_graph)
 
             # Get counterfactual/reference samples averaged over graphs
             counterfactuals = np.sum(
-                (self._counterfactual(X, W_adj, intervention_idxs, intervention_values) for W_adj in W_adjs), axis=0
+                # requires type ignore as np.sum shouldn't work with a generator
+                (self._counterfactual(X, W_adj, intervention_idxs, intervention_values) for W_adj in W_adjs),
+                axis=0,  # type: ignore
             ) / len(W_adjs)
 
             if reference_values:
                 reference_counterfactuals = np.sum(
-                    (self._counterfactual(X, W_adj, intervention_idxs, reference_values) for W_adj in W_adjs), axis=0
+                    # requires type ignore as np.sum shouldn't work with a generator
+                    (self._counterfactual(X, W_adj, intervention_idxs, reference_values) for W_adj in W_adjs),
+                    axis=0,  # type: ignore
                 ) / len(W_adjs)
 
             else:
@@ -824,7 +837,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
     def _counterfactual(
         self,
-        X: torch.Tensor,
+        X: Union[torch.Tensor, np.ndarray],
         W_adj: torch.Tensor,
         intervention_idxs: Union[torch.Tensor, np.ndarray] = None,
         intervention_values: Union[torch.Tensor, np.ndarray] = None,
@@ -892,12 +905,16 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
     def log_prob(
         self,
-        X: torch.Tensor,
-        Nsamples: int = 100,
-        most_likely_graph: bool = False,
+        X: Union[torch.Tensor, np.ndarray],
         intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
-    ) -> np.ndarray:
+        conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        Nsamples_per_graph: int = 1,
+        Ngraphs: Optional[int] = 1000,
+        most_likely_graph: bool = False,
+        fixed_seed: Optional[int] = None,
+    ):
 
         """
         Evaluate log-probability of observations X. Optionally this evaluation can be subject to an intervention on our causal model.
@@ -909,12 +926,21 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the approximate posterior instead of sampling graphs
             intervention_idxs: torch.Tensor of shape (input_dim) optional array containing indices of variables that have been intervened.
             intervention_values: torch.Tensor of shape (input_dim) optional array containing values for variables that have been intervened.
+            conditioning_idxs: torch.Tensor of shape (input_dim) optional array containing indices of variables that we condition on.
+            conditioning_values: torch.Tensor of shape (input_dim) optional array containing values for variables that we condition on.
+            Nsamples_per_graph: int containing number of samples to draw
+            Ngraphs: Number of different graphs to sample for graph posterior marginalisation. If None, defaults to Nsamples
+            most_likely_graph: bool indicatng whether to deterministically pick the most probable graph under the approximate posterior or to draw a new graph for every sample
+            fixed_seed: The integer to seed the random number generator (unused)
 
         Returns:
             log_prob: torch.tensor  (Nsamples)
         """
 
-        # TODO: move these lines into .log_prob(), add dimmention check to sampling / ate code as well
+        if fixed_seed is not None:
+            raise NotImplementedError("Fixed seed not supported by DECI")
+
+        # TODO: move these lines into .log_prob(), add dimmension check to sampling / ate code as well
 
         (X,) = to_tensors(X, device=self.device, dtype=torch.float)
 
@@ -930,9 +956,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             log_prob_samples = []
 
             if most_likely_graph:
-                Nsamples = 1
+                Nsamples_per_graph = 1
 
-            for _ in range(Nsamples):
+            for _ in range(Nsamples_per_graph):
 
                 W_adj = self.get_weighted_adj_matrix(
                     do_round=most_likely_graph, samples=1, most_likely_graph=most_likely_graph, squeeze=True
@@ -943,8 +969,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                 predict = self.ICGNN.predict(X, W_adj)
                 log_prob_samples.append(self._log_prob(X, predict, intervention_mask))  # (B)
 
-            log_prob_samples = torch.stack(log_prob_samples, dim=0)
-            log_prob = torch.logsumexp(log_prob_samples, dim=0) - np.log(Nsamples)
+            log_prob = torch.logsumexp(torch.stack(log_prob_samples, dim=0), dim=0) - np.log(Nsamples_per_graph)
             return log_prob.detach().cpu().numpy().astype(np.float64)
 
     def get_params_variational_distribution(
@@ -994,18 +1019,18 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         vamp_prior_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
         average: bool = True,
     ) -> np.ndarray:
-        data = torch.from_numpy(data.astype(np.float32)).to(self.device)
-        mask = torch.from_numpy(mask.astype(np.float32)).to(self.device)
-        mean, scale = self.get_params_variational_distribution(data, mask)
+        data_tensor = torch.from_numpy(data.astype(np.float32)).to(self.device)
+        mask_tensor = torch.from_numpy(mask.astype(np.float32)).to(self.device)
+        mean, scale = self.get_params_variational_distribution(data_tensor, mask_tensor)
         if average:
-            sample = data * mask + mean * (1.0 - mask)
+            sample = data_tensor * mask_tensor + mean * (1.0 - mask_tensor)
             return mean.detach().cpu().numpy()
         else:
             var_dist = td.Normal(mean, scale)
-            samples = []
             assert impute_config_dict is not None
+            samples = []
             for _ in range(impute_config_dict["sample_count"]):
-                sample = data * mask + var_dist.sample() * (1.0 - mask)
+                sample = data_tensor * mask_tensor + var_dist.sample() * (1.0 - mask_tensor)
                 samples.append(sample)
             return torch.stack(samples).detach().cpu().numpy()
 
@@ -1108,8 +1133,8 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         h_filled = np.mean(tracker["imputation_entropy"])
         reconstr = np.mean(tracker["reconstruction_mse"])
         print(
-            f"Inner Step: {inner_step}, loss: {loss:.2f}, log p(x|A): {log_p_x:.2f}, dag: {penalty_dag:.8f}, \
-                log p(A)_sp: {log_p_A_sparse:.2f}, log q(A): {log_q_A:.3f}, H filled: {h_filled:.3f}, rec: {reconstr:.3f}"
+            f"Inner Step: {inner_step}, loss: {loss:.2f}, log p(x|A): {log_p_x:.2f}, dag: {penalty_dag:.8f}, "
+            f"log p(A)_sp: {log_p_A_sparse:.2f}, log q(A): {log_q_A:.3f}, H filled: {h_filled:.3f}, rec: {reconstr:.3f}"
         )
 
     def process_dataset(
@@ -1117,7 +1142,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         dataset: Dataset,
         train_config_dict: Optional[Dict[str, Any]] = None,
         variables: Optional[Variables] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Generates the training data and mask.
         Args:
@@ -1148,7 +1173,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         return data, mask
 
     def _create_dataset_for_deci(
-        self, dataset: Union[CausalDataset, TemporalDataset], train_config_dict: Dict[str, Any]
+        self, dataset: Dataset, train_config_dict: Dict[str, Any]
     ) -> Tuple[Union[DataLoader, FastTensorDataLoader], int]:
         """
         Create a data loader. For static deci, return an instance of FastTensorDataLoader, along with the number of samples.
@@ -1169,9 +1194,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
-        azua_context: AzuaContext = Provide[AzuaContext],
     ) -> None:
         """
         Runs training.
@@ -1185,7 +1210,6 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         train_output_dir = os.path.join(self.save_dir, "train_output")
         os.makedirs(train_output_dir, exist_ok=True)
         writer = SummaryWriter(os.path.join(train_output_dir, "summary"), flush_secs=1)
-        metrics_logger = azua_context.metrics_logger()
 
         rho = train_config_dict["rho"]
         alpha = train_config_dict["alpha"]
@@ -1195,7 +1219,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
         # This allows the setting of the starting learning rate of each of the different submodules in the config, e.g. "likelihoods_learning_rate".
         parameter_list = [
-            {"params": module.parameters(), "lr": train_config_dict.get(f"{name}_learning_rate", base_lr)}
+            {"params": module.parameters(), "lr": train_config_dict.get(f"{name}_learning_rate", base_lr), "name": name}
             for name, module in self.named_children()
         ]
 
@@ -1234,7 +1258,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             print(f"Dag penalty after inner: {dag_penalty:.10f}")
             print("Time taken for this step", outer_step_time)
-            print(self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1))
+            matrix = self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1)
+            prob_matrix = self.get_adj_matrix(do_round=False, most_likely_graph=True, samples=1)
+            print("Unrounded adj matrix:")
+            print(prob_matrix)
+            print(f"Number of edges in adj matrix (unrounded) {prob_matrix.sum()}, (rounded) {matrix.sum()}.")
 
             # Update alpha (and possibly rho) if inner optimization done or if 2 consecutive not-done
             if done_inner or num_not_done == 1:
@@ -1269,7 +1297,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                                 adj_true,
                                 adj_matrix,
                                 is_static=(self.name() == "fold_time_deci"),
-                                adj_matrix_2_lag=self.lag,
+                                adj_matrix_2_lag=self.lag,  # type: ignore
                             )
                             adj_true = convert_temporal_to_static_adjacency_matrix(
                                 adj_true, conversion_type="full_time"
@@ -1305,7 +1333,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             if dag_penalty_prev is not None:
                 print(f"Dag penalty: {dag_penalty:.15f}")
-                print(f"Rho: {alpha:.2f}, alpha: {rho:.2f}")
+                print(f"Rho: {rho:.2f}, alpha: {alpha:.2f}")
 
     def optimize_inner_auglag(
         self,
@@ -1331,15 +1359,17 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             for param_group in self.opt.param_groups:
                 param_group["lr"] = param_group["lr"] * factor
 
-        def initialize_lr(val):
+        def initialize_lr():
+            base_lr = train_config_dict["learning_rate"]
             for param_group in self.opt.param_groups:
-                param_group["lr"] = val
+                name = param_group["name"]
+                param_group["lr"] = train_config_dict.get(f"{name}_learning_rate", base_lr)
 
         lim_updates_down = 3
         num_updates_lr_down = 0
         auglag_inner_early_stopping_lag = train_config_dict.get("auglag_inner_early_stopping_lag", 1500)
         auglag_inner_reduce_lr_lag = train_config_dict.get("auglag_inner_reduce_lr_lag", 500)
-        initialize_lr(train_config_dict["learning_rate"])
+        initialize_lr()
         print("LR:", get_lr())
         best_loss = np.nan
         last_updated = -1
@@ -1374,10 +1404,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
                 inner_step += 1
 
-                if int(inner_step) % 500 == 0:
+                if int(inner_step) % 100 == 0:
                     self.print_tracker(inner_step, tracker_loss_terms)
+                if int(inner_step) % 500 == 0:
                     break
-                elif inner_step == train_config_dict["max_auglag_inner_epochs"]:
+                elif inner_step >= train_config_dict["max_auglag_inner_epochs"]:
                     break
 
             # Save if loss improved
@@ -1431,7 +1462,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         ],
         num_posterior_samples: int = 100,
         most_likely_graph: bool = False,
-        budget: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        budget: Optional[torch.Tensor] = None,
         reference_intervention: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes optimal actions to maximise the objective function under the posterior, subject to a budget.
@@ -1514,7 +1545,7 @@ def _log_epoch_metrics(
     """
     Logging method for DECI training loop
     Args:
-        metrics_logger: azua context metrics logger
+        metrics_logger: metrics logger
         writer: tensorboard summarywriter used to log experiment results
         tracker_loss_terms: dictionary containing arrays with values generated at each inner-step during the inner optimisation procedure
         adj_metrics: Optional dictionary with adjacency matrixx discovery metrics

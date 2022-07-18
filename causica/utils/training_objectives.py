@@ -25,6 +25,7 @@ def get_input_and_scoring_masks(
         data to the model for reconstruction/imputation. scoring_mask (also, unprocessed mask) indicates which entries
         in the output should be included when calculating negative log-likelihood loss.
     """
+
     if max_p_train_dropout > 0:
         p_missing = torch.rand(mask.shape[0], 1) * max_p_train_dropout
         input_mask = mask * torch.bernoulli(1.0 - p_missing.expand_as(mask)).to(mask.dtype).to(mask.device)

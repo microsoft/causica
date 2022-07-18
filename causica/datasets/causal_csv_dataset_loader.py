@@ -109,7 +109,7 @@ class CausalCSVDatasetLoader(CSVDatasetLoader):
 
     def _get_adjacency_data(self):
 
-        adjacency_data_path = os.path.join(self._dataset_dir, self._adjacency_data_file)
+        adjacency_data_path = os.path.join(self.dataset_dir, self._adjacency_data_file)
 
         adjacency_file_exists = all([os.path.exists(adjacency_data_path)])
 
@@ -139,7 +139,7 @@ class CausalCSVDatasetLoader(CSVDatasetLoader):
         """
 
         intervention_data_path = os.path.join(
-            self._dataset_dir,
+            self.dataset_dir,
             self._counterfactual_data_basefilename if is_counterfactual else self._intervention_data_basefilename,
         )
 

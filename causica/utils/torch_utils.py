@@ -1,11 +1,11 @@
 import random
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch
 import torch.distributions as dist
 from scipy.sparse import csr_matrix, issparse
-from torch.nn import Dropout, Linear, Module, Sequential
+from torch.nn import Dropout, LayerNorm, Linear, Module, Sequential
 from torch.utils.data import BatchSampler, DataLoader, Dataset, RandomSampler, Sampler, SequentialSampler, TensorDataset
 
 from ..utils.helper_functions import to_tensors
@@ -76,12 +76,12 @@ def generate_fully_connected(
     input_dim: int,
     output_dim: int,
     hidden_dims: List[int],
-    non_linearity: Optional[Module],
-    activation: Optional[Module],
+    non_linearity: Optional[Type[Module]],
+    activation: Optional[Type[Module]],
     device: torch.device,
     p_dropout: float = 0.0,
     init_method: str = "default",
-    normalization: Optional[Module] = None,
+    normalization: Optional[Type[LayerNorm]] = None,
     res_connection: bool = False,
 ) -> Module:
     """
@@ -261,7 +261,7 @@ class LinearModel:
             + torch.eye(features.shape[1], dtype=features.dtype, device=features.device) * prior_precision
         )
 
-        self.w = torch.solve(features.T, self.posterior_prec)[0] @ targets
+        self.w = torch.linalg.solve(self.posterior_prec, features.T) @ targets
 
     def predict(self, features: torch.Tensor, compute_covariance=False):
         """
@@ -278,7 +278,7 @@ class LinearModel:
 
         pred_mu = features @ self.w
         if compute_covariance:
-            pred_cov = features @ torch.solve(features.T, self.posterior_prec)[0]
+            pred_cov = features @ torch.linalg.solve(self.posterior_prec, features.T)
         else:
             pred_cov = None
 

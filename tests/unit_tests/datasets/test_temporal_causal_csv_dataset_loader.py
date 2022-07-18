@@ -6,6 +6,7 @@ import pytest
 
 from causica.datasets.dataset import TemporalDataset
 from causica.datasets.temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
+from causica.utils.io_utils import save_json
 
 
 # pylint: disable=protected-access
@@ -33,6 +34,29 @@ def check_temporal_order(dataset: TemporalDataset) -> bool:
             cur_max = max(dataset.data_split[split])
 
     return True
+
+
+@pytest.fixture
+def variable_data_example():
+    data = np.stack([np.arange(10), np.ones(10), np.arange(10, 20)], 1)
+    variable_orig_type = {
+        "variables": [
+            {"name": "Column", "type": "categorical"},
+            {"name": "Column 0", "type": "categorical"},
+            {"name": "Column 1", "type": "continuous"},
+        ]
+    }
+    variable_cts = {
+        "variables": [
+            {"name": "Column", "type": "categorical"},
+            {"name": "Column 0", "type": "continuous"},
+            {"name": "Column 1", "type": "continuous"},
+        ]
+    }
+    variable_wrong_number = {
+        "variables": [{"name": "data column", "type": "categorical"}, {"name": "Column 0", "type": "categorical"}]
+    }
+    return data, variable_orig_type, variable_cts, variable_wrong_number
 
 
 def test_split_data_and_load_dataset(tmpdir_factory):
@@ -169,13 +193,11 @@ def train_test_val_time_series():
 
 
 # pylint: disable=redefined-outer-name
-def test_process_dataset(tmpdir_factory, train_test_val_time_series):
+def test_process_dataset(tmpdir_factory, variable_data_example):
     dataset_dir = tmpdir_factory.mktemp("dataset_dir")
-    train_data, test_data, val_data = train_test_val_time_series
+    (train_data, variable_orig_type, variable_cts, variable_wrong_number) = variable_data_example
 
     pd.DataFrame(train_data).to_csv(os.path.join(dataset_dir, "train.csv"), header=None, index=None)
-    pd.DataFrame(val_data).to_csv(os.path.join(dataset_dir, "val.csv"), header=None, index=None)
-    pd.DataFrame(test_data).to_csv(os.path.join(dataset_dir, "test.csv"), header=None, index=None)
 
     dataset_loader = TemporalCausalCSVDatasetLoader(dataset_dir=dataset_dir)
 
@@ -185,21 +207,28 @@ def test_process_dataset(tmpdir_factory, train_test_val_time_series):
     assert isinstance(dataset, TemporalDataset)
     assert dataset._train_data.shape[1] == 2
     assert dataset._train_data.shape[0] == 10
-    assert dataset.train_segmentation == [(0, 1), (2, 2), (3, 5), (6, 9)]
+    assert dataset.train_segmentation == [(i, i) for i in range(10)]
 
-    # test test_segmentation
-    assert dataset._test_data.shape[1] == 2
-    assert dataset._test_data.shape[0] == 6
-    assert dataset._test_segmentation == [(0, 0), (1, 1), (2, 2), (3, 5)]
-
-    # test val_segmentation
-    assert dataset._val_data.shape[1] == 2
-    assert dataset._val_data.shape[0] == 5
-    assert dataset._val_segmentation == [(0, 4)]
-
-    # test variables
+    # test variable type: cat and cts
+    save_json(variable_orig_type, os.path.join(dataset_dir, "variables.json"))
+    dataset_loader = TemporalCausalCSVDatasetLoader(dataset_dir=dataset_dir)
+    dataset = dataset_loader.load_predefined_dataset(max_num_rows=None, column_index=0)
+    assert len(dataset._variables) == 2
     assert dataset._variables[0].type_ == "categorical"
-    assert dataset._variables[1].type_ == "categorical"
+    assert dataset._variables[1].type_ == "continuous"
+
+    # test variable cts
+    save_json(variable_cts, os.path.join(dataset_dir, "variables.json"))
+    dataset_loader = TemporalCausalCSVDatasetLoader(dataset_dir=dataset_dir)
+    dataset = dataset_loader.load_predefined_dataset(max_num_rows=None, column_index=0)
+    assert len(dataset._variables) == 2
+    assert dataset._variables[0].type_ == "continuous"
+    assert dataset._variables[1].type_ == "continuous"
+    # variables_dict has wrong number of variables, raise assertion error
+    with pytest.raises(AssertionError):
+        save_json(variable_wrong_number, os.path.join(dataset_dir, "variables.json"))
+        dataset_loader = TemporalCausalCSVDatasetLoader(dataset_dir=dataset_dir)
+        dataset_loader.load_predefined_dataset(max_num_rows=None, column_index=0)
 
 
 def test_load_prior_adjacency_matrix(tmpdir_factory, train_test_val_time_series):

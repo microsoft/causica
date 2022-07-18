@@ -8,6 +8,7 @@ import torch
 
 from ...datasets.dataset import CausalDataset, Dataset
 from ...datasets.variables import Variables
+from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.deci.deci import DECI
 from .end2end_causal import End2endCausal
 
@@ -47,6 +48,7 @@ class InformedDECI(End2endCausal):
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -59,6 +61,7 @@ class InformedDECI(End2endCausal):
         assert isinstance(dataset, CausalDataset)
         true_graph = dataset.get_adjacency_data_matrix().astype(np.float32)
         true_mask = dataset.get_known_subgraph_mask_matrix().astype(np.float32)
+        assert isinstance(self.inference_model, DECI)
         self.inference_model.prior_A.data = torch.tensor(true_graph).to(
             dtype=self.inference_model.prior_A.dtype, device=self.inference_model.prior_A.device
         )
@@ -68,13 +71,17 @@ class InformedDECI(End2endCausal):
         self.inference_model.exist_prior = True
 
         self.inference_model.run_train(
-            dataset=dataset, train_config_dict=inference_config, report_progress_callback=report_progress_callback
+            dataset=dataset,
+            metrics_logger=metrics_logger,
+            train_config_dict=inference_config,
+            report_progress_callback=report_progress_callback,
         )
 
     def get_adj_matrix(self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False):
         """
         Returns adjacency learnt by DECI (the discovery-inference model) as a numpy array
         """
+        assert isinstance(self.inference_model, DECI)
         return self.inference_model.get_adj_matrix(
             do_round=do_round, samples=samples, most_likely_graph=most_likely_graph
         )

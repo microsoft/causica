@@ -7,14 +7,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-from dependency_injector.wiring import Provide
 from torch import nn
 from torch.utils.data import DataLoader
 
 from ...datasets.dataset import Dataset, TemporalDataset
 from ...datasets.temporal_tensor_dataset import TemporalTensorDataset
 from ...datasets.variables import Variables
-from ...experiment.azua_context import AzuaContext
+from ...experiment.imetrics_logger import IMetricsLogger
 from ...utils.causality_utils import process_adjacency_mats
 from ...utils.helper_functions import maintain_random_state, to_tensors
 from ...utils.nri_utils import convert_temporal_to_static_adjacency_matrix
@@ -253,9 +252,9 @@ class FoldTimeDECI(DECI):
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
-        azua_context: AzuaContext = Provide[AzuaContext],
     ) -> None:
 
         # Set soft prior matrix for fold-time DECI
@@ -274,7 +273,7 @@ class FoldTimeDECI(DECI):
         if train_config_dict is None:
             train_config_dict = {}
         # Run training
-        super().run_train(dataset, train_config_dict, report_progress_callback)
+        super().run_train(dataset, metrics_logger, train_config_dict, report_progress_callback)
         # Save the sampled adjacency matrix
         sampled_adjacency = self.get_adj_matrix(do_round=True, samples=100)
         proc_sampled_adjacency, _ = process_adjacency_mats(sampled_adjacency, num_nodes=sampled_adjacency.shape[-1])

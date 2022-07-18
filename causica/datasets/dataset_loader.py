@@ -5,14 +5,12 @@ from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import numpy as np
 import pandas as pd
-from dependency_injector.wiring import Provide, inject
 from scipy.sparse import issparse
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 from ..datasets.dataset import Dataset, SparseDataset
 from ..datasets.variables import Variables
-from ..experiment.azua_context import AzuaContext
 from ..utils.io_utils import read_json_as
 
 logger = logging.getLogger(__name__)
@@ -36,7 +34,7 @@ class DatasetLoader(ABC):
         Args:
             dataset_dir: Directory in which the dataset files are contained, or will be saved if not present.
         """
-        self._dataset_dir = dataset_dir
+        self.dataset_dir = dataset_dir
 
     @abstractmethod
     def split_data_and_load_dataset(
@@ -84,7 +82,7 @@ class DatasetLoader(ABC):
         Returns:
             variables_dict: If not None, dictionary containing metadata for each variable (column) in the input data.
         """
-        variables_path = os.path.join(self._dataset_dir, self._variables_file)
+        variables_path = os.path.join(self.dataset_dir, self._variables_file)
         logger.info(f"Variables info {variables_path} exists: {os.path.exists(variables_path)}.")
         variables_dict = read_json_as(variables_path, dict) if os.path.exists(variables_path) else None
         return variables_dict
@@ -171,7 +169,7 @@ class DatasetLoader(ABC):
         return data, data_mask
 
     def _apply_negative_sampling(self, variables, train_data, train_mask, val_data, val_mask, test_data, test_mask):
-        negative_sampling_levels_path = os.path.join(self._dataset_dir, self._negative_sampling_file)
+        negative_sampling_levels_path = os.path.join(self.dataset_dir, self._negative_sampling_file)
         negative_sampling_levels = self.load_negative_sampling_levels(negative_sampling_levels_path, variables)
 
         train_data, train_mask = self.negative_sample(train_data, train_mask, negative_sampling_levels)
@@ -183,20 +181,6 @@ class DatasetLoader(ABC):
             val_data, val_mask = None, None
 
         return train_data, train_mask, val_data, val_mask, test_data, test_mask
-
-    @classmethod
-    @inject
-    def _download_data_if_necessary(cls, dataset_dir: str, azua_context: AzuaContext = Provide[AzuaContext]) -> None:
-        """
-        Download the required dataset if it's not already present locally.
-        Args:
-            dataset_dir: Directory in which the data files are contained.
-        """
-        if os.path.isdir(dataset_dir):
-            return
-
-        data_dir, dataset_name = os.path.split(dataset_dir)
-        azua_context.download_dataset(dataset_name=dataset_name, data_dir=data_dir)
 
     @classmethod
     def _generate_data_split(

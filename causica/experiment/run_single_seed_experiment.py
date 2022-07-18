@@ -5,8 +5,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
-from dependency_injector.wiring import Provide, inject
-
 from ..datasets.dataset import CausalDataset
 from ..experiment.steps.eval_step import eval_causal_discovery, evaluate_treatment_effect_estimation, run_eval_main
 from ..experiment.steps.step_func import load_data, preprocess_configs
@@ -14,7 +12,7 @@ from ..experiment.steps.train_step import run_train_main
 from ..models.imodel import IModelForCausalInference, IModelForImputation
 from ..models_factory import load_model
 from ..utils.io_utils import save_json, save_txt
-from .azua_context import AzuaContext
+from .run_context import RunContext
 
 
 @dataclass
@@ -46,12 +44,11 @@ class ExperimentArguments:
     model_seed: int
     aml_tags: Dict[str, Any]
     logger_level: str
+    run_context: RunContext
     eval_likelihood: bool = True
     conversion_type: str = "full_time"
-    azua_context: AzuaContext = Provide[AzuaContext]
 
 
-@inject
 def run_single_seed_experiment(args: ExperimentArguments):
     # Set up loggers
     logger = logging.getLogger()
@@ -68,20 +65,26 @@ def run_single_seed_experiment(args: ExperimentArguments):
         }
         level = level_dict[args.logger_level]
     logging.basicConfig(level=level, force=True, format=log_format)
-    metrics_logger = args.azua_context.metrics_logger()
+    metrics_logger = args.run_context.metrics_logger
     metrics_logger.set_tags(args.aml_tags)
     running_times: Dict[str, float] = {}
 
-    _clean_partial_results_in_aml_run(args.output_dir, logger, args.azua_context)
+    _clean_partial_results_in_aml_run(args.output_dir, logger, args.run_context)
 
     # Log system's metrics
-    system_metrics_logger = args.azua_context.system_metrics_logger()
+    system_metrics_logger = args.run_context.system_metrics_logger
     system_metrics_logger.start_log()
 
     # Load data
     logger.info("Loading data.")
     dataset = load_data(
-        args.dataset_name, args.data_dir, args.dataset_seed, args.dataset_config, args.model_config, args.tiny
+        args.dataset_name,
+        args.data_dir,
+        args.dataset_seed,
+        args.dataset_config,
+        args.model_config,
+        args.tiny,
+        args.run_context.download_dataset,
     )
     assert dataset.variables is not None
 
@@ -99,11 +102,11 @@ def run_single_seed_experiment(args: ExperimentArguments):
             model_type=args.model_type,
             output_dir=args.output_dir,
             variables=dataset.variables,
+            metrics_logger=metrics_logger,
             dataset=dataset,
             device=args.device,
             model_config=args.model_config,
             train_hypers=args.train_hypers,
-            metrics_logger=metrics_logger,
         )
         running_times["train/running-time"] = (time.time() - start_time) / 60
     save_json(args.dataset_config, os.path.join(model.save_dir, "dataset_config.json"))
@@ -157,13 +160,13 @@ def run_single_seed_experiment(args: ExperimentArguments):
     save_json(running_times, os.path.join(model.save_dir, "running_times.json"))
     metrics_logger.finalize()
 
-    _copy_results_in_aml_run(args.output_dir, args.azua_context)
+    _copy_results_in_aml_run(args.output_dir, args.run_context)
 
     return model, args.model_config
 
 
-def _clean_partial_results_in_aml_run(output_dir: str, logger: logging.Logger, azua_context: AzuaContext):
-    if azua_context.is_azureml_run():
+def _clean_partial_results_in_aml_run(output_dir: str, logger: logging.Logger, run_context: RunContext):
+    if run_context.is_azureml_run():
         # If node is preempted (e.g. long running exp), it's possible
         # that there will be some partial results created in output directory
         # Those partial results shouldn't be aggregated, thus remove them
@@ -179,8 +182,8 @@ def _clean_partial_results_in_aml_run(output_dir: str, logger: logging.Logger, a
                     os.remove(folder)
 
 
-def _copy_results_in_aml_run(output_dir: str, azua_context: AzuaContext):
-    if azua_context.is_azureml_run():
+def _copy_results_in_aml_run(output_dir: str, run_context: RunContext):
+    if run_context.is_azureml_run():
         # Copy the results to 'outputs' dir so that we can easily view them in AzureML.
         # Workaround for port name collision issue in AzureML, which sometimes prevents us from setting outputs_dir='outputs'.
         # See #16728

@@ -9,6 +9,7 @@ import torch
 
 from ..datasets.dataset import Dataset
 from ..datasets.variables import Variables
+from ..experiment.imetrics_logger import IMetricsLogger
 from ..preprocessing.data_processor import DataProcessor
 
 
@@ -102,6 +103,7 @@ class IModel(ABC):
     def run_train(
         self,
         dataset: Dataset,
+        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -203,7 +205,7 @@ class IModelForObjective(IBatchImputer, IModelWithReconstruction):
 
 class IModelForCausalInference(IModel):
     @abstractmethod
-    def get_adj_matrix(self):
+    def get_adj_matrix(self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False):
         """
         Returns adjacency matrix learned as a numpy array
         """
@@ -212,7 +214,14 @@ class IModelForCausalInference(IModel):
 
 class IModelForInterventions(IModel):
     @abstractmethod
-    def sample(self):
+    def sample(
+        self,
+        Nsamples: int = 100,
+        most_likely_graph: bool = False,
+        intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    ):
+
         """
         Sample from distribution over observations learned by the model. Optionally modify the distribution through interventions.
         """
@@ -222,8 +231,8 @@ class IModelForInterventions(IModel):
     def log_prob(
         self,
         X: Union[torch.Tensor, np.ndarray],
-        intervention_idxs: Union[torch.Tensor, np.ndarray],
-        intervention_values: Union[torch.Tensor, np.ndarray],
+        intervention_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        intervention_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         Nsamples_per_graph: int = 1,
@@ -261,12 +270,12 @@ class IModelForCounterfactuals(IModel):
     def ite(
         self,
         X: Union[torch.Tensor, np.ndarray],
-        intervention_idxs: Union[torch.Tensor, np.ndarray],
-        intervention_values: Union[torch.Tensor, np.ndarray],
+        intervention_idxs: Union[torch.Tensor, np.ndarray] = None,
+        intervention_values: Union[torch.Tensor, np.ndarray] = None,
         reference_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
         effect_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
         Nsamples_per_graph: int = 1,
-        Ngraphs: Optional[int] = 1000,
+        Ngraphs: int = 1000,
         most_likely_graph: bool = False,
         fixed_seed: Optional[int] = None,
     ):

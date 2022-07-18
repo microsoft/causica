@@ -10,12 +10,7 @@ if __name__ == "__main__":
 
     args= parser.parse_args()
 
-    CATE_list = []
-    for load_file in args.load_files:
-        cur_cate = np.load(load_file)
-        CATE_list.append(cur_cate)
-
-    CATE_list = np.array(CATE_list)
+    CATE_list = np.array([np.load(load_file) for load_file in args.load_files])
 
     # Create the output directory if not exists
     if not os.path.exists(args.output_dir):

@@ -14,13 +14,15 @@ class PC(CastleCausalLearner):
     def __init__(self, model_id: str, variables: Variables, save_dir: str, random_seed: int = 0):
         super().__init__(model_id, variables, save_dir, PC_alg(), random_seed=random_seed)
 
-    def get_adj_matrix(self, nsamples: int = 100, squeeze: bool = False, **_):
+    def get_adj_matrix(
+        self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False, squeeze: bool = False
+    ):
         """
         Draws a series of DAG samples from markov equivalence class. If enough samples are specified, all the DAGs in the equivalence class will be returned.
         """
-        graph_samples = cpdag2dags(self.causal_learner.causal_matrix.astype(np.float64), samples=nsamples)
+        graph_samples = cpdag2dags(self.causal_learner.causal_matrix.astype(np.float64), samples=samples)
 
-        return graph_samples[0] if nsamples == 1 and squeeze else graph_samples
+        return graph_samples[0] if samples == 1 and squeeze else graph_samples
 
     @classmethod
     def name(cls) -> str:
