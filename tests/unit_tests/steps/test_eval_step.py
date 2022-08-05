@@ -10,7 +10,6 @@ from causica.baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
 from causica.datasets.dataset import Dataset, SparseDataset
 from causica.datasets.intervention_data import InterventionData
 from causica.datasets.variables import Variable, Variables
-from causica.experiment.run_context import MockMetricLogger
 from causica.experiment.steps.eval_step import (
     eval_causal_discovery,
     eval_individual_treatment_effects,
@@ -64,7 +63,6 @@ def test_run_eval_main_user_id_too_high(model, variables):
             extra_eval=False,
             seed=0,
             user_id=1,
-            metrics_logger=None,
             impute_train_data=True,
         )
 
@@ -93,7 +91,6 @@ def test_run_eval_main(model, variables):
         extra_eval=True,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     results = read_json_as(os.path.join(model.save_dir, "results.json"), dict)
@@ -127,7 +124,6 @@ def test_run_eval_main_no_val_data(model, variables):
         extra_eval=False,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     results = read_json_as(os.path.join(model.save_dir, "results.json"), dict)
@@ -160,7 +156,6 @@ def test_run_eval_main_impute_train_data_false(model, variables):
         extra_eval=False,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=False,
     )
     results = read_json_as(os.path.join(model.save_dir, "results.json"), dict)
@@ -205,7 +200,6 @@ def test_run_eval_main_no_target_var_idxs(tmpdir_factory):
         extra_eval=False,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     assert os.path.isfile(os.path.join(model.save_dir, "difficulty.csv"))
@@ -235,7 +229,6 @@ def test_run_eval_main_sparse_dataset(model, variables):
         extra_eval=True,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     results = read_json_as(os.path.join(model.save_dir, "results.json"), dict)
@@ -281,7 +274,6 @@ def test_run_eval_main_sparse_dataset_no_target_variables(tmpdir_factory):
         extra_eval=False,
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     assert not os.path.isfile(os.path.join(model.save_dir, "difficulty.csv"))
@@ -320,7 +312,6 @@ def test_run_eval_main_sparse_dataset_no_targets_elements_split(tmpdir_factory):
         split_type="elements",
         seed=0,
         user_id=1,
-        metrics_logger=None,
         impute_train_data=True,
     )
     assert not os.path.isfile(os.path.join(model.save_dir, "difficulty.csv"))
@@ -370,7 +361,7 @@ def test_run_eval_causal_discovery(tmpdir_factory):
     causal_dataset = dataset.to_causal(adjacency_data=adj_matrix, subgraph_data=adj_mask, intervention_data=None)
 
     assert isinstance(model, IModelForCausalInference)
-    eval_causal_discovery(causal_dataset, model, metrics_logger=None)
+    eval_causal_discovery(causal_dataset, model)
 
     results = read_json_as(os.path.join(model.save_dir, "target_results_causality.json"), dict)
 
@@ -408,12 +399,10 @@ def test_run_eval_causal_discovery(tmpdir_factory):
     temporal_causal_dataset = dataset.to_temporal(
         adjacency_data=temporal_adj_matrix, intervention_data=None, transition_matrix=None, counterfactual_data=None
     )
-    eval_causal_discovery(temporal_causal_dataset, temporal_model, metrics_logger=None, conversion_type="full_time")
+    eval_causal_discovery(temporal_causal_dataset, temporal_model, conversion_type="full_time")
     # expected assertion error
     with pytest.raises(AssertionError):
-        eval_causal_discovery(
-            temporal_causal_dataset, temporal_model, metrics_logger=None, conversion_type="auto_regressive"
-        )
+        eval_causal_discovery(temporal_causal_dataset, temporal_model, conversion_type="auto_regressive")
 
 
 @pytest.fixture
@@ -585,7 +574,7 @@ def test_evaluate_treatment_effect_estimation(
         },
     )
 
-    model.run_train(causal_dataset_no_conditioning, metrics_logger=MockMetricLogger())
+    model.run_train(causal_dataset_no_conditioning)
 
     with patch("causica.experiment.steps.eval_step.eval_treatment_effects") as mock_eval_treatment_effects:
         with patch(
@@ -600,7 +589,7 @@ def test_run_eval_treatment_effects(causal_dataset_conditioning, deci_model):
     logger = logging.getLogger()
 
     assert isinstance(deci_model, IModelForInterventions)
-    eval_treatment_effects(logger, causal_dataset_conditioning, deci_model, metrics_logger=None)
+    eval_treatment_effects(logger, causal_dataset_conditioning, deci_model)
 
     results = read_json_as(os.path.join(deci_model.save_dir, "results_interventions.json"), dict)
 
@@ -627,7 +616,7 @@ def test_run_eval_treatment_effects(causal_dataset_conditioning, deci_model):
 
 def test_eval_individual_treatment_effects(causal_dataset_conditioning, deci_model):
     assert isinstance(deci_model, IModelForCounterfactuals)
-    eval_individual_treatment_effects(causal_dataset_conditioning, deci_model, metrics_logger=None)
+    eval_individual_treatment_effects(causal_dataset_conditioning, deci_model)
 
     results = read_json_as(os.path.join(deci_model.save_dir, "results_counterfactual.json"), dict)
 

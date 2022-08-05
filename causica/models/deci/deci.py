@@ -6,6 +6,7 @@ import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import mlflow
 import networkx as nx
 import numpy as np
 import scipy
@@ -17,7 +18,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 from ...datasets.dataset import CausalDataset, Dataset, TemporalDataset
 from ...datasets.variables import Variables
-from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.imodel import (
     IModelForCausalInference,
     IModelForCounterfactuals,
@@ -56,7 +56,13 @@ from .variational_distributions import (
 )
 
 
-class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelForImputation, IModelForCounterfactuals):
+class DECI(
+    TorchModel,
+    IModelForInterventions,
+    IModelForCausalInference,
+    IModelForImputation,
+    IModelForCounterfactuals,
+):
     """
     Flow-based end-to-end causal model, which does causal discovery using a contractive and
     invertible GNN. The adjacency is a random variable over which we do inference.
@@ -87,12 +93,16 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
         cate_rff_n_features: int = 3000,
-        cate_rff_lengthscale: Union[int, float, List[float], Tuple[float, float]] = (0.1, 1.0),
+        cate_rff_lengthscale: Union[int, float, List[float], Tuple[float, float]] = (
+            0.1,
+            1.0,
+        ),
         prior_A: Union[torch.Tensor, np.ndarray] = None,
         prior_A_confidence: float = 0.5,
         prior_mask: Union[torch.Tensor, np.ndarray] = None,
         graph_constraint_matrix: Optional[np.ndarray] = None,
         dense_init: bool = False,
+        embedding_size: Optional[int] = None,
     ):
         """
         Args:
@@ -135,7 +145,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         """
         super().__init__(model_id, variables, save_dir, device)
         self.dense_init = dense_init
-
+        self.embedding_size = embedding_size
         self.device = device
         self.lambda_dag = lambda_dag
         self.lambda_sparse = lambda_sparse
@@ -189,7 +199,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
     def get_extra_state(self) -> Dict[str, Any]:
         """Return extra state for the model, including the data processor."""
-        return {"data_processor": self.data_processor}
+        return {
+            "data_processor": self.data_processor,
+            "neg_constraint_matrix": self.neg_constraint_matrix,
+            "pos_constraint_matrix": self.pos_constraint_matrix,
+        }
 
     def set_extra_state(self, state: Dict[str, Any]) -> None:
         """Load the state dict including data processor.
@@ -198,10 +212,15 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             state: State to load.
         """
         self.data_processor = state.pop("data_processor", None)
+        self.neg_constraint_matrix = state.pop("neg_constraint_matrix")
+        self.pos_constraint_matrix = state.pop("pos_constraint_matrix")
 
     def set_prior_A(
-        self, prior_A: Optional[Union[np.ndarray, torch.Tensor]], prior_mask: Optional[Union[np.ndarray, torch.Tensor]]
+        self,
+        prior_A: Optional[Union[np.ndarray, torch.Tensor]],
+        prior_mask: Optional[Union[np.ndarray, torch.Tensor]],
     ) -> None:
+
         """
         This method setup the soft prior for deci. Since this is also responsible for setting up the default prior (prior_A=None),
         this may be overwritten by the subclass. For example, temporal deci model need to overwrite it s.t. the default
@@ -223,10 +242,12 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         else:
             self.exist_prior = False
             self.prior_A = nn.Parameter(
-                torch.zeros((self.num_nodes, self.num_nodes), device=self.device), requires_grad=False
+                torch.zeros((self.num_nodes, self.num_nodes), device=self.device),
+                requires_grad=False,
             )
             self.prior_mask = nn.Parameter(
-                torch.zeros((self.num_nodes, self.num_nodes), device=self.device), requires_grad=False
+                torch.zeros((self.num_nodes, self.num_nodes), device=self.device),
+                requires_grad=False,
             )
 
     def _create_var_dist_A_for_deci(self, var_dist_A_mode: str) -> AdjMatrix:
@@ -245,7 +266,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             )
         elif var_dist_A_mode == "enco":
             var_dist_A = VarDistA_ENCO(
-                device=self.device, input_dim=self.num_nodes, tau_gumbel=self.tau_gumbel, dense_init=self.dense_init
+                device=self.device,
+                input_dim=self.num_nodes,
+                tau_gumbel=self.tau_gumbel,
+                dense_init=self.dense_init,
             )
         elif var_dist_A_mode == "true":
             var_dist_A = DeterministicAdjacency(device=self.device)
@@ -270,6 +294,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             res_connection=self.res_connection,
             encoder_layer_sizes=self.encoder_layer_sizes,
             decoder_layer_sizes=self.decoder_layer_sizes,
+            embedding_size=self.embedding_size,
         )
 
     def set_graph_constraint(self, graph_constraint_matrix: Optional[np.ndarray]):
@@ -349,7 +374,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                 dist = GaussianBase(len(continuous_range), device=self.device, train_base=True)
             elif base_distribution_string == "spline":
                 dist = DiagonalFLowBase(
-                    len(continuous_range), device=self.device, num_bins=self.spline_bins, flow_steps=1
+                    len(continuous_range),
+                    device=self.device,
+                    num_bins=self.spline_bins,
+                    flow_steps=1,
                 )
             else:
                 raise NotImplementedError("Base distribution type not recognised")
@@ -408,7 +436,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         return G
 
     def get_adj_matrix(
-        self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False, squeeze: bool = False
+        self,
+        do_round: bool = True,
+        samples: int = 100,
+        most_likely_graph: bool = False,
+        squeeze: bool = False,
     ) -> np.ndarray:
         """
         Returns the adjacency matrix (or several) as a numpy array.
@@ -479,7 +511,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         return torch.mean(torch.Tensor(tracker_dag_penalty)).item()
 
     def _log_prob(
-        self, x: torch.Tensor, predict: torch.Tensor, intervention_mask: Optional[torch.Tensor] = None
+        self,
+        x: torch.Tensor,
+        predict: torch.Tensor,
+        intervention_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Computes the log probability of the observed data given the predictions from the SEM.
@@ -496,6 +531,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             shape (batch_size) is x has shape (batch_size, input_dim).
         """
         typed_regions = self.variables.processed_cols_by_type
+
         # Continuous
         cts_bin_log_prob = torch.zeros_like(x)
         continuous_range = [i for region in typed_regions["continuous"] for i in region]
@@ -528,6 +564,23 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     log_prob += likelihood.log_prob(x[..., region], predict[..., region])
 
         return log_prob
+
+    def _icgnn_cts_mse(self, x: torch.Tensor, predict: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the mean-squared error (MSE) of the ICGNN on the continuous variables of the model.
+
+        Args:
+            x: Array of size (processed_dim_all) or (batch_size, processed_dim_all), works both ways (i.e. single sample
+            or batched).
+            predict: tensor of the same shape as x.
+
+        Returns:
+            MSE of ICGNN predictions on continuous variables. A number if x has shape (input_dim), or an array of
+            shape (batch_size) is X has shape (batch_size, input_dim).
+        """
+        typed_regions = self.variables.processed_cols_by_type
+        continuous_range = [i for region in typed_regions["continuous"] for i in region]
+        return (x[..., continuous_range] - predict[..., continuous_range]).pow(2).sum(-1)
 
     def _sample_base(self, Nsamples: int) -> torch.Tensor:
         """
@@ -609,7 +662,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         with torch.no_grad():
             if reference_values is None:
                 reference_samples = self.sample(
-                    Nsamples=Nsamples, most_likely_graph=most_likely_graph, samples_per_graph=Nsamples_per_graph
+                    Nsamples=Nsamples,
+                    most_likely_graph=most_likely_graph,
+                    samples_per_graph=Nsamples_per_graph,
                 ).detach()
             else:
                 reference_samples = self.sample(
@@ -633,10 +688,17 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             if conditioning_idxs is not None and conditioning_values is not None:
 
                 assert effect_idxs is not None, "need to specify effect indices for CATE computation"
-                effect_mask = get_mask_from_idxs(effect_idxs, group_mask=self.variables.group_mask, device=self.device)
+                effect_mask = get_mask_from_idxs(
+                    effect_idxs,
+                    group_mask=self.variables.group_mask,
+                    device=self.device,
+                )
 
-                conditioning_idxs, conditioning_mask, conditioning_values = intervention_to_tensor(
-                    conditioning_idxs, conditioning_values, self.variables.group_mask, device=self.device
+                (conditioning_idxs, conditioning_mask, conditioning_values,) = intervention_to_tensor(
+                    conditioning_idxs,
+                    conditioning_values,
+                    self.variables.group_mask,
+                    device=self.device,
                 )
 
                 # Reshape samples to be asociated with the graph used to generate them
@@ -673,7 +735,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     rff_n_features=self.cate_rff_n_features,
                 )
 
-                return model_cate.cpu().numpy().astype(np.float64), model_norm_cate.cpu().numpy().astype(np.float64)
+                return (
+                    model_cate.cpu().numpy().astype(np.float64),
+                    model_norm_cate.cpu().numpy().astype(np.float64),
+                )
 
             # ATE computation
             # Computation of ATE from samples is cheap. We cast the samples to numpy and then compute ATE.
@@ -698,7 +763,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     effect_mask = get_mask_from_idxs(
                         effect_idxs, group_mask=self.variables.group_mask, device="cpu"
                     ).numpy()
-                    model_ate, model_norm_ate = model_ate[effect_mask], model_norm_ate[effect_mask]
+                    model_ate, model_norm_ate = (
+                        model_ate[effect_mask],
+                        model_norm_ate[effect_mask],
+                    )
 
                 return model_ate, model_norm_ate
 
@@ -763,11 +831,17 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             # Calculate the difference between the counterfactuals and the baseline. This currently only supports continuous variables.
             model_ite = get_ite_from_samples(
-                counterfactuals, reference_counterfactuals, self.variables, normalise=False
+                counterfactuals,
+                reference_counterfactuals,
+                self.variables,
+                normalise=False,
             )
 
             model_norm_ite = get_ite_from_samples(
-                counterfactuals, reference_counterfactuals, self.variables, normalise=True
+                counterfactuals,
+                reference_counterfactuals,
+                self.variables,
+                normalise=True,
             )
 
         return model_ite, model_norm_ite
@@ -801,8 +875,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         else:
             assert Nsamples % samples_per_graph == 0, "Nsamples must be a multiple of samples_per_graph"
 
-        intervention_idxs, intervention_mask, intervention_values = intervention_to_tensor(
-            intervention_idxs, intervention_values, self.variables.group_mask, device=self.device
+        (intervention_idxs, intervention_mask, intervention_values,) = intervention_to_tensor(
+            intervention_idxs,
+            intervention_values,
+            self.variables.group_mask,
+            device=self.device,
         )
         gumbel_max_regions = self.variables.processed_cols_by_type["categorical"]
         gt_zero_region = [j for i in self.variables.processed_cols_by_type["binary"] for j in i]
@@ -811,7 +888,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             num_graph_samples = Nsamples // samples_per_graph
             W_adj_samples = self.get_weighted_adj_matrix(
-                do_round=most_likely_graph, samples=num_graph_samples, most_likely_graph=most_likely_graph
+                do_round=most_likely_graph,
+                samples=num_graph_samples,
+                most_likely_graph=most_likely_graph,
             )
             if most_likely_graph:
                 W_adj_samples = W_adj_samples.expand(Nsamples, -1, -1)
@@ -824,11 +903,17 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             X = []
             for W_adj_batch, Z_batch in zip(
-                torch.split(W_adj_samples, max_batch_size, dim=0), torch.split(Z, max_batch_size, dim=0)
+                torch.split(W_adj_samples, max_batch_size, dim=0),
+                torch.split(Z, max_batch_size, dim=0),
             ):
                 X.append(
                     self.ICGNN.simulate_SEM(
-                        Z_batch, W_adj_batch, intervention_mask, intervention_values, gumbel_max_regions, gt_zero_region
+                        Z_batch,
+                        W_adj_batch,
+                        intervention_mask,
+                        intervention_values,
+                        gumbel_max_regions,
+                        gt_zero_region,
                     ).detach()
                 )
             samples = torch.cat(X, dim=0)
@@ -856,8 +941,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
         (X,) = to_tensors(X, device=self.device, dtype=torch.float)
 
-        intervention_idxs, intervention_mask, intervention_values = intervention_to_tensor(
-            intervention_idxs, intervention_values, self.variables.group_mask, device=self.device
+        (intervention_idxs, intervention_mask, intervention_values,) = intervention_to_tensor(
+            intervention_idxs,
+            intervention_values,
+            self.variables.group_mask,
+            device=self.device,
         )
 
         gumbel_max_regions = self.variables.processed_cols_by_type["categorical"]
@@ -944,8 +1032,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
         (X,) = to_tensors(X, device=self.device, dtype=torch.float)
 
-        intervention_idxs, intervention_mask, intervention_values = intervention_to_tensor(
-            intervention_idxs, intervention_values, self.variables.group_mask, device=self.device
+        (intervention_idxs, intervention_mask, intervention_values,) = intervention_to_tensor(
+            intervention_idxs,
+            intervention_values,
+            self.variables.group_mask,
+            device=self.device,
         )
 
         if intervention_mask is not None and intervention_values is not None:
@@ -961,7 +1052,10 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             for _ in range(Nsamples_per_graph):
 
                 W_adj = self.get_weighted_adj_matrix(
-                    do_round=most_likely_graph, samples=1, most_likely_graph=most_likely_graph, squeeze=True
+                    do_round=most_likely_graph,
+                    samples=1,
+                    most_likely_graph=most_likely_graph,
+                    squeeze=True,
                 )
                 # This sets certain elements of W_adj to 0, to respect the intervention
                 W_adj = intervene_graph(W_adj, intervention_idxs, copy_graph=False)
@@ -999,7 +1093,11 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         """
         # If fully observed do nothing (for efficicency)
         if (mask == 1).all():
-            return x, torch.Tensor([0.0]).to(self.device), torch.Tensor([0.0]).to(self.device)
+            return (
+                x,
+                torch.Tensor([0.0]).to(self.device),
+                torch.Tensor([0.0]).to(self.device),
+            )
         mean, scale = self.get_params_variational_distribution(x, mask)
         var_dist = td.Normal(mean, scale)
         sample = var_dist.rsample()  # Shape (batch_size, input_dim)
@@ -1034,7 +1132,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                 samples.append(sample)
             return torch.stack(samples).detach().cpu().numpy()
 
-    def _ELBO_terms(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _ELBO_terms(self, X: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
         Computes all terms involved in the ELBO.
 
@@ -1042,7 +1140,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             X: Batched samples from the dataset, size (batch_size, input_dim).
 
         Returns:
-            Tuple (penalty_dag, log_p_A, log_p_base, log_q_A)
+            Dict[key, torch.Tensor] containing all the terms involved in the ELBO.
         """
         # Get adjacency matrix with weights
         A_sample = self.get_adj_matrix_tensor(do_round=False, samples=1, most_likely_graph=False).squeeze(0)
@@ -1058,7 +1156,15 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         penalty_dag = self.dagness_factor(A_sample)  # A number
         log_p_base = self._log_prob(X, predict)  # (B)
         log_q_A = -self.var_dist_A.entropy()  # A number
-        return penalty_dag, log_p_A, log_p_base, log_q_A * factor_q
+        cts_mse = self._icgnn_cts_mse(X, predict)  # (B)
+
+        return {
+            "penalty_dag": penalty_dag,
+            "log_p_A": log_p_A,
+            "log_p_base": log_p_base,
+            "log_q_A": log_q_A * factor_q,
+            "cts_mse": cts_mse,
+        }
 
     def compute_loss(
         self,
@@ -1095,15 +1201,14 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             imputation_entropy = avg_reconstruction_err = torch.tensor(0.0, device=self.device)
 
         #  Compute remaining terms
-        penalty_dag, log_p_A_sparse, log_p_base, log_q_A = self._ELBO_terms(
-            x_fill
-        )  # penalty_dag (1), log_p_A_sparse (1), log_p_base (batch_size), log_q_A (1)
-        log_p_term = log_p_base.mean(dim=0)  # batch average density under base distribution. (1)
-        log_p_A_term = log_p_A_sparse / num_samples  # (1)
-        log_q_A_term = log_q_A / num_samples  # (1)
+        elbo_terms = self._ELBO_terms(x_fill)
+        log_p_term = elbo_terms["log_p_base"].mean(dim=0)
+        log_p_A_term = elbo_terms["log_p_A"] / num_samples
+        log_q_A_term = elbo_terms["log_q_A"] / num_samples
+        cts_mse = elbo_terms["cts_mse"].mean(dim=0)
 
-        penalty_dag_term = penalty_dag * alpha / num_samples
-        penalty_dag_term += penalty_dag * penalty_dag * rho / (2 * num_samples)
+        penalty_dag_term = elbo_terms["penalty_dag"] * alpha / num_samples
+        penalty_dag_term += elbo_terms["penalty_dag"] * elbo_terms["penalty_dag"] * rho / (2 * num_samples)
 
         if train_config_dict["anneal_entropy"] == "linear":
             ELBO = log_p_term + imputation_entropy + log_p_A_term - log_q_A_term / max(step - 5, 1) - penalty_dag_term
@@ -1112,30 +1217,37 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         loss = -ELBO + avg_reconstruction_err * train_config_dict["reconstruction_loss_factor"]
 
         tracker["loss"].append(loss.item())
-        tracker["penalty_dag"].append(penalty_dag.item())
+        tracker["penalty_dag"].append(elbo_terms["penalty_dag"].item())
         tracker["penalty_dag_weighed"].append(penalty_dag_term.item())
         tracker["log_p_A_sparse"].append(log_p_A_term.item())
         tracker["log_p_x"].append(log_p_term.item())
         tracker["imputation_entropy"].append(imputation_entropy.item())
         tracker["log_q_A"].append(log_q_A_term.item())
         tracker["reconstruction_mse"].append(avg_reconstruction_err.item())
+        tracker["cts_mse_icgnn"].append(cts_mse.item())
         return loss, tracker
 
-    def print_tracker(self, inner_step: int, tracker: Dict) -> None:
-        """
-        Prints formatted contents of loss terms that are being tracked.
-        """
-        loss = np.mean(tracker["loss"])
-        log_p_x = np.mean(tracker["log_p_x"])
-        penalty_dag = np.mean(tracker["penalty_dag"])
-        log_p_A_sparse = np.mean(tracker["log_p_A_sparse"])
-        log_q_A = np.mean(tracker["log_q_A"])
-        h_filled = np.mean(tracker["imputation_entropy"])
-        reconstr = np.mean(tracker["reconstruction_mse"])
-        print(
+    def print_tracker(self, inner_step: int, tracker: dict) -> None:
+        """Prints formatted contents of loss terms that are being tracked."""
+        tracker_copy = tracker.copy()
+
+        loss = np.mean(tracker_copy.pop("loss")[-100:])
+        log_p_x = np.mean(tracker_copy.pop("log_p_x")[-100:])
+        penalty_dag = np.mean(tracker_copy.pop("penalty_dag")[-100:])
+        log_p_A_sparse = np.mean(tracker_copy.pop("log_p_A_sparse")[-100:])
+        log_q_A = np.mean(tracker_copy.pop("log_q_A")[-100:])
+        h_filled = np.mean(tracker_copy.pop("imputation_entropy")[-100:])
+        reconstr = np.mean(tracker_copy.pop("reconstruction_mse")[-100:])
+
+        out = (
             f"Inner Step: {inner_step}, loss: {loss:.2f}, log p(x|A): {log_p_x:.2f}, dag: {penalty_dag:.8f}, "
             f"log p(A)_sp: {log_p_A_sparse:.2f}, log q(A): {log_q_A:.3f}, H filled: {h_filled:.3f}, rec: {reconstr:.3f}"
         )
+
+        for k, v in tracker_copy.items():
+            out += f", {k}: {np.mean(v[-100:]):.3g}"
+
+        print(out)
 
     def process_dataset(
         self,
@@ -1187,14 +1299,15 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         """
         data, mask = self.process_dataset(dataset, train_config_dict)
         dataloader = FastTensorDataLoader(
-            *to_tensors(data, mask, device=self.device), batch_size=train_config_dict["batch_size"], shuffle=True
+            *to_tensors(data, mask, device=self.device),
+            batch_size=train_config_dict["batch_size"],
+            shuffle=True,
         )
         return dataloader, data.shape[0]
 
     def run_train(
         self,
         dataset: Dataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -1209,7 +1322,9 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         # initialise logging machinery
         train_output_dir = os.path.join(self.save_dir, "train_output")
         os.makedirs(train_output_dir, exist_ok=True)
-        writer = SummaryWriter(os.path.join(train_output_dir, "summary"), flush_secs=1)
+        log_path = os.path.join(train_output_dir, "summary")
+        writer = SummaryWriter(log_path, flush_secs=1)
+        print("Saving logs to", log_path)
 
         rho = train_config_dict["rho"]
         alpha = train_config_dict["alpha"]
@@ -1231,16 +1346,17 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
         num_below_tol = 0
         num_max_rho = 0
         num_not_done = 0
-        # control the stopping criterion
 
         for step in range(train_config_dict["max_steps_auglag"]):
 
-            # stopping if DAG conditions satisfied
-            if num_below_tol >= 5:
-                print("DAG penalty below tolerance for more than 5 steps")
+            # Stopping if DAG conditions satisfied
+            patience_dag_reached = train_config_dict.get("patience_dag_reached", 5)
+            patience_max_rho = train_config_dict.get("patience_max_rho", 3)
+            if num_below_tol >= patience_dag_reached:
+                print(f"DAG penalty below tolerance for more than {patience_dag_reached} steps")
                 break
-            elif num_max_rho >= 3:
-                print("Above max rho for more than 3 steps")
+            elif num_max_rho >= patience_max_rho:
+                print(f"Above max rho for more than {patience_max_rho} steps")
                 break
 
             if rho >= train_config_dict["safety_rho"]:
@@ -1248,6 +1364,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
             # Inner loop
             print(f"Auglag Step: {step}")
+
             # Optimize adjacency for fixed rho and alpha
             outer_step_start_time = time.time()
             done_inner, tracker_loss_terms = self.optimize_inner_auglag(
@@ -1256,6 +1373,7 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
             outer_step_time = time.time() - outer_step_start_time
             dag_penalty = np.mean(tracker_loss_terms["penalty_dag"])
 
+            # Print some stats about the DAG distribution
             print(f"Dag penalty after inner: {dag_penalty:.10f}")
             print("Time taken for this step", outer_step_time)
             matrix = self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1)
@@ -1287,50 +1405,46 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
                     rho = min([rho, train_config_dict["safety_rho"]])
                     alpha = min([alpha, train_config_dict["safety_alpha"]])
 
-                    # logging outer progress and adjacency matrix
-                    if isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
-                        adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
-                        adj_true = dataset.get_adjacency_data_matrix()
-                        if isinstance(dataset, TemporalDataset):
-                            # Need to change temporal adj to static adj
-                            adj_true, adj_matrix = make_temporal_adj_matrix_compatible(
-                                adj_true,
-                                adj_matrix,
-                                is_static=(self.name() == "fold_time_deci"),
-                                adj_matrix_2_lag=self.lag,  # type: ignore
-                            )
-                            adj_true = convert_temporal_to_static_adjacency_matrix(
-                                adj_true, conversion_type="full_time"
-                            )
-                            adj_matrix = (
-                                adj_matrix
-                                if self.name() == "fold_time_deci"
-                                else convert_temporal_to_static_adjacency_matrix(
-                                    adj_matrix, conversion_type="full_time"
-                                )
-                            )
-                            subgraph_mask = None
-                        else:
-                            subgraph_mask = dataset.get_known_subgraph_mask_matrix()
-                        adj_metrics = edge_prediction_metrics_multisample(
-                            adj_true,
-                            adj_matrix,
-                            adj_matrix_mask=subgraph_mask,
-                            compute_mean=False,
-                        )
-                    else:
-                        adj_metrics = None
-
-                    base_idx = _log_epoch_metrics(
-                        metrics_logger, writer, tracker_loss_terms, adj_metrics, step, outer_step_time, base_idx
-                    )
-
             else:
                 num_not_done += 1
                 print("Not done inner optimization.")
 
+            # Logging outer progress and adjacency matrix
+            if isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
+                adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
+                adj_true = dataset.get_adjacency_data_matrix()
+                if isinstance(dataset, TemporalDataset):
+                    # Need to change temporal adj to static adj
+                    adj_true, adj_matrix = make_temporal_adj_matrix_compatible(
+                        adj_true,
+                        adj_matrix,
+                        is_static=(self.name() == "fold_time_deci"),
+                        adj_matrix_2_lag=self.lag,  # type: ignore
+                    )
+                    adj_true = convert_temporal_to_static_adjacency_matrix(adj_true, conversion_type="full_time")
+                    adj_matrix = (
+                        adj_matrix
+                        if self.name() == "fold_time_deci"
+                        else convert_temporal_to_static_adjacency_matrix(adj_matrix, conversion_type="full_time")
+                    )
+                    subgraph_mask = None
+                else:
+                    subgraph_mask = dataset.get_known_subgraph_mask_matrix()
+                adj_metrics = edge_prediction_metrics_multisample(
+                    adj_true,
+                    adj_matrix,
+                    adj_matrix_mask=subgraph_mask,
+                    compute_mean=False,
+                )
+            else:
+                adj_metrics = None
+
+            base_idx = _log_epoch_metrics(writer, tracker_loss_terms, adj_metrics, step, outer_step_time, base_idx)
+
+            # Save model
             self.save()
 
+            # Print the current values of the auglag parameters rho, alpha
             if dag_penalty_prev is not None:
                 print(f"Dag penalty: {dag_penalty:.15f}")
                 print(f"Rho: {rho:.2f}, alpha: {alpha:.2f}")
@@ -1534,7 +1648,6 @@ class DECI(TorchModel, IModelForInterventions, IModelForCausalInference, IModelF
 
 # Auxiliary method that logs training metrics to AML and tensorboard
 def _log_epoch_metrics(
-    metrics_logger,
     writer: SummaryWriter,
     tracker_loss_terms: dict,
     adj_metrics: Optional[dict],
@@ -1545,27 +1658,27 @@ def _log_epoch_metrics(
     """
     Logging method for DECI training loop
     Args:
-        metrics_logger: metrics logger
         writer: tensorboard summarywriter used to log experiment results
         tracker_loss_terms: dictionary containing arrays with values generated at each inner-step during the inner optimisation procedure
-        adj_metrics: Optional dictionary with adjacency matrixx discovery metrics
+        adj_metrics: Optional dictionary with adjacency matrix discovery metrics
         step: outer step number
         epoch_time: time it took to perform outer step,
         base_idx: cummulative inner step number
     """
 
     # iterate over tracker vectors
+    advance_base_idx = 0
     for key, value_list in tracker_loss_terms.items():
-        metrics_logger.log_list(f"step_{step}_" + key, value_list)  # AzureML
+        mlflow.log_metrics({f"step_{step}_{key}": value for value in value_list})
+        for i, value in enumerate(value_list):
+            writer.add_scalar(f"step_{step}_{key}", value, i)  # tensorboard
+            writer.add_scalar(key, value, i + base_idx)  # tensorboard
+        advance_base_idx = len(value_list)
 
-        for i in range(len(tracker_loss_terms[key])):
-            writer.add_scalar(f"step_{step}_" + key, tracker_loss_terms[key][i], i)  # tensorboard
-            writer.add_scalar(key, tracker_loss_terms[key][i], i + base_idx)  # tensorboard
-
-        base_idx += len(tracker_loss_terms[key])
+    base_idx += advance_base_idx  # should only happen once
 
     # Log time
-    metrics_logger.log_value(f"step_{step}_time", epoch_time)
+    mlflow.log_metric("step_time", epoch_time, step=step)
     writer.add_scalar("step_time", epoch_time, step)
 
     # log adjacency matrix metrics

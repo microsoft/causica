@@ -9,7 +9,6 @@ import torch
 
 from ..datasets.dataset import Dataset
 from ..datasets.variables import Variables
-from ..experiment.imetrics_logger import IMetricsLogger
 from ..preprocessing.data_processor import DataProcessor
 
 
@@ -103,7 +102,6 @@ class IModel(ABC):
     def run_train(
         self,
         dataset: Dataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:

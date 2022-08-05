@@ -1,6 +1,4 @@
-from typing import Any, Callable, Dict, List, Optional
-
-from .imetrics_logger import IMetricsLogger, ISystemMetricsLogger
+from typing import Callable
 
 
 def mock_download_dataset(dataset_name: str, data_dir: str):
@@ -9,31 +7,6 @@ def mock_download_dataset(dataset_name: str, data_dir: str):
 
 def aml_step(func: Callable, _: bool) -> Callable:
     return func
-
-
-class MockMetricLogger(IMetricsLogger):
-    def log_value(self, metric_name: str, value: Any, log_to_parent: Optional[bool] = False):
-        pass
-
-    def log_list(self, metric_name: str, values: List[Any], log_to_parent: Optional[bool] = False):
-        pass
-
-    def set_tags(self, tags: Dict[str, Any], log_to_parent: Optional[bool] = False):
-        pass
-
-    def finalize(self):
-        pass
-
-    def log_dict(self, metrics: Dict[str, Any], log_to_parent: Optional[bool] = False):
-        pass
-
-
-class MockSystemMetricsLogger(ISystemMetricsLogger):
-    def start_log(self):
-        pass
-
-    def end_log(self):
-        return {}
 
 
 class RunContext:
@@ -48,12 +21,6 @@ class RunContext:
         self.download_dataset = mock_download_dataset
         # Function for saying whether it is aml run or not
         self.is_azureml_run = lambda: False
-        # Metrics logger used for a run
-        self.mock_metrics_logger = MockMetricLogger()
-        self.metrics_logger = self.mock_metrics_logger
-        # System metrics logger used for a run
-        self.sys_mock_metric_logger = MockSystemMetricsLogger()  # type:ISystemMetricsLogger
-        self.system_metrics_logger = self.sys_mock_metric_logger
         # Evaluation pipeline used for a run
         # If no evaluation pipeline used, None is passed
         self.pipeline = None  # type:ignore

@@ -1,3 +1,4 @@
+from itertools import product
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -720,6 +721,105 @@ def cpdag2dags(cp_mat: np.ndarray, samples: Optional[int] = None) -> np.ndarray:
         dag_list.append(cp_determined_subgraph)
 
     return np.stack(dag_list, axis=0)
+
+
+def pag_to_admg_possibilities(adjacency_pag: np.ndarray, idx1: int, idx2: int):
+    """Computes all the directed / bidirected edge possibilities for a given entry in a PAG."""
+    # Check idx1 0-0 idx2.
+    if adjacency_pag[idx1, idx2] == 2 and adjacency_pag[idx2, idx1] == 2:
+        return [((1, 0), 0), ((0, 1), 0), ((0, 0), 1), ((1, 0), 1), ((0, 1), 1)]
+
+    # Check idx1 0-> idx2.
+    elif adjacency_pag[idx1, idx2] == 1 and adjacency_pag[idx2, idx1] == 2:
+        return [((1, 0), 0), ((0, 0), 1), ((1, 0), 1)]
+
+    # Check idx1 <-0 idx2.
+    elif adjacency_pag[idx1, idx2] == 2 and adjacency_pag[idx2, idx1] == 1:
+        return [((0, 1), 0), ((0, 0), 1), ((0, 1), 1)]
+
+    # Check idx1 <-> idx2.
+    elif adjacency_pag[idx1, idx2] == 1 and adjacency_pag[idx2, idx1] == 1:
+        return [((0, 0), 1)]
+
+    # Check idx1 -> idx2.
+    elif adjacency_pag[idx1, idx2] == 1 and adjacency_pag[idx2, idx1] == 0:
+        return [((1, 0), 0)]
+
+    # Check idx1 <- idx2.
+    elif adjacency_pag[idx1, idx2] == 0 and adjacency_pag[idx2, idx1] == 1:
+        return [((0, 1), 0)]
+
+    # Check no causal link.
+    elif adjacency_pag[idx1, idx2] == 0 and adjacency_pag[idx2, idx1] == 0:
+        return [((0, 0), 0)]
+
+    else:
+        raise ValueError("Invalid value in the PAG")
+
+
+def build_admg_from_edge_info(
+    edge_info: List[Tuple[Tuple[int, int], int]], nodes_list: List[Tuple[int, int]], num_nodes: int
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Constructs an ADMG from edge information."""
+    directed_adj = np.zeros((num_nodes, num_nodes))
+    bidirected_adj = np.zeros((num_nodes, num_nodes))
+
+    for nodes, edge in zip(nodes_list, edge_info):
+        idx1, idx2 = nodes[0], nodes[1]
+        directed_adj[idx1, idx2] = edge[0][0]
+        directed_adj[idx2, idx1] = edge[0][1]
+        bidirected_adj[idx1, idx2] = bidirected_adj[idx2, idx1] = edge[1]
+
+    return directed_adj, bidirected_adj
+
+
+def pag2admgs(adjacency_pag: np.ndarray, samples: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute all possible ADMG graphs contained within a Markov equivalence class, given by a PAG.
+
+    Args:
+        adjacency_pag: Adjacency matrix containing both directed and bidirected edges.
+        samples: If specified, selects a random subset of possible admgs of size samples.
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Two 3 dimensional arrays, the first being the directed graphs and the latter
+        being the corresponding bidirected graphs.
+    """
+    assert len(adjacency_pag.shape) == 2 and adjacency_pag.shape[0] == adjacency_pag.shape[1]
+
+    # List of possible entries in the directed and bidirected graphs for each pair of nodes.
+    possibilities_list = []
+    idxs_list = []
+
+    for idx1 in range(len(adjacency_pag)):
+        for idx2 in range(idx1 + 1, len(adjacency_pag)):
+            possibilities_list.append(pag_to_admg_possibilities(adjacency_pag, idx1, idx2))
+            idxs_list.append((idx1, idx2))
+
+    admg_edge_list = list(product(*possibilities_list))
+    max_admgs = len(admg_edge_list)
+    if samples is None:
+        samples = max_admgs
+
+    samples = min(samples, max_admgs)
+
+    admg_idxs = list(np.random.permutation(np.arange(max_admgs)))
+
+    # Iterate over list of all potential combinations of new edges.
+    directed_adj_list: list = []
+    bidirected_adj_list: list = []
+    admg_idxs = admg_idxs[:samples]
+    for admg_idx in admg_idxs:
+        # Get ADMG edge definition.
+        admg_edges = admg_edge_list[admg_idx]
+
+        # Build ADMG from edge definitions.
+        new_directed_adj, new_bidirected_adj = build_admg_from_edge_info(admg_edges, idxs_list, adjacency_pag.shape[0])
+
+        # Check for higher order cycles.
+        if dag_pen_np(new_directed_adj.copy()) == 0.0:
+            directed_adj_list.append(new_directed_adj)
+            bidirected_adj_list.append(new_bidirected_adj)
+
+    return np.stack(directed_adj_list, axis=0), np.stack(bidirected_adj_list, axis=0)
 
 
 def process_adjacency_mats(adj_mats: np.ndarray, num_nodes: int):

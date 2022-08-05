@@ -8,7 +8,6 @@ import torch
 
 from ...datasets.dataset import CausalDataset, Dataset
 from ...datasets.variables import Variables
-from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.deci.deci import DECI
 from .end2end_causal import End2endCausal
 
@@ -48,7 +47,6 @@ class InformedDECI(End2endCausal):
     def run_train(
         self,
         dataset: Dataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -72,7 +70,6 @@ class InformedDECI(End2endCausal):
 
         self.inference_model.run_train(
             dataset=dataset,
-            metrics_logger=metrics_logger,
             train_config_dict=inference_config,
             report_progress_callback=report_progress_callback,
         )

@@ -13,7 +13,6 @@ from torch.utils.data import DataLoader
 from ...datasets.dataset import Dataset, TemporalDataset
 from ...datasets.temporal_tensor_dataset import TemporalTensorDataset
 from ...datasets.variables import Variables
-from ...experiment.imetrics_logger import IMetricsLogger
 from ...utils.causality_utils import process_adjacency_mats
 from ...utils.helper_functions import maintain_random_state, to_tensors
 from ...utils.nri_utils import convert_temporal_to_static_adjacency_matrix
@@ -52,6 +51,9 @@ class FoldTimeDECI(DECI):
         prior_A_confidence: float = 0.5,
         graph_constraint_matrix: Optional[np.ndarray] = None,
         dense_init: bool = False,
+        encoder_layer_sizes: Optional[List[int]] = None,
+        decoder_layer_sizes: Optional[List[int]] = None,
+        embedding_size: Optional[int] = None,
     ):
         """
         Init method to create fold-time DECI object.
@@ -97,6 +99,9 @@ class FoldTimeDECI(DECI):
             cate_rff_lengthscale=cate_rff_lengthscale,
             prior_A_confidence=prior_A_confidence,
             dense_init=dense_init,
+            encoder_layer_sizes=encoder_layer_sizes,
+            decoder_layer_sizes=decoder_layer_sizes,
+            embedding_size=embedding_size,
         )
         # Build hard constraints
         if graph_constraint_matrix is None:
@@ -252,7 +257,6 @@ class FoldTimeDECI(DECI):
     def run_train(
         self,
         dataset: Dataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -273,7 +277,7 @@ class FoldTimeDECI(DECI):
         if train_config_dict is None:
             train_config_dict = {}
         # Run training
-        super().run_train(dataset, metrics_logger, train_config_dict, report_progress_callback)
+        super().run_train(dataset, train_config_dict, report_progress_callback)
         # Save the sampled adjacency matrix
         sampled_adjacency = self.get_adj_matrix(do_round=True, samples=100)
         proc_sampled_adjacency, _ = process_adjacency_mats(sampled_adjacency, num_nodes=sampled_adjacency.shape[-1])

@@ -11,6 +11,7 @@ from functools import partial
 from logging import Logger
 from typing import Any, Dict, Optional, Union
 
+import mlflow
 import numpy as np
 from scipy.sparse import csr_matrix, issparse
 
@@ -36,7 +37,6 @@ from ...utils.nri_utils import (
 )
 from ...utils.plot_functions import violin_plot_imputations
 from ...utils.torch_utils import set_random_seeds
-from ..imetrics_logger import IMetricsLogger
 
 ALL_INTRVS = "all interventions"
 
@@ -50,7 +50,6 @@ def run_eval_main(
     seed: int,
     split_type: str = "rows",
     user_id: int = 0,
-    metrics_logger: Optional[IMetricsLogger] = None,
     impute_train_data: bool = True,
 ):
     """
@@ -142,21 +141,21 @@ def run_eval_main(
         val_target_metrics = {}
         test_target_metrics = {}
 
-    if metrics_logger is not None:
-        # Log metrics to AzureML
-        metrics_logger.log_dict({"train_data.all": train_metrics.get("all", {})})
-        metrics_logger.log_dict({"val_data.all": val_metrics.get("all", {})})
-        metrics_logger.log_dict({"test_data.all": test_metrics["all"]})
+    # Log metrics to AzureML
+    mlflow.log_metrics(train_metrics.get("all", {}))
+    mlflow.log_metrics(val_metrics.get("all", {}))
+    mlflow.log_metrics(test_metrics["all"])
 
-        metrics_logger.log_dict({"train_data.Imputation MLL": train_metrics.get("Imputation MLL", {})})
-        metrics_logger.log_dict({"val_data.Imputation MLL": val_metrics.get("Imputation MLL", {})})
-        metrics_logger.log_dict({"test_data.Imputation MLL": test_metrics.get("Imputation MLL", {})})
+    mlflow.log_metrics(train_metrics.get("Imputation MLL", {}))
+    mlflow.log_metrics(val_metrics.get("Imputation MLL", {}))
+    mlflow.log_metrics(test_metrics.get("Imputation MLL", {}))
 
-        # Label in AzureML with 'target' otherwise for example, MEDV.RMSE can mean two different things - they are imputations with
-        # different masks. We no longer report the non-target metrics per variable, but we used to.
-        metrics_logger.log_dict({"train_data.target": train_target_metrics})
-        metrics_logger.log_dict({"val_data.target": val_target_metrics})
-        metrics_logger.log_dict({"test_data.target": test_target_metrics})
+    for val in train_target_metrics.values():
+        mlflow.log_metrics(val)
+    for val in val_target_metrics.values():
+        mlflow.log_metrics(val)
+    for val in test_target_metrics.values():
+        mlflow.log_metrics(val)
 
     # Violin plot
     # Plot the violin plot output for one datapoint to check imputation results
@@ -209,14 +208,12 @@ def run_eval_main(
             reconstructed_values, model.variables, filename_suffix="data_reconstruction", save_dir=model.save_dir
         )
 
-    if metrics_logger:
-        metrics_logger.log_value("impute/running-time", (dt.datetime.utcnow() - start_time).total_seconds() / 60)
+    mlflow.log_metric("impute/running-time", (dt.datetime.utcnow() - start_time).total_seconds() / 60)
 
 
 def eval_causal_discovery(
     dataset: CausalDataset,
     model: IModelForCausalInference,
-    metrics_logger: Optional[IMetricsLogger] = None,
     conversion_type: str = "full_time",
 ):
     """
@@ -238,7 +235,7 @@ def eval_causal_discovery(
 
     # Convert temporal adjacency matrices to static adjacency matrices, currently does not support partially observed ground truth (i.e. subgraph_idx=None).
     if isinstance(dataset, TemporalDataset):
-        if isinstance(model, VARLiNGAM):
+        if isinstance(model, (VARLiNGAM)):
             adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
                 adj_ground_truth, adj_pred, is_static=False
             )
@@ -267,17 +264,16 @@ def eval_causal_discovery(
     elif len(adj_pred.shape) == 3:
         # If predicts multiple adjacency matrices (stacked)
         results = edge_prediction_metrics_multisample(adj_ground_truth, adj_pred, adj_matrix_mask=subgraph_idx)
-    if metrics_logger is not None:
-        # Log metrics to AzureML
-        metrics_logger.log_value("adjacency.recall", results["adjacency_recall"])
-        metrics_logger.log_value("adjacency.precision", results["adjacency_precision"])
-        metrics_logger.log_value("adjacency.f1", results["adjacency_fscore"], True)
-        metrics_logger.log_value("orientation.recall", results["orientation_recall"])
-        metrics_logger.log_value("orientation.precision", results["orientation_precision"])
-        metrics_logger.log_value("orientation.f1", results["orientation_fscore"], True)
-        metrics_logger.log_value("causal_accuracy", results["causal_accuracy"])
-        metrics_logger.log_value("causalshd", results["shd"])
-        metrics_logger.log_value("causalnnz", results["nnz"])
+    # Log metrics
+    mlflow.log_metric("adjacency.recall", results["adjacency_recall"])
+    mlflow.log_metric("adjacency.precision", results["adjacency_precision"])
+    mlflow.log_metric("adjacency.f1", results["adjacency_fscore"], True)
+    mlflow.log_metric("orientation.recall", results["orientation_recall"])
+    mlflow.log_metric("orientation.precision", results["orientation_precision"])
+    mlflow.log_metric("orientation.f1", results["orientation_fscore"], True)
+    mlflow.log_metric("causal_accuracy", results["causal_accuracy"])
+    mlflow.log_metric("causalshd", results["shd"])
+    mlflow.log_metric("causalnnz", results["nnz"])
     # Save causality results to a file
     save_train_val_test_metrics(
         train_metrics={},
@@ -291,7 +287,6 @@ def evaluate_treatment_effect_estimation(
     model: IModelForCausalInference,
     dataset: CausalDataset,
     logger: Logger,
-    metrics_logger: Optional[IMetricsLogger] = None,
     eval_likelihood: bool = True,
 ):
     """
@@ -299,17 +294,16 @@ def evaluate_treatment_effect_estimation(
     """
 
     process_dataset = isinstance(model, DECI)
-    eval_treatment_effects(logger, dataset, model, metrics_logger, eval_likelihood, process_dataset)
+    eval_treatment_effects(logger, dataset, model, eval_likelihood, process_dataset)
 
     if isinstance(model, IModelForCounterfactuals) and dataset.has_counterfactual_data:
         # only evaluate ITE if the model can generate counterfactuals and we have ground truth counterfactual data
-        eval_individual_treatment_effects(dataset, model, metrics_logger, process_dataset)
+        eval_individual_treatment_effects(dataset, model, process_dataset)
 
 
 def eval_individual_treatment_effects(
     dataset: CausalDataset,
     model: IModelForCounterfactuals,
-    metrics_logger: Optional[IMetricsLogger] = None,
     process_dataset: bool = True,
 ) -> None:
 
@@ -341,10 +335,9 @@ def eval_individual_treatment_effects(
     _add_rmse_to_dict(counterfactual_metric_dict, ite_rmse_most_likely_metrics, "ML ITE RMSE")
 
     # Log the metrics
-    if metrics_logger is not None:
-        metrics_logger.log_value("interventions.all.ite_rmse", ite_rmse_metrics.all, False)
-        metrics_logger.log_value("interventions.all.ML.ite_rmse", ite_norm_rmse_most_likely_metrics.all, False)
-        metrics_logger.log_value("ITE_rmse", ite_rmse_metrics.all, True)
+    mlflow.log_metric("interventions.all.ite_rmse", ite_rmse_metrics.all)
+    mlflow.log_metric("interventions.all.ML.ite_rmse", ite_norm_rmse_most_likely_metrics.all)
+    mlflow.log_metric("ITE_rmse", ite_rmse_metrics.all)
 
     # Save counterfactual results to a file
     save_train_val_test_metrics(
@@ -359,7 +352,6 @@ def eval_treatment_effects(
     logger: Logger,
     dataset: CausalDataset,
     model: IModelForCausalInference,
-    metrics_logger: Optional[IMetricsLogger] = None,
     eval_likelihood: bool = True,
     process_dataset: bool = True,
 ) -> None:
@@ -370,7 +362,6 @@ def eval_treatment_effects(
         logger (`logging.Logger`): Instance of logger class to use.
         dataset: Dataset or SparseDataset object.
         model (IModelForInterventions): Model to use.
-        metrics_logger: Optional[IMetricsLogger]
         name_prepend: Optional string that will be prepended to the json save name and logged metrics.
              This allows us to distinguish results from end2end models from results computed with downstream models (models that require graph as input, like DoWhy)
         eval_likelihood: Optional bool flag that will disable the log likelihood evaluation
@@ -442,25 +433,20 @@ def eval_treatment_effects(
         metric_dict["test log prob std"] = test_log_prob_treatments.all_std
 
     # log the metrics
-    if metrics_logger is not None:
-        metrics_logger.log_value("interventions.all.ate_rmse", ate_rmse_metrics.all, False)
-        metrics_logger.log_value("interventions.all.ML.ate_rmse", ate_rmse_most_likely_metrics.all, False)
+    mlflow.log_metric("interventions.all.ate_rmse", ate_rmse_metrics.all)
+    mlflow.log_metric("interventions.all.ML.ate_rmse", ate_rmse_most_likely_metrics.all)
 
-        _log_treatment(metrics_logger, log_prob_treatments, logger_str="all.log_prob")
-        _log_treatment(metrics_logger, log_prob_most_likely_treatments, logger_str="all.ML.log_prob")
-        _log_treatment(metrics_logger, test_log_prob_treatments, logger_str="test.log_prob")
+    _log_treatment(log_prob_treatments, logger_str="all.log_prob")
+    _log_treatment(log_prob_most_likely_treatments, logger_str="all.ML.log_prob")
+    _log_treatment(test_log_prob_treatments, logger_str="test.log_prob")
 
-        # special metrics to log
-        metrics_logger.log_value("TE_rmse", ate_rmse_metrics.all, True)
+    # special metrics to log
+    mlflow.log_metric("TE_rmse", ate_rmse_metrics.all)
 
-        if log_prob_treatments is not None:
-            metrics_logger.log_value(
-                "TE_LL",
-                log_prob_treatments.all_mean,
-                True,
-            )
-        if test_log_prob_treatments is not None:
-            metrics_logger.log_value("test_LL", test_log_prob_treatments.all_mean, True)
+    if log_prob_treatments is not None:
+        mlflow.log_metric("TE_LL", log_prob_treatments.all_mean)
+    if test_log_prob_treatments is not None:
+        mlflow.log_metric("test_LL", test_log_prob_treatments.all_mean, True)
 
     # Save intervention results to a file
     save_train_val_test_metrics(
@@ -471,13 +457,13 @@ def eval_treatment_effects(
     )
 
 
-def _log_treatment(metrics_logger: IMetricsLogger, treatment_probs: Optional[TreatmentDataLogProb], logger_str: str):
+def _log_treatment(treatment_probs: Optional[TreatmentDataLogProb], logger_str: str):
     """Log treatment log probabilities to the metrics logger."""
     if treatment_probs is None:
         return
 
-    metrics_logger.log_value(f"interventions.{logger_str}_mean", treatment_probs.all_mean, False)
-    metrics_logger.log_value(f"interventions.{logger_str}_std", treatment_probs.all_std, False)
+    mlflow.log_metric(f"interventions.{logger_str}_mean", treatment_probs.all_mean)
+    mlflow.log_metric(f"interventions.{logger_str}_std", treatment_probs.all_std)
 
 
 def _add_intervention_likelihoods_to_dict(

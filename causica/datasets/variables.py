@@ -719,6 +719,7 @@ class Variable:
         target: Optional[bool] = None,
         overwrite_processed_dim: Optional[int] = None,
         always_observed: Optional[bool] = None,
+        is_latent: Optional[bool] = False,
     ) -> None:
         """
         Args:
@@ -732,6 +733,7 @@ class Variable:
             target: Whether this variable is an information acquisition target for active leaning algorithms.
                 If unspecified, this is assumed to be true if the variable cannot be queried and vice-versa.
             overwrite_processed_dim: overwrites variable's processed dim
+            is_latent: Indicates whether or not this variable is a latent variable.
         """
         self.query = query
         self.type_ = type
@@ -742,6 +744,7 @@ class Variable:
         self.target = target
         self.overwrite_processed_dim = overwrite_processed_dim
         self.always_observed = always_observed
+        self.is_latent = is_latent
 
         if self.type_ == "continuous":
             self.lower = self._try_assign(lower, "lower", float)
@@ -801,6 +804,7 @@ class Variable:
             "lower": self.lower,
             "upper": self.upper,
             "always_observed": self.always_observed,
+            "is_latent": self.is_latent,
         }
         if self.overwrite_processed_dim is not None:  # As it is only used in VAEM(?), don't add if None
             var_dict["overwrite_processed_dim"] = self.overwrite_processed_dim
