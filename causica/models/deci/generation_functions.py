@@ -19,6 +19,7 @@ class ContractiveInvertibleGNN(nn.Module):
         res_connection: bool = True,
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
+        embedding_size: Optional[int] = None,
     ):
         """
         Args:
@@ -37,6 +38,7 @@ class ContractiveInvertibleGNN(nn.Module):
             res_connection=res_connection,
             layers_g=encoder_layer_sizes,
             layers_f=decoder_layer_sizes,
+            embedding_size=embedding_size,
         )
 
     def _initialize_W(self) -> torch.Tensor:
@@ -113,7 +115,10 @@ class ContractiveInvertibleGNN(nn.Module):
                 X[:, gt_zero_region] = (X[:, gt_zero_region] > 0).float()
 
         if intervention_mask is not None and intervention_values is not None:
-            X[:, intervention_mask] = intervention_values.unsqueeze(0)
+            if intervention_values.shape == X.shape:
+                X[:, intervention_mask] = intervention_values
+            else:
+                X[:, intervention_mask] = intervention_values.unsqueeze(0)
         return X
 
 

@@ -29,23 +29,23 @@ For more information, please refer to the [paper](https://arxiv.org/abs/2202.021
 
 **Model Description**
 
-DECI is a generative model that employs an additive noise structural equation model (ANM-SEM) to capture the functional relationships among variables and exogenous noise, while simultanously learning a variational distribution over causal graphs. Specifically, the relationships among variables are captured with flexible neural networks while the exogenous noise is modelled as either a Gaussian or spline-flow noise model. The SEM is reversible, meaning that we can generate an observation vector from an exogenous noise vector through forward simulation and given a observation vector we can recover a unique corresponding exogenous noise vector. In this sense, the DECI SEM can be seen as a flow from exogenouse noise to observations. We employ a mean-field approximate posterior distribution over graphs, which is learnt together with the functional relationships among variables by optimising an evidence lower bound (ELBO). Additionally, DECI supports learning under partially observed data.
+DECI is a generative model that employs an additive noise structural equation model (ANM-SEM) to capture the functional relationships among variables and exogenous noise, while simultaneously learning a variational distribution over causal graphs. Specifically, the relationships among variables are captured with flexible neural networks while the exogenous noise is modelled as either a Gaussian or spline-flow noise model. The SEM is reversible, meaning that we can generate an observation vector from an exogenous noise vector through forward simulation and given a observation vector we can recover a unique corresponding exogenous noise vector. In this sense, the DECI SEM can be seen as a flow from exogenous noise to observations. We employ a mean-field approximate posterior distribution over graphs, which is learnt together with the functional relationships among variables by optimising an evidence lower bound (ELBO). Additionally, DECI supports learning under partially observed data.
 
 **Simulation-based Causal Inference**
 
-DECI estimates causal quantities (ATE / CATE) by applying the relevant interventions to its learnt causal graph (i.e. mutilating incoming edges to intervened variables) and then sampling from the generative model. This process involves first sampling a vector of exogenous noise from the learnt noise distribution and then forward simulating the SEM until an observation vector is obtained. ATE can be computed via estimating an expectation over the effect variable of interest using MonteCarlo samples of the intervened distribution of observations. DECI can not simulate samples from conditional intervened distributions directly. However, we can learn an estimator of the conditional intervened distrbution from samples of the joint distribution of conditioning variables and effect variables. Specifically, we use radial-basis-function kernel regression to evaluate expectations in the CATE formula.
+DECI estimates causal quantities (ATE / CATE) by applying the relevant interventions to its learnt causal graph (i.e. mutilating incoming edges to intervened variables) and then sampling from the generative model. This process involves first sampling a vector of exogenous noise from the learnt noise distribution and then forward simulating the SEM until an observation vector is obtained. ATE can be computed via estimating an expectation over the effect variable of interest using MonteCarlo samples of the intervened distribution of observations. DECI can not simulate samples from conditional intervened distributions directly. However, we can learn an estimator of the conditional intervened distribution from samples of the joint distribution of conditioning variables and effect variables. Specifically, we use radial-basis-function kernel regression to evaluate expectations in the CATE formula.
 
 
 **Specifying a prior over graphs**
 
-If some a-prior knowledge of the causal graph is available, it can be incorporated as a prior for DECI by using the `informed_deci` model. The a-prior graph should is passed to DECI as a part of the `CausalDataset`. The hyperparameters used to specify strenght of beleif in the prior graph are discussed below. 
+If some a-prior knowledge of the causal graph is available, it can be incorporated as a prior for DECI by using the `informed_deci` model. The a-prior graph should is passed to DECI as a part of the `CausalDataset`. The hyperparameters used to specify strength of belief in the prior graph are discussed below. 
 
 
 **Specifying a noise model**
 
-If the exogenous noise is known to be Gaussian, we reccomend employing the `deci_gaussian` model. This model has its Gaussian exogenous noise distribution mean set to 0 while its variance is learnt.
+If the exogenous noise is known to be Gaussian, we recommend employing the `deci_gaussian` model. This model has its Gaussian exogenous noise distribution mean set to 0 while its variance is learnt.
 
-In the more general setting, we reccomend using `deci_spline`. Here the exogenous noise distribution is a flexible spline flow that is learnt from the data. This model provides most gains in heavy-tailed noise settings, where the Gaussian model is at risk of overfitting to outliers. 
+In the more general setting, we recommend using `deci_spline`. Here the exogenous noise distribution is a flexible spline flow that is learnt from the data. This model provides most gains in heavy-tailed noise settings, where the Gaussian model is at risk of overfitting to outliers. 
 
 ## How to run
 
@@ -57,7 +57,7 @@ python run_experiment.py csuite_symprod_simpson --model_type deci_spline --model
 
 ## How to generate data for experiments
 
-We use different data for each of our 3 experiments: large scale evluation data, csuite synthetic data and Twins/IHDP
+We use different data for each of our 3 experiments: large scale evaluation data, csuite synthetic data and Twins/IHDP
 
 **Large scale evaluation**
 
@@ -265,10 +265,10 @@ Model configs:
 - `res_connection`:  bool indicating whether all MLPs should use layer norm
 - `layers_encoder`: Optional list indicating width of layers in GNN encoder MLP. If unspecified, defaults to a size dependent on size of observation vector.
 - `layers_decoder`: Optional list indicating width of layers in GNN decoder MLP.  If unspecified, defaults to a size dependent on size of observation vector.
-- `cate_rff_n_features`: number of random features to use in functiona approximation when estimating CATE. 
+- `cate_rff_n_features`: number of random features to use in function approximation when estimating CATE. 
 - `cate_rff_lengthscale`: lengthscale of RBF kernel used when estimating CATE.
 - `prior_A`: prior adjacency matrix. Does not need to be a DAG.
-- `prior_A_confidence`: degree of confidence in prior adjacency matrix enabled edges between 0 and 1. e.g. a values 0.5 enforces a beleif that the entries in prior_A are correct 50% of the time.
+- `prior_A_confidence`: degree of confidence in prior adjacency matrix enabled edges between 0 and 1. e.g. a value of 0.5 enforces a belief that the entries in prior_A are correct 50% of the time.
 
 Training hyperparameters:
 
@@ -315,3 +315,8 @@ We use Poetry to manage the project dependencies, they're specified in the [pypr
 To install the environment run `poetry install`, this will create a virtualenv that you can use by running either `poetry shell` or `poetry run {command}`. It's also a virtualenv that you can interact with in the normal way too.
 
 More information about poetry can be found [here](https://python-poetry.org/)
+
+### mlflow
+
+We use [mlflow](https://mlflow.org/) for logging metrics and artifacts. By default it will run locally and store results in `./mlruns`.
+It is called inside `run_experiment_on_parsed_args` and the target (SQL database etc) can be changed as required.

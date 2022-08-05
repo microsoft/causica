@@ -11,7 +11,6 @@ import torch
 
 from ...datasets.dataset import Dataset
 from ...datasets.variables import Variables
-from ...experiment.imetrics_logger import IMetricsLogger
 from ...models.imodel import IModel, IModelForCausalInference, IModelForInterventions
 from ...models.model import Model
 from ...models.torch_model import _set_random_seed_and_remove_from_config
@@ -64,7 +63,6 @@ class End2endCausal(Model, IModelForCausalInference, IModelForInterventions):
     def run_train(
         self,
         dataset: Dataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:

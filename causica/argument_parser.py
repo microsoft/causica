@@ -7,7 +7,8 @@ import numpy as np
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Train a partial VAE model.", formatter_class=argparse.RawTextHelpFormatter
+        description="Train a partial VAE model.",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
 
     parser.add_argument("dataset_name", help="Name of dataset to use.")
@@ -124,17 +125,53 @@ def get_parser() -> argparse.ArgumentParser:
             """
         ),
     )
-    parser.add_argument("--model_dir", "-md", default=None, help="Directory containing the model.")
-    parser.add_argument("--model_config", "-m", type=str, help="Path to JSON containing model configuration.")
-    parser.add_argument("--dataset_config", "-dc", type=str, help="Path to JSON containing dataset configuration.")
-    parser.add_argument("--impute_config", "-ic", type=str, help="Path to JSON containing impute configuration.")
-    parser.add_argument("--objective_config", "-oc", type=str, help="Path to JSON containing objective configuration.")
+    parser.add_argument(
+        "--model_dir", "-md", default=None, help="Directory containing the model."
+    )
+    parser.add_argument(
+        "--model_config",
+        "-m",
+        type=str,
+        help="Path to JSON containing model configuration.",
+    )
+    parser.add_argument(
+        "--dataset_config",
+        "-dc",
+        type=str,
+        help="Path to JSON containing dataset configuration.",
+    )
+    parser.add_argument(
+        "--impute_config",
+        "-ic",
+        type=str,
+        help="Path to JSON containing impute configuration.",
+    )
+    parser.add_argument(
+        "--objective_config",
+        "-oc",
+        type=str,
+        help="Path to JSON containing objective configuration.",
+    )
 
     # Whether or not to run inference and active learning
-    parser.add_argument("--run_inference", "-i", action="store_true", help="Run inference after training.")
-    parser.add_argument("--extra_eval", "-x", action="store_true", help="Run extra eval tests that take longer.")
     parser.add_argument(
-        "--max_steps", "-ms", type=int, default=np.inf, help="Maximum number of active learning steps to take."
+        "--run_inference",
+        "-i",
+        action="store_true",
+        help="Run inference after training.",
+    )
+    parser.add_argument(
+        "--extra_eval",
+        "-x",
+        action="store_true",
+        help="Run extra eval tests that take longer.",
+    )
+    parser.add_argument(
+        "--max_steps",
+        "-ms",
+        type=int,
+        default=np.inf,
+        help="Maximum number of active learning steps to take.",
     )
     parser.add_argument(
         "--max_al_rows",
@@ -170,7 +207,11 @@ def get_parser() -> argparse.ArgumentParser:
                                 b_ei = batch ei""",
     )
     parser.add_argument(
-        "--users_to_plot", "-up", default=[0], nargs="+", help="Indices of users to plot info gain bar charts for."
+        "--users_to_plot",
+        "-up",
+        default=[0],
+        nargs="+",
+        help="Indices of users to plot info gain bar charts for.",
     )
     # Whether or not to evaluate causal discovery (only visl at the moment)
     parser.add_argument(
@@ -187,12 +228,30 @@ def get_parser() -> argparse.ArgumentParser:
     )
     # Other options for saving output.
 
-    parser.add_argument("--output_dir", "-o", type=str, default="runs", help="Output path. Defaults to ./runs/.")
-    parser.add_argument("--name", "-n", type=str, help="Tag for this run. Output dir will start with this tag.")
     parser.add_argument(
-        "--device", "-dv", default="cpu", help="Name (e.g. 'cpu', 'gpu') or ID (e.g. 0 or 1) of device to use."
+        "--output_dir",
+        "-o",
+        type=str,
+        default="runs",
+        help="Output path. Defaults to ./runs/.",
     )
-    parser.add_argument("--tiny", action="store_true", help="Use this flag to do a tiny run for debugging")
+    parser.add_argument(
+        "--name",
+        "-n",
+        type=str,
+        help="Tag for this run. Output dir will start with this tag.",
+    )
+    parser.add_argument(
+        "--device",
+        "-dv",
+        default="cpu",
+        help="Name (e.g. 'cpu', 'gpu') or ID (e.g. 0 or 1) of device to use.",
+    )
+    parser.add_argument(
+        "--tiny",
+        action="store_true",
+        help="Use this flag to do a tiny run for debugging",
+    )
     parser.add_argument(
         "--random_seed",
         type=int,
@@ -226,7 +285,7 @@ def get_parser() -> argparse.ArgumentParser:
         "-ct",
         type=str.lower,
         default="full_time",
-        choices=["ful_time"],
+        choices=["full_time"],
         help="The type of conversion used for converting the temporal adjacency matrix to a static adjacency matrix during causal discovery evaluation",
     )
 
@@ -241,6 +300,11 @@ def validate_args(args: argparse.Namespace) -> None:
     assert os.path.isdir(args.data_dir), f"{args.data_dir} is not a directory."
 
     # Config files
-    for config in (args.model_config, args.dataset_config, args.impute_config, args.objective_config):
+    for config in (
+        args.model_config,
+        args.dataset_config,
+        args.impute_config,
+        args.objective_config,
+    ):
         if config is not None and not os.path.isfile(config):
             raise ValueError(f"Config file {config} does not exist.")

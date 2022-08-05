@@ -210,6 +210,99 @@ def test_cpdag2dags_dont_add_extra_collider():
         assert np.all(dag == solution0)
 
 
+def test_pag2admgs():
+
+    pag = np.zeros((4, 4))
+    pag[0, 2] = 1
+    pag[1, 2] = 1
+    pag[2, 0] = pag[2, 1] = 2
+    pag[2, 3] = 1
+
+    # Solution 0.
+    directed0 = pag.copy()
+    directed0[2, 0] = directed0[2, 1] = 0
+    bidirected0 = np.zeros((4, 4))
+    solution0 = (directed0, bidirected0)
+
+    # Solution 1.
+    directed1 = pag.copy()
+    directed1[2, 0] = directed1[2, 1] = 0
+    directed1[0, 2] = 0
+    bidirected1 = np.zeros((4, 4))
+    bidirected1[0, 2] = bidirected1[2, 0] = 1
+    solution1 = (directed1, bidirected1)
+
+    # Solution 2.
+    directed2 = pag.copy()
+    directed2[2, 0] = directed2[2, 1] = 0
+    directed2[1, 2] = 0
+    bidirected2 = np.zeros((4, 4))
+    bidirected2[1, 2] = bidirected2[2, 1] = 1
+    solution2 = (directed2, bidirected2)
+
+    # Solution 3.
+    directed3 = pag.copy()
+    directed3[2, 0] = directed3[2, 1] = 0
+    directed3[0, 2] = directed3[1, 2] = 0
+    bidirected3 = np.zeros((4, 4))
+    bidirected3[0, 2] = bidirected3[2, 0] = bidirected3[1, 2] = bidirected3[2, 1] = 1
+    solution3 = (directed3, bidirected3)
+
+    # Solution 4.
+    directed4 = pag.copy()
+    directed4[2, 0] = directed4[2, 1] = 0
+    bidirected4 = np.zeros((4, 4))
+    bidirected4[0, 2] = bidirected4[2, 0] = 1
+    solution4 = (directed4, bidirected4)
+
+    # Solution 5.
+    directed5 = pag.copy()
+    directed5[2, 0] = directed5[2, 1] = 0
+    bidirected5 = np.zeros((4, 4))
+    bidirected5[1, 2] = bidirected5[2, 1] = 1
+    solution5 = (directed5, bidirected5)
+
+    # Solution 6.
+    directed6 = pag.copy()
+    directed6[2, 0] = directed6[2, 1] = 0
+    bidirected6 = np.zeros((4, 4))
+    bidirected6[0, 2] = bidirected6[2, 0] = bidirected6[1, 2] = bidirected6[2, 1] = 1
+    solution6 = (directed6, bidirected6)
+
+    # Solution 7.
+    directed7 = pag.copy()
+    directed7[2, 0] = directed7[2, 1] = 0
+    directed7[0, 2] = 0
+    bidirected7 = np.zeros((4, 4))
+    bidirected7[0, 2] = bidirected7[2, 0] = bidirected7[1, 2] = bidirected7[2, 1] = 1
+    solution7 = (directed7, bidirected7)
+
+    # Solution 8.
+    directed8 = pag.copy()
+    directed8[2, 0] = directed8[2, 1] = 0
+    directed8[1, 2] = 0
+    bidirected8 = np.zeros((4, 4))
+    bidirected8[0, 2] = bidirected8[2, 0] = bidirected8[1, 2] = bidirected8[2, 1] = 1
+    solution8 = (directed8, bidirected8)
+
+    proposed_directed, proposed_bidirected = causality_utils.pag2admgs(pag)
+
+    for d, b in zip(proposed_directed, proposed_bidirected):
+
+        assert causality_utils.dag_pen_np(d) == 0.0
+        assert (
+            (np.all(d == solution0[0]) and np.all(b == solution0[1]))
+            or (np.all(d == solution1[0]) and np.all(b == solution1[1]))
+            or (np.all(d == solution2[0]) and np.all(b == solution2[1]))
+            or (np.all(d == solution3[0]) and np.all(b == solution3[1]))
+            or (np.all(d == solution4[0]) and np.all(b == solution4[1]))
+            or (np.all(d == solution5[0]) and np.all(b == solution5[1]))
+            or (np.all(d == solution6[0]) and np.all(b == solution6[1]))
+            or (np.all(d == solution7[0]) and np.all(b == solution7[1]))
+            or (np.all(d == solution8[0]) and np.all(b == solution8[1]))
+        )
+
+
 def test_normalise_data():
     arr_1 = np.array([[10, 6], [11, 10], [121, 55]])
     arr_2 = np.array([[7, 4], [5, 15], [1, 72]])

@@ -23,6 +23,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import mlflow
 import numpy as np
 
 from .argument_parser import get_parser, validate_args
@@ -115,7 +116,6 @@ def run_experiment(
         time.sleep(1)
         models_dir = create_models_dir(output_dir=output_dir, name=name)
     experiment_name = f"{dataset_name}.{model_type}" if name is None else name
-    metrics_logger = run_context.metrics_logger
     aml_tags = {
         "model_type": model_type,
         "dataset_name": dataset_name,
@@ -135,11 +135,11 @@ def run_experiment(
         "impute_config": impute_config,
         "objective_config": objective_config,
     }
-    metrics_logger.set_tags(aml_tags)
+    mlflow.set_tags(aml_tags)
 
     # Make many model files with diff seed for each.
     configs = split_configs(model_config, dataset_config)
-    metrics_logger.set_tags({"num_samples": len(configs)})
+    mlflow.set_tags({"num_samples": len(configs)})
 
     pipeline = run_context.pipeline
     pipeline_creation_mode = pipeline is not None
@@ -203,7 +203,6 @@ def run_experiment(
         output_dir=models_dir,
         experiment_name=experiment_name,
         aml_tags=aml_tags,
-        run_context=run_context,
     )
     if pipeline_creation_mode:
         pipeline.add_step(
@@ -230,36 +229,38 @@ def run_experiment_on_parsed_args(args: argparse.Namespace, run_context: RunCont
     else:
         args.model_id = None
 
-    run_experiment(
-        dataset_name=args.dataset_name,
-        model_config_path=args.model_config,
-        run_context=run_context,
-        data_dir=args.data_dir,
-        model_type=args.model_type,
-        model_dir=args.model_dir,
-        model_id=args.model_id,
-        dataset_config_path=args.dataset_config,
-        impute_config_path=args.impute_config,
-        objective_config_path=args.objective_config,
-        run_inference=args.run_inference,
-        extra_eval=args.extra_eval,
-        active_learning=args.active_learning,
-        max_steps=args.max_steps,
-        max_al_rows=args.max_al_rows,
-        causal_discovery=args.causal_discovery,
-        treatment_effects=args.treatment_effects,
-        output_dir=args.output_dir,
-        device=args.device,
-        name=args.name,
-        quiet=False,
-        active_learning_users_to_plot=args.users_to_plot,
-        tiny=args.tiny,
-        random_seed=args.random_seed,
-        default_configs_dir=args.default_configs_dir,
-        logger_level=args.logger_level,
-        eval_likelihood=args.eval_likelihood,
-        conversion_type=args.conversion_type,
-    )
+    experiment_name = f"{args.dataset_name}.{args.model_type}" if args.name is None else args.name
+    with mlflow.start_run(run_name=experiment_name):
+        run_experiment(
+            dataset_name=args.dataset_name,
+            model_config_path=args.model_config,
+            run_context=run_context,
+            data_dir=args.data_dir,
+            model_type=args.model_type,
+            model_dir=args.model_dir,
+            model_id=args.model_id,
+            dataset_config_path=args.dataset_config,
+            impute_config_path=args.impute_config,
+            objective_config_path=args.objective_config,
+            run_inference=args.run_inference,
+            extra_eval=args.extra_eval,
+            active_learning=args.active_learning,
+            max_steps=args.max_steps,
+            max_al_rows=args.max_al_rows,
+            causal_discovery=args.causal_discovery,
+            treatment_effects=args.treatment_effects,
+            output_dir=args.output_dir,
+            device=args.device,
+            name=args.name,
+            quiet=False,
+            active_learning_users_to_plot=args.users_to_plot,
+            tiny=args.tiny,
+            random_seed=args.random_seed,
+            default_configs_dir=args.default_configs_dir,
+            logger_level=args.logger_level,
+            eval_likelihood=args.eval_likelihood,
+            conversion_type=args.conversion_type,
+        )
 
 
 def main(user_args):

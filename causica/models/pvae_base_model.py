@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from ..datasets.dataset import Dataset, SparseDataset
 from ..datasets.variables import Variables
-from ..experiment.imetrics_logger import IMetricsLogger
 from ..objectives.eddi import EDDIObjective
 from ..utils.data_mask_utils import restore_preserved_values, sample_inducing_points
 from ..utils.helper_functions import to_tensors
@@ -77,7 +76,6 @@ class PVAEBaseModel(TorchModel, IModelForObjective):
     def run_train(
         self,
         dataset: Union[Dataset, SparseDataset],
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:

@@ -10,27 +10,24 @@ import logging
 import os
 from typing import Any, Dict, List
 
+import mlflow
 import pandas as pd
 
 from ...datasets.variables import Variables
 from ...utils.io_utils import flatten_keys, read_json_as, read_txt, save_json, unflatten_keys
 from ...utils.run_utils import find_all_model_dirs
-from ..imetrics_logger import IMetricsLogger
 
 logger = logging.getLogger()
 
 
-def run_aggregation_main(
-    input_dirs: List[str], output_dir: str, metrics_logger: IMetricsLogger, summarise: bool = True
-) -> None:
+def run_aggregation_main(input_dirs: List[str], output_dir: str, summarise: bool = True) -> None:
 
     """
     Aggregate results from multiple directories corresponding to different model instances.
 
     Args:
         input_dirs: Directories to search for individual-model results
-        output_dir_dir (str): directory where the summary results should be saved.
-        experiment_name (str): identifier for the current experiment
+        output_dir : directory where the summary results should be saved.
         summarise: Flag indicating whether you want to create summary files with mean and standard deviation of each metric.
           If False, this function just creates a file all_results_and_configs.csv which has a column for each metric and
           config entry, and a row for each of the models.
@@ -49,7 +46,11 @@ def run_aggregation_main(
     df = pd.DataFrame(results_and_configs)
 
     # Write all results and configs to a CSV
-    df.to_csv(os.path.join(output_dir, "all_results_and_configs.csv"), sep=",", encoding="utf-8")
+    df.to_csv(
+        os.path.join(output_dir, "all_results_and_configs.csv"),
+        sep=",",
+        encoding="utf-8",
+    )
 
     if summarise:
         if len(set(x["dataset_name"] for x in results_and_configs)) > 1:
@@ -57,19 +58,24 @@ def run_aggregation_main(
             # Aggregation of active learning metrics will break and means, stds will be meaningless.
             raise NotImplementedError
 
-        _create_summary(df, output_dir, num_samples=len(model_dirs), metrics_logger=metrics_logger)
+        _create_summary(df, output_dir, num_samples=len(model_dirs))
 
 
 def _create_summary(
     df: pd.DataFrame,
     output_dir: str,
     num_samples: int,
-    metrics_logger: IMetricsLogger,
 ):
 
     # Summary over all seeds
     summary_dict = _get_summary_dict_from_dataframe(df)
-    result_fields = ["results", "target_results", "auic", "running_times", "system_metrics"]
+    result_fields = [
+        "results",
+        "target_results",
+        "auic",
+        "running_times",
+        "system_metrics",
+    ]
     _save_results(summary_dict, output_dir, result_fields)
 
     # Summary per data split
@@ -85,8 +91,7 @@ def _create_summary(
             for _, val in summary.items():
                 remove_value_by_key(val, remove_key)
 
-    # Because of AML logging limitations, log num_samples only once and remove all "num_samples" entries from summary_dict
-    metrics_logger.log_dict({"all_seeds.num_samples": num_samples}, True)
+    mlflow.log_metric("all_seeds.num_samples", num_samples)
     summary_dict_reduced = summary_dict.copy()
     remove_value_by_key(summary_dict_reduced, "num_samples")
 
@@ -94,27 +99,27 @@ def _create_summary(
     if "results" in summary_dict_reduced:
         for x in ["train_data", "val_data", "test_data"]:
             if x in summary_dict_reduced["results"]:
-                metrics_logger.log_dict(
-                    {f"all_seeds.{x}.Imputation MLL": summary_dict_reduced["results"][x].get("Imputation MLL", {})}
+                mlflow.log_metrics(
+                    {f"all_seeds.{x}.Imputation MLL": summary_dict_reduced["results"][x].get("Imputation MLL", {})},
                 )
-                metrics_logger.log_dict(
-                    {f"all_seeds.{x}.all": summary_dict_reduced["results"][x].get("all", {})}, x == "test_data"
+                mlflow.log_metrics(
+                    {f"all_seeds.{x}.all": summary_dict_reduced["results"][x].get("all", {})},
                 )
     else:
         logger.info("No imputation results to log to AML")
 
     if "auic" in summary_dict_reduced:
-        metrics_logger.log_dict({"all_seeds.auic": summary_dict_reduced["auic"]["all"]}, True)
+        mlflow.log_metric("all_seeds.auic", summary_dict_reduced["auic"]["all"])
     else:
         logger.info("No AUIC to log to AML")
     if "running_times" in summary_dict:
         for x in summary_dict["running_times"]:
-            metrics_logger.log_dict({f"all_seeds.{x}": summary_dict["running_times"][x]}, True)
+            mlflow.log_metrics(summary_dict["running_times"][x])
     else:
         logger.info("No running times to log to AML")
     if "system_metrics" in summary_dict:
         for x in summary_dict["system_metrics"]:
-            metrics_logger.log_dict({f"all_seeds.{x}": summary_dict["system_metrics"][x]}, True)
+            mlflow.log_metrics(summary_dict["system_metrics"][x])
     else:
         logger.info("No system metrics to log to AML")
 

@@ -105,7 +105,8 @@ def compute_metrics(imputed_values, ground_truth, target_mask, variables: Variab
     # Compute area under the PR and the ROC curves for the binary variables
     if any(x.type_ == "binary" for x in variables):
         AUROC, AUPR = get_area_under_ROC_PR(imputed_values, ground_truth, target_mask, variables)
-        metric_dict["AUROC"], metric_dict["AUPR"] = AUROC, AUPR  # type: ignore
+        metric_dict["AUROC"] = 0 if AUROC is None else AUROC
+        metric_dict["AUPR"] = 0 if AUPR is None else AUPR
     # Calculate summary RMSE.
     # This may not be the best for some features, but is useful as a summary metric.
     all_rmse = get_rmse(imputed_values, ground_truth, target_mask, variables, normalise=False)
@@ -116,10 +117,6 @@ def compute_metrics(imputed_values, ground_truth, target_mask, variables: Variab
     # Compute aggregated accuracy across all categorical variables
     if any(x.type_ in {"categorical", "binary"} for x in variables):
         metric_dict["Accuracy"] = get_aggregated_accuracy(imputed_values, ground_truth, target_mask, variables)
-    # Compute aggregated confusion matrix across all binary variables
-    if any(x.type_ == "binary" for x in variables):
-        cm = get_aggregated_binary_confusion_matrix(imputed_values, ground_truth, target_mask, variables)
-        metric_dict["Confusion matrix"] = cm  # type: ignore
 
     results["all"] = metric_dict
 

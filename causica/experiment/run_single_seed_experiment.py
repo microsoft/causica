@@ -1,9 +1,13 @@
 import logging
 import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
+
+import mlflow
+import psutil
 
 from ..datasets.dataset import CausalDataset
 from ..experiment.steps.eval_step import eval_causal_discovery, evaluate_treatment_effect_estimation, run_eval_main
@@ -13,6 +17,37 @@ from ..models.imodel import IModelForCausalInference, IModelForImputation
 from ..models_factory import load_model
 from ..utils.io_utils import save_json, save_txt
 from .run_context import RunContext
+
+
+class SystemMetricsLogger:
+    def __init__(self):
+        self._thread = None
+        self._keep_running = True
+        self._peak_cpu_memory_in_mb = 0.0
+        self._peak_cpu_percent = 0.0
+
+    def start_log(self):
+        self._thread = threading.Thread(target=self._run, args=())
+        # allows the main application to exit even though the thread is running
+        self._thread.daemon = True
+        self._thread.start()
+
+    def _run(self):
+        process = psutil.Process(os.getpid())
+        while self._keep_running:
+            memory_in_mb = process.memory_info().rss // (10**6)
+            cpu_percent = psutil.cpu_percent()
+            if memory_in_mb > self._peak_cpu_memory_in_mb:
+                self._peak_cpu_memory_in_mb = memory_in_mb
+            if cpu_percent > self._peak_cpu_percent:
+                self._peak_cpu_percent = cpu_percent
+            time.sleep(1)
+
+    def end_log(self):
+        if self._thread is not None:
+            self._keep_running = False
+            self._thread.join()
+            return {"peak_cpu_memory_in_mb": self._peak_cpu_memory_in_mb, "peak_cpu_percent": self._peak_cpu_percent}
 
 
 @dataclass
@@ -65,14 +100,13 @@ def run_single_seed_experiment(args: ExperimentArguments):
         }
         level = level_dict[args.logger_level]
     logging.basicConfig(level=level, force=True, format=log_format)
-    metrics_logger = args.run_context.metrics_logger
-    metrics_logger.set_tags(args.aml_tags)
+    mlflow.set_tags(args.aml_tags)
     running_times: Dict[str, float] = {}
 
     _clean_partial_results_in_aml_run(args.output_dir, logger, args.run_context)
 
     # Log system's metrics
-    system_metrics_logger = args.run_context.system_metrics_logger
+    system_metrics_logger = SystemMetricsLogger()
     system_metrics_logger.start_log()
 
     # Load data
@@ -102,7 +136,6 @@ def run_single_seed_experiment(args: ExperimentArguments):
             model_type=args.model_type,
             output_dir=args.output_dir,
             variables=dataset.variables,
-            metrics_logger=metrics_logger,
             dataset=dataset,
             device=args.device,
             model_config=args.model_config,
@@ -118,11 +151,7 @@ def run_single_seed_experiment(args: ExperimentArguments):
             raise ValueError("This model class does not support imputation.")
         # TODO 18412: move impute_train_data flag into each dataset's imputation config rather than hardcoding here
         impute_train_data = args.dataset_name not in {
-            "chevron",
-            "eedi_task_1_2_binary",
-            "mnist",
             "neuropathic_pain",
-            "eedi_task_3_4_topics",
             "neuropathic_pain_3",
             "neuropathic_pain_4",
         }
@@ -134,7 +163,6 @@ def run_single_seed_experiment(args: ExperimentArguments):
             extra_eval=args.extra_eval,
             split_type=args.dataset_config.get("split_type", "rows"),
             seed=args.dataset_seed if isinstance(args.dataset_seed, int) else args.dataset_seed[0],
-            metrics_logger=metrics_logger,
             impute_train_data=impute_train_data,
         )
 
@@ -142,7 +170,7 @@ def run_single_seed_experiment(args: ExperimentArguments):
     if args.causal_discovery:
         assert isinstance(model, IModelForCausalInference)
         causal_model = cast(IModelForCausalInference, model)
-        eval_causal_discovery(dataset, causal_model, metrics_logger, conversion_type=args.conversion_type)
+        eval_causal_discovery(dataset, causal_model, conversion_type=args.conversion_type)
 
     # Treatment effect estimation
     if args.treatment_effects:
@@ -150,15 +178,14 @@ def run_single_seed_experiment(args: ExperimentArguments):
             raise ValueError("This model class does not support treatment effect estimation.")
         if not isinstance(dataset, CausalDataset):
             raise ValueError("This dataset type does not support treatment effect estimation.")
-        evaluate_treatment_effect_estimation(model, dataset, logger, metrics_logger, args.eval_likelihood)
+        evaluate_treatment_effect_estimation(model, dataset, logger, args.eval_likelihood)
 
     # Log speed/system metrics
     system_metrics = system_metrics_logger.end_log()
-    metrics_logger.log_dict(system_metrics)
+    mlflow.log_metrics(system_metrics)
     save_json(system_metrics, os.path.join(model.save_dir, "system_metrics.json"))
-    metrics_logger.log_dict(running_times)
+    mlflow.log_metrics(running_times)
     save_json(running_times, os.path.join(model.save_dir, "running_times.json"))
-    metrics_logger.finalize()
 
     _copy_results_in_aml_run(args.output_dir, args.run_context)
 

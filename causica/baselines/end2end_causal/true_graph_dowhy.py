@@ -8,7 +8,6 @@ import torch
 
 from ...datasets.dataset import CausalDataset
 from ...datasets.variables import Variables
-from ...experiment.imetrics_logger import IMetricsLogger
 from ..do_why import DoWhy
 from .end2end_causal import End2endCausal
 
@@ -45,7 +44,6 @@ class TrueGraphDoWhy(End2endCausal):
     def run_train(  # type:ignore
         self,
         dataset: CausalDataset,
-        metrics_logger: IMetricsLogger,
         train_config_dict: Optional[Dict[str, Any]] = None,
         report_progress_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> None:
@@ -63,7 +61,6 @@ class TrueGraphDoWhy(End2endCausal):
 
         self.inference_model.run_train(
             dataset=dataset,
-            metrics_logger=metrics_logger,
             train_config_dict=inference_config,
             report_progress_callback=report_progress_callback,
         )
