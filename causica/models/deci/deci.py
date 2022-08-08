@@ -1669,7 +1669,8 @@ def _log_epoch_metrics(
     # iterate over tracker vectors
     advance_base_idx = 0
     for key, value_list in tracker_loss_terms.items():
-        mlflow.log_metrics({f"step_{step}_{key}": value for value in value_list})
+        mlflow.log_metric(f"step_mean_{key}", np.mean(value_list), step=step)
+
         for i, value in enumerate(value_list):
             writer.add_scalar(f"step_{step}_{key}", value, i)  # tensorboard
             writer.add_scalar(key, value, i + base_idx)  # tensorboard

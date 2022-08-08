@@ -19,7 +19,7 @@ jobs:
 
     - uses: actions/setup-python@v2
       with:
-        python-version: "3.8"
+        python-version: "3.9"
 
     - uses: actions/cache@v3
       with:
@@ -29,12 +29,13 @@ jobs:
     
     - name: Install poetry
       run: |
-        curl -sSL https://install.python-poetry.org | python3 - --preview
+        curl -sSL https://install.python-poetry.org | python3 -
 
     - name: Install dependencies
       shell: bash -l {0}
       run: |
         cd repo
+        poetry env use 3.9
         poetry install
       if: steps.cache.outputs.cache-hit != 'true'
 
