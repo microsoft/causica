@@ -7,8 +7,8 @@ authors = []
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = "~3.8"
-dowhy = {git = "https://github.com/microsoft/dowhy.git", rev = "8b2cf6a"}
+python = ">= 3.8, < 3.10"
+dowhy = {git = "https://github.com/py-why/dowhy.git", rev = "8b2cf6a722572a7e0d6a1f7fef22e743dbd3b13a"}
 econml = "^0.12.0"
 gcastle = {git = "https://github.com/confoundry/trustworthyAI.git", rev = "a768c0a"}
 gitpython = "^3.1.27"

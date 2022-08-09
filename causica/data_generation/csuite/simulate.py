@@ -239,21 +239,23 @@ def simulate_data(
     finalise(foldername, train_data, adjacency_matrix, intervention_data, metadata, counterfactual_sample_dict)
 
 
-def two_node_lin(n_samples_train, n_samples_per_test, datadir, noise_dist, name):
+def two_node_lin(n_samples_train, n_samples_per_test, datadir, x0_noise_dist, x1_noise_dist, name):
     """
     Simulate from the graph (x0) -> (x1) with linear relationship.
-    Ensure x0 and x1 have same standard deviation (1) and correlation of 0.5.
     Turns into structural equations
-    x0 ~ E(0, 1)
-    x1 = 0.5 * x_0 + sqrt(3)/2 * E(0, 1)
+    x0 ~ E_0(0, var_0)
+    x1 = 0.5 * x_0 + sqrt(3)/2 * E_1(0, var_1)
 
-    E(0, 1) should be any distribution with mean 0 and variance 1.
+    where E_0 and E_1 are any distributions corresponding to the noise variables of x0 and x1 with mean 0.
+    E_0 and E_1 should have finite variance (possibly unequal).
+    This ensures that the marginal distributions of x0 and x1 have mean 0.
 
     Arguments:
         n_samples_train [int]
         n_samples_per_test [int]
         datadir [str]
-        noise_dist: a numpyro distribution. Should have mean 0 variance 1
+        x0_noise_dist: a numpyro distribution corresponding to the noise variable x0. Should have mean 0 and finite variance.
+        x1_noise_dist: a numpyro distribution corresponding to the noise variable x1. Should have mean 0 and finite variance.
         name [str]
     """
     adjacency_matrix = np.zeros((2, 2))
@@ -265,9 +267,9 @@ def two_node_lin(n_samples_train, n_samples_per_test, datadir, noise_dist, name)
     target_idxs = [1]
 
     def lin_model():
-        x0 = numpyro.sample("x0", noise_dist)
+        x0 = numpyro.sample("x0", x0_noise_dist)
 
-        x1_noise = numpyro.sample("x1_noise", noise_dist)
+        x1_noise = numpyro.sample("x1_noise", x1_noise_dist)
 
         numpyro.deterministic("x1", 0.5 * x0 + (np.sqrt(3) / 2) * x1_noise)
 
@@ -1190,10 +1192,29 @@ def main():
     # Continuous datasets
     ###########################################################################################
 
-    two_node_lin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1), "lingauss")
+    two_node_lin(
+        n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1), dist.Normal(0, 1), "lingauss_equal_variance"
+    )
 
-    shift_exp = dist.TransformedDistribution(dist.Exponential(1), dist.transforms.AffineTransform(loc=-1.0, scale=1.0))
-    two_node_lin(n_observation_samples, n_test_samples, datadir, shift_exp, "linexp")
+    two_node_lin(
+        n_observation_samples,
+        n_test_samples,
+        datadir,
+        dist.Normal(0, 1),
+        dist.Normal(0, 0.5),
+        "lingauss_unequal_variance",
+    )
+
+    shift_exp_x0 = dist.TransformedDistribution(
+        dist.Exponential(1), dist.transforms.AffineTransform(loc=-1.0, scale=1.0)
+    )
+    shift_exp_x1 = dist.TransformedDistribution(
+        dist.Exponential(0.5), dist.transforms.AffineTransform(loc=-1.0, scale=1.0)
+    )
+
+    two_node_lin(n_observation_samples, n_test_samples, datadir, shift_exp_x0, shift_exp_x0, "linexp_equal_variance")
+
+    two_node_lin(n_observation_samples, n_test_samples, datadir, shift_exp_x0, shift_exp_x1, "linexp_unequal_variance")
 
     collider_lin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
 
