@@ -73,14 +73,32 @@ class ContractiveInvertibleGNN(nn.Module):
         """
         return self.f.feed_forward(X, W_adj)  # Shape (batch_size, processed_dim_all)
 
+    def forward(
+        self,
+        Z: torch.Tensor,
+        W_adj: torch.Tensor,
+        intervention_mask: torch.Tensor,
+        intervention_values: torch.Tensor,
+        gumbel_max_regions: torch.Tensor,
+        gt_zero_region: torch.Tensor,
+    ):
+        return self.simulate_SEM(
+            Z,
+            W_adj,
+            intervention_mask,
+            intervention_values,
+            gumbel_max_regions,
+            gt_zero_region,
+    )
+
     def simulate_SEM(
         self,
         Z: torch.Tensor,
         W_adj: torch.Tensor,
         intervention_mask: Optional[torch.Tensor] = None,
         intervention_values: Optional[torch.Tensor] = None,
-        gumbel_max_regions: Optional[List[List[int]]] = None,
-        gt_zero_region: Optional[List[int]] = None,
+        gumbel_max_regions: Optional[torch.Tensor] = None,
+        gt_zero_region: Optional[torch.Tensor] = None,
     ):
         """
         Given exogenous noise Z, computes the corresponding set of observations X, subject to an optional intervention
