@@ -1,8 +1,60 @@
 import argparse
 import os
 import textwrap
+from typing import Any, List, Optional, Sequence, Union
 
 import numpy as np
+
+
+class PathSplitSetter(argparse.Action):
+    """Argument action that sets the path, dirname and basename in different destinations.
+
+    Only allows paths with both dirname and basename. Use '.' to specify a path in the current working directory
+    (e.g. './foo').
+    """
+
+    def __init__(
+        self,
+        option_strings: List[str],
+        dirname_dest: str,
+        basename_dest: str,
+        dest: str,
+        nargs: Union[int, str, None] = None,
+        **kwargs,
+    ):
+        """Init.
+
+        Args:
+            option_strings: See superclass.
+            dirname_dest: Name to store dirname in.
+            basename_dest: Name to store basename in.
+            dest: Name to store full path in.
+            nargs: See superclass.
+            **kwargs: Keyword arguments for superclass.
+        """
+        if nargs is not None:
+            raise ValueError("nargs not allowed")
+        self.basename_dest = basename_dest
+        self.dirname_dest = dirname_dest
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(
+        self,
+        _: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Union[str, Sequence[Any], None],
+        __: Optional[str] = None,
+    ):
+        """Set path, dirname and basename."""
+        if not isinstance(values, str):
+            raise ValueError(f"{type(self)} can only be used for individual strings.")
+
+        path = values
+        dirname, basename = os.path.split(path)
+        assert dirname and basename, "Path must have both a dirname and basename."
+        setattr(namespace, self.dest, path)
+        setattr(namespace, self.dirname_dest, dirname)
+        setattr(namespace, self.basename_dest, basename)
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -10,14 +62,30 @@ def get_parser() -> argparse.ArgumentParser:
         description="Train a partial VAE model.", formatter_class=argparse.RawTextHelpFormatter
     )
 
-    parser.add_argument("dataset_name", help="Name of dataset to use.")
+    # Either specify the full path to a dataset or dataset_name separately.
+    # Note: Since argparse does not support mutual exclusion between a group of arguments, we cannot ensure that
+    # `data_path` and `data_dir` are not set simultaneously.
+    data_specification_group = parser.add_mutually_exclusive_group(required=True)
+    data_specification_group.add_argument(
+        "dataset_name", nargs="?", default=argparse.SUPPRESS, help="Name of dataset to use."
+    )
+    data_specification_group.add_argument(
+        "--data_path",
+        type=str,
+        help="Full path to dataset. Sets both dataset_name and --data_dir.",
+        action=PathSplitSetter,
+        dirname_dest="data_dir",
+        basename_dest="dataset_name",
+    )
+
     parser.add_argument(
         "--data_dir",
         "-d",
         type=str,
         default="data",
-        help="Directory containing saved datasets. Defaults to ./data",
+        help="Directory containing saved datasets. Defaults to 'data'. Will override the path set with --data_path.",
     )
+
     parser.add_argument(
         "--model_type",
         "-mt",
@@ -43,6 +111,19 @@ def get_parser() -> argparse.ArgumentParser:
             "varlingam",
             "fold_time_deci",
             "auto_regressive_deci",
+            "ddeci",
+            "admg_ddeci",
+            "bowfree_ddeci",
+            "admg_ddeci_gaussian",
+            "bowfree_ddeci_gaussian",
+            "admg_ddeci_spline",
+            "bowfree_ddeci_spline",
+            "fci_admg_ddeci",
+            "true_graph_admg_ddeci",
+            "fci_informed_admg_ddeci",
+            "true_graph_informed_admg_ddeci",
+            "dynotears",
+            "pcmci_plus",
         ],
         help=textwrap.dedent(
             """Type of model to train.
@@ -123,6 +204,19 @@ def get_parser() -> argparse.ArgumentParser:
             varlingam: VARLiNGaM model for causal time series discovery.
             fold_time_deci: The Fold-time DECI model for causal time series discovery.
             auto_regressive_deci: The Auto-regressive DECI model for end-to-end causal inference of time series.
+            ddeci: The D-DECI model for causal discovery whilst allowing for the presence of latent confounders.
+            admg_ddeci: The ADMG D-DECI model which uses an ADMG parameterisation for the adjacency matrix.
+            bowfree_ddeci: ADMG D-DECI with an additional bow-free constraint on observed variables.
+            admg_ddeci_gaussian: ADMG D-DECI using a Gaussian base distribution.
+            bowfree_ddeci: Bow-free D-DECI using a Gaussian base distribution.
+            admg_ddeci_spline: ADMG D-DECI using a spline base distribution.
+            bowfree_ddeci_spline: Bow-free D-DECI using a spline base distribution.
+            fci_admg_ddeci: Causal discovery using FCI. Causal inference using D-DECI.
+            true_graph_admg_ddeci: Causal inference using D-DECI when the causal graph is set to ground truth.
+            fci_informed_admg_ddeci: Causal discovery using FCI as a soft prior for ADMG D-DECI. Causal inference using ADMG D-DECI.
+            true_graph_informed_admg_ddeci: Causal inference using ADMG D-DECI when the ground truth is used as a soft prior.
+            dynotears: the Dynotears baseline for cusal timeseries discovery.
+            pcmci_plus: the PCMCI+ baseline for causal timeseries discovery. It supports both inst and lagged effects.
             """
         ),
     )
@@ -180,6 +274,12 @@ def get_parser() -> argparse.ArgumentParser:
         "-c",
         action="store_true",
         help="Whether to evaluate causal discovery against a ground truth during evaluation.",
+    )
+    parser.add_argument(
+        "--latent_confounded_causal_discovery",
+        "-lcc",
+        action="store_true",
+        help="Whether to evaluate latent confounded causal discovery against a ground truth during evaluation.",
     )
     parser.add_argument(
         "--treatment_effects",
@@ -240,7 +340,9 @@ def validate_args(args: argparse.Namespace) -> None:
     Validate command-line arguments.
 
     """
-    assert os.path.isdir(args.data_dir), f"{args.data_dir} is not a directory."
+    if not os.path.isdir(args.data_dir):
+        print(f"{args.data_dir} is not a directory or does not exists, creating it.")
+        os.makedirs(args.data_dir)
 
     # Config files
     for config in (args.model_config, args.dataset_config, args.impute_config, args.objective_config):

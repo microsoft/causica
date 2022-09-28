@@ -8,13 +8,18 @@ import torch
 from scipy.special import softmax
 
 from ...models.deci.diagonal_flows import PiecewiseRationalQuadraticTransform
+from ...utils.causality_utils import admg2dag
 
 
-def save_data(dataset_folder, name, adj_matrix, X_train_test, X_train, X_test, all_intervention_data):
+def save_data(
+    dataset_folder, name, directed_matrix, bidirected_matrix, X_train_test, X_train, X_test, all_intervention_data
+):
     savedir = os.path.join(dataset_folder, name)
     os.makedirs(savedir, exist_ok=True)
-
-    np.savetxt(os.path.join(savedir, "adj_matrix.csv"), adj_matrix, delimiter=",", fmt="%i")
+    np.savetxt(os.path.join(savedir, "adj_matrix.csv"), directed_matrix, delimiter=",", fmt="%i")
+    if bidirected_matrix is not None:
+        np.savetxt(os.path.join(savedir, "directed_adjacency_matrix.csv"), directed_matrix, delimiter=",", fmt="%i")
+        np.savetxt(os.path.join(savedir, "bidirected_adjacency_matrix.csv"), bidirected_matrix, delimiter=",", fmt="%i")
     np.savetxt(os.path.join(savedir, "all.csv"), X_train_test, delimiter=",")
     np.savetxt(os.path.join(savedir, "train.csv"), X_train, delimiter=",")
     np.savetxt(os.path.join(savedir, "test.csv"), X_test, delimiter=",")
@@ -79,10 +84,38 @@ def simulate_dag(np_seed, d, s0, graph_type):
     return B_perm
 
 
+def simulate_bidirected_matrix(np_seed, d, s0):
+    """
+
+    Args:
+        np_seed (seed_iterator): Instance of class that tracks seeds to ensure reproducibility
+        d (int): num of nodes
+        s0 (int): expected num of latent edges
+
+    Returns:
+        a bidirected adj matrix
+
+    """
+    np_seed.set_seed()
+    tril_graph = np.tril(np.random.binomial(1, s0 / (d * (d - 1) / 2), [d, d]), -1)
+    return tril_graph + tril_graph.T
+
+
 def simulate_single_equation(
-    np_seed, X, scale, sem_type, noise_type, noise_mult_factor, output_classes=None, discrete_temperature=3
+    np_seed,
+    X,
+    scale,
+    sem_type,
+    noise_type,
+    noise_mult_factor,
+    output_classes=None,
+    discrete_temperature=3,
+    latent_parent_idxs=None,
 ):
     """X: [n, num of parents], x: [n]"""
+
+    observed_parent_idxs = list(range(X.shape[1]))
+    observed_parent_idxs = [d for d in observed_parent_idxs if d not in latent_parent_idxs]
 
     # Generate Noise
     np_seed.set_seed()
@@ -111,19 +144,17 @@ def simulate_single_equation(
     assert sem_type in ["mlp", "linear", "spline"]
     assert noise_type in ["uniform", "mlp", "fixed", "spline"] or isinstance(noise_type, float)
 
+    pa_size_latent = len(latent_parent_idxs)
+    pa_size_observed = pa_size - pa_size_latent
+
     if pa_size == 0:
         z = z * noise_mult_factor
 
-        def f(_):
-            return 0
+    f_observed = sample_function(sem_type, pa_size_observed, np_seed, output_classes)
+    f_latent = sample_function(sem_type, pa_size_latent, np_seed, output_classes)
 
-    elif sem_type == "mlp":
-        f = sample_mlp(pa_size, np_seed, output_classes)
-    elif sem_type == "linear":
-        f = sample_linear(pa_size, np_seed, output_classes)
-    elif sem_type == "spline":
-        assert output_classes is None
-        f = sample_spline(pa_size, np_seed)
+    def f(x):
+        return f_observed(x[:, observed_parent_idxs]) + f_latent(x[:, latent_parent_idxs])
 
     if output_classes is None:
         ff = f(X)
@@ -148,6 +179,7 @@ def simulate_nonlinear_sem(
     discrete_dims_list=None,
     intervention=None,
     discrete_temperature=3,
+    latent_idxs=None,
 ):
     """Simulate samples from nonlinear SEM.
 
@@ -158,10 +190,13 @@ def simulate_nonlinear_sem(
         noise_scale (np.ndarray): scale parameter of additive noise
         noise_mul_factor (float): noise constant multiplicative factor for parent variables
         intervention (np.ndarray of floats or NaNs): which variables to intervene on and values to which to set them
-
+        latent_idxs: list of latent confounders
     Returns:
         X (np.ndarray): [n, d] sample matrix
     """
+
+    if latent_idxs is None:
+        latent_idxs = []
 
     d = B.shape[0]
 
@@ -182,6 +217,7 @@ def simulate_nonlinear_sem(
         output_classes = discrete_dims_list[j]
 
         parents = G.neighbors(j, mode=ig.IN)
+        latent_parent_idxs = [parents.index(x) for x in (set(parents) & set(latent_idxs))]
         X[:, j] = simulate_single_equation(
             np_seed,
             X[:, parents],
@@ -191,6 +227,7 @@ def simulate_nonlinear_sem(
             noise_mult_factor,
             output_classes=output_classes,
             discrete_temperature=discrete_temperature,
+            latent_parent_idxs=latent_parent_idxs,
         )  # if a node has no parents it will be set to noise
 
         if j in intervene_idxs:  # we do this in this order to respect the random number sampling order
@@ -204,26 +241,31 @@ def get_name(gt, N, E, sem_type, noise_type, seed):
     return f"{gt}_{N}_{E}_{sem_type}_sem_{noise_type}_noise_{seed}_seed"
 
 
-def sample_parent_node(G: ig.Graph.Adjacency, node: int, max_depth: int = 2) -> int:
+def sample_parent_node(G: ig.Graph.Adjacency, node: int, max_depth: int = 2, latent_idxs=None) -> int:
     """Sample a parent node from a DAG.
 
     Args:
         G (ig.Graph.Adjacency): DAG
         node (str): node to sample from
         max_depth (int): max depth of sampling
+        latent_idxs: latent confounder indexes
 
     Returns:
         int: sampled parent node
     """
+    if latent_idxs is None:
+        latent_idxs = []
     parents = G.neighbors(node, mode=ig.IN)
+    parents = [pa for pa in parents if pa not in latent_idxs]
+
     if len(parents) == 0:
-        raise ValueError(f"node {node} has no parents")
+        raise ValueError(f"node {node} has no observed parents")
 
     parent_idx = np.random.choice(parents)
     if max_depth > 1 and len(G.neighbors(parent_idx, mode=ig.IN)) > 0:
         go_deeper = np.random.random() < 0.5
         if go_deeper:
-            return sample_parent_node(G, parent_idx, max_depth=max_depth - 1)
+            return sample_parent_node(G, parent_idx, max_depth=max_depth - 1, latent_idxs=latent_idxs)
     return int(parent_idx)
 
 
@@ -244,18 +286,40 @@ def gen_dataset(
     noise_mult_factor=1,
     discrete_dims_list=None,
     discrete_temperature=3,
+    expected_num_latent_confounders=0,
 ):
-
     seed = seed_iterator(base_seed)
     # Variances for noises
-    if noise_type in ["fixed", "mlp", "spline", "uniform"]:
-        noise_scales = np.ones(N)
+
+    if expected_num_latent_confounders > 0:
+        # Number of potential bidirected edges between all possible pairs of the observed nodes
+        N_all = N + N * (N - 1) // 2
     else:
-        noise_scales = np.random.uniform(low=0.2, high=noise_type, size=(N,))
+        N_all = N
+
+    if noise_type in ["fixed", "mlp", "spline", "uniform"]:
+        noise_scales = np.ones(N_all)
+    else:
+        noise_scales = np.random.uniform(low=0.2, high=noise_type, size=(N_all,))
+
+    latent_idxs = []
+
+    directed_matrix = None
+    bidirected_matrix = None
 
     if adj_matrix is None:
         # True adjacency matrix
-        adj_matrix = simulate_dag(seed, N, E, graph_type)
+        directed_matrix = simulate_dag(seed, N, E, graph_type)
+        if expected_num_latent_confounders > 0:
+            bidirected_matrix = simulate_bidirected_matrix(seed, N, expected_num_latent_confounders)
+            adj_matrix = (
+                admg2dag(torch.from_numpy(directed_matrix), torch.from_numpy(bidirected_matrix))
+                .numpy()
+                .astype(np.float32)
+            )
+            latent_idxs.extend(list(range(N, N + N * (N - 1) // 2)))
+        else:
+            adj_matrix = directed_matrix
 
     seed = seed_iterator(base_seed)
     X = simulate_nonlinear_sem(
@@ -269,6 +333,7 @@ def gen_dataset(
         discrete_dims_list,
         intervention=None,
         discrete_temperature=discrete_temperature,
+        latent_idxs=latent_idxs,
     )
 
     X_test = X[:num_samples_test, :]
@@ -295,14 +360,14 @@ def gen_dataset(
     intervention_idxs = []
 
     # Sample parent for effect idx and add to intervention idx list
-    # Skip if the effext idx does not have any parents
+    # Skip if the effect idx does not have any parents (therefore, latent confounders are automatically skipped)
     for i in range(N - 1):
         try:
             effect_idx = ordered_vertices[-i - 1]
-            parent_idx = sample_parent_node(G, effect_idx, max_depth=max_parent_depth)
+            parent_idx = sample_parent_node(G, effect_idx, max_depth=max_parent_depth, latent_idxs=latent_idxs)
             if parent_idx in intervention_idxs:
                 for _ in range(5):
-                    parent_idx = sample_parent_node(G, effect_idx, max_depth=max_parent_depth)
+                    parent_idx = sample_parent_node(G, effect_idx, max_depth=max_parent_depth, latent_idxs=latent_idxs)
                     if parent_idx not in intervention_idxs:
                         break
         except ValueError:
@@ -323,9 +388,9 @@ def gen_dataset(
     all_intervention_data = []
 
     for dim, effect_dim in zip(intervention_idxs, effect_idxs):
-        intervention = np.ones(N) * np.nan
-        reference = np.ones(N) * np.nan
-        i_effect_idx_mask = np.ones(N) * np.nan
+        intervention = np.ones(N_all) * np.nan
+        reference = np.ones(N_all) * np.nan
+        i_effect_idx_mask = np.ones(N_all) * np.nan
         i_effect_idx_mask[effect_dim] = 1
         i_effect_idx_mask[dim] = np.nan
         # check for discrete variables
@@ -378,7 +443,7 @@ def gen_dataset(
         intervention = (intervention - mean) / std
         reference = (reference - mean) / std
 
-        empty_reference = torch.ones((num_samples_test, N)) * np.nan
+        empty_reference = torch.ones((num_samples_test, N_all)) * np.nan
         if X_reference is not None:
 
             reference_repeat = reference[None, :].repeat(num_samples_test, 0)
@@ -394,7 +459,10 @@ def gen_dataset(
             samples = X_intervene
 
         all_intervention_data.append(
-            np.concatenate([intervention_repeat, reference, i_effect_idx_mask_repeat, samples], axis=1)
+            np.concatenate(
+                [intervention_repeat[:, :N], reference[:, :N], i_effect_idx_mask_repeat[:, :N], samples[:, :N]],
+                axis=1,
+            )
         )
 
     all_intervention_data = np.concatenate(all_intervention_data, axis=0)
@@ -404,10 +472,11 @@ def gen_dataset(
     X_train_test = np.concatenate([X_train, X_test], axis=0)
 
     return (
-        X_train_test,
-        X_train,
-        X_test,
-        adj_matrix,
+        X_train_test[:, :N],
+        X_train[:, :N],
+        X_test[:, :N],
+        directed_matrix,
+        bidirected_matrix,
         np.concatenate([empty_conditioning_cols, all_intervention_data], axis=1),
     )
 
@@ -449,7 +518,6 @@ class seed_iterator(object):
 
 
 def categorical_sample_from_logits(logits, np_seed, argmax=False):
-
     np_seed.set_seed()
     assert len(logits.shape) == 2
     assert logits.shape[1] > 1
@@ -470,7 +538,6 @@ def categorical_sample_from_logits(logits, np_seed, argmax=False):
 
 
 def sample_mlp(input_dim, np_seed, output_classes=None):
-
     np_seed.set_seed()
 
     hidden = 16
@@ -506,7 +573,6 @@ def sample_spline(input_dim, np_seed, output_classes=None):
 
 
 def sample_linear(input_dim, np_seed, output_classes=None):
-
     np_seed.set_seed()
 
     if output_classes is not None:
@@ -520,3 +586,19 @@ def sample_linear(input_dim, np_seed, output_classes=None):
         return X @ W + b
 
     return func
+
+
+def sample_function(sem_type, pa_size, np_seed, output_classes):
+    def f(_):
+        return 0
+
+    if pa_size != 0:
+        if sem_type == "mlp":
+            f = sample_mlp(pa_size, np_seed, output_classes)
+        elif sem_type == "linear":
+            f = sample_linear(pa_size, np_seed, output_classes)
+        elif sem_type == "spline":
+            assert output_classes is None
+            f = sample_spline(pa_size, np_seed)
+
+    return f

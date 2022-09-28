@@ -1,6 +1,6 @@
 import numpy as np
 
-from causica.utils.nri_utils import edge_prediction_metrics
+from causica.utils.nri_utils import edge_prediction_metrics, enum_all_graphs
 
 
 def test_recover_exactly():
@@ -80,3 +80,15 @@ def test_shd():
     A = np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]])
     B = np.array([[0, 1, 1], [0, 0, 1], [0, 0, 0]])
     assert edge_prediction_metrics(A, B)["shd"] == 1.0
+
+
+def test_enumeration_dags():
+    num_dags_list = [1, 1, 3, 25, 543, 29281]  # https://oeis.org/A003024https://oeis.org/A003024
+    num_graphs_list = [np.power(2, i * (i - 1)) for i in range(6)]
+    for i in range(2, 6):
+        all_graphs = enum_all_graphs(num_nodes=i, dags_only=False)
+        num_unique_graphs = len(set(graph.data.tobytes() for graph in all_graphs))
+        predicted_dags = enum_all_graphs(num_nodes=i, dags_only=True)
+        num_unique_dags = len(set(graph.data.tobytes() for graph in predicted_dags))
+        assert num_unique_graphs == len(all_graphs) == num_graphs_list[i]
+        assert num_unique_dags == len(predicted_dags) == num_dags_list[i]

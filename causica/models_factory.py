@@ -3,6 +3,7 @@ from typing import Any, Dict, Type, Union
 from uuid import uuid4
 
 from .baselines.do_why import DoWhy
+from .baselines.dynotears import Dynotears
 from .baselines.end2end_causal.deci_dowhy import DECIDoWhy
 from .baselines.end2end_causal.informed_deci import InformedDECI
 from .baselines.end2end_causal.pc_dowhy import PCDoWhy
@@ -12,6 +13,7 @@ from .baselines.grandag import GraNDAG
 from .baselines.icalingam import ICALiNGAM
 from .baselines.notears import NotearsLinear, NotearsMLP, NotearsSob
 from .baselines.pc import PC
+from .baselines.pcmci_plus import PCMCI_Plus
 from .baselines.varlingam import VARLiNGAM
 from .datasets.variables import Variables
 from .models.deci.deci import DECI
@@ -48,6 +50,8 @@ MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
         PCInformedDECI,
         TrueGraphDoWhy,
         VARLiNGAM,
+        Dynotears,
+        PCMCI_Plus,
     )
 }
 

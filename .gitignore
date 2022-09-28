@@ -1,6 +1,7 @@
 /runs/
 /runs_opt/
 /data/*
+**/mlruns/
 /.vscode
 *.code-workspace
 __pycache__/

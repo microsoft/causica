@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.distributions as td
 import torch.nn.functional as F
 from torch import nn
+
+from ...utils.causality_utils import admg2dag, dag2admg
 
 
 class AdjMatrix(ABC):
@@ -488,3 +490,197 @@ class TemporalThreeWayGrahpDist(ThreeWayGraphDist):
             1, ...
         ]  # shape (lag, input_dim, input_dim)
         return adj_sample
+
+
+class VarDistA_ENCO_ADMG(VarDistA_ENCO):
+    """Variational distribution for an acyclic directed mixed graph (ADMG).
+
+    A variational distribution over two adjacency matrices, the first describes directed edges and the latter bidirected
+    edges between observed variables.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params_bidirected = self._initialize_bidirected_params()
+
+    def _initialize_bidirected_params(self) -> torch.Tensor:
+        """Initialises logits that characterise bidirectional edges between observed variables."""
+        if self.dense_init:
+            params = torch.ones(self.input_dim, self.input_dim, device=self.device)
+        else:
+            params = torch.zeros(self.input_dim, self.input_dim, device=self.device)
+
+        return nn.Parameter(params, requires_grad=True)
+
+    def _build_logits_bidirected(self) -> torch.Tensor:
+        """Auxiliary function to build the logits to sample the bidirected edges."""
+        logits_0 = torch.zeros(self.input_dim, self.input_dim, device=self.device)
+        # logits_1 is stricly upper triangular.
+        logits_1 = torch.triu(self.params_bidirected)
+        logits_1 = logits_1 * (1.0 - torch.eye(self.input_dim, self.input_dim, device=self.device))
+        logits_1 = logits_1 + torch.transpose(logits_1, 0, 1)  # Make logit_ij = logit_ji
+        return torch.stack([logits_0, logits_1])
+
+    def get_bidirected_adj_matrix(self, do_round: bool = False) -> torch.Tensor:
+        """Returns the bidirected adjacency matrix."""
+        probs = F.softmax(self._build_logits_bidirected(), dim=0)[1, :, :]
+        probs = probs * (1.0 - torch.eye(self.input_dim, device=self.device))
+        if do_round:
+            return probs.round()
+        return probs
+
+    def get_directed_adj_matrix(self, do_round: bool = False) -> torch.Tensor:
+        """Returns the directed adjacency matrix."""
+        return super().get_adj_matrix(do_round)
+
+    def get_adj_matrix(self, do_round: bool = False) -> torch.Tensor:
+        """Returns the adjacency matrix over both observed and latent variables."""
+        directed_adj = self.get_directed_adj_matrix(do_round)
+        bidirected_adj = self.get_bidirected_adj_matrix(do_round)
+        return self.magnify_adj_matrices(directed_adj, bidirected_adj)
+
+    def _build_bidirected_bernoulli(self) -> td.Distribution:
+        """Builds the Bernoulli distribution obtained using the logits."""
+        logits = self._build_logits_bidirected()
+        logits_bernoulli_1 = logits[1, :, :] - logits[0, :, :]
+        # Diagonal elements are set to 0
+        logits_bernoulli_1 -= 1e10 * torch.eye(self.input_dim, device=self.device)
+        dist = td.Independent(td.Bernoulli(logits=logits_bernoulli_1), 2)
+        return dist
+
+    def sample_A(self) -> torch.Tensor:
+        """Samples the directed and bidirected matrix from the variational distribution and returns the corresponding
+        adjacency matrix over both the observed and latent varaibles."""
+        directed_adj_sample = self.sample_directed_adj()
+        bidirected_adj_sample = self.sample_bidirected_adj()
+
+        return self.magnify_adj_matrices(directed_adj_sample, bidirected_adj_sample)
+
+    def entropy(self) -> torch.Tensor:
+        """Computes the entropy of the variational distribution."""
+        # Distribution is only over half the bidirected adjacency matrix.
+        return self._build_bernoulli().entropy() + 0.5 * self._build_bidirected_bernoulli().entropy()
+
+    def sample_directed_adj(self) -> torch.Tensor:
+        """Samples a directed adjacency matrix from the variational distribution.
+
+        Samples a directed adjacency matrix from the variational distribution using the gumbel softmax trick and
+        returns hard samples (straight through the gradient estimator). Adjacency returned always has zeros in the
+        diagonal.
+        """
+        return super().sample_A()
+
+    def sample_bidirected_adj(self) -> torch.Tensor:
+        """Samples a bidirected adjacency matrix from the variational distribution.
+
+        Samples a bidirected adjacency matrix from the variational distribution using the gumbel softmax trick and
+        returns hard samples (straight through the gradient estimator). Adjacency returned is symmetric and always has
+        zeros in the diagonal.
+        """
+        logits = self._build_logits_bidirected()
+        sample = F.gumbel_softmax(logits, tau=self.tau_gumbel, hard=True, dim=0)  # (2, n, n) binary
+        sample = torch.triu(sample[1, :, :])  # (n, n)
+        sample = sample * (1 - torch.eye(self.input_dim, device=self.device))  # Force zero diagonals
+        sample = sample + torch.transpose(sample, 0, 1)  # Force symmetry
+        return sample
+
+    def log_prob_bidirected(self, bidirected_adj: torch.Tensor) -> torch.Tensor:
+        """Evaluates the variational distribution the sampled bidirectional adjacency matrix.
+
+        Args:
+            bidirected_adj: Bidirectional adjacency matrix.
+
+        Returns:
+            The log probability of the sample.
+        """
+        return self._build_bidirected_bernoulli().log_prob(bidirected_adj)
+
+    def log_prob_directed(self, directed_adj: torch.Tensor) -> torch.Tensor:
+        """Evaluates the variational distribution at the sampled directional adjacency matrix.
+
+        Args:
+            directed_adj: Directional adjacency matrix.
+
+        Returns:
+            The log probability of the sample.
+        """
+        return self._build_bernoulli().log_prob(directed_adj)
+
+    def log_prob_A(self, A: torch.Tensor) -> torch.Tensor:
+        """Evaluates the variational distribution at a samples adjacency A.
+
+        Args:
+            A: A binary adjacency matrix, size (input_dim + latent_dim, input_dim + latent_dim).
+
+        Returns:
+            The log probability of the sample A. A number if A has size (input_dim + latent_dim, input_dim + latent_dim).
+        """
+        directed_adj, bidirected_adj = self.demagnify_adj_matrix(A)
+        return self.log_prob_directed(directed_adj) + self.log_prob_bidirected(bidirected_adj)
+
+    def magnify_adj_matrices(
+        self,
+        directed_adj: torch.Tensor,
+        bidirected_adj: torch.Tensor,
+    ) -> torch.Tensor:
+        """Magnifies the two adjacency matrices to create a larger adjacency matrix over both oberved and latent
+        variables.
+
+        Args:
+            directed_adj: Directed adjacency matrix over the observed variables.
+            bidirected_adj: Bidirected adjacency matrix over the observed variables.
+
+        Returns:
+            Magnified adjacency matrix.
+        """
+        return admg2dag(directed_adj, bidirected_adj)
+
+    def demagnify_adj_matrix(self, adj: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Demagnifies the adjacency matrix over both observed and latent variables to create a directed and
+        bidirected adjacency matrix.
+
+        Args:
+            adj: The adjacency matrix over both oberserved and latent variables.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor] containing the directed and bidirected adjacency matrix.
+        """
+        return dag2admg(adj)
+
+
+class CategoricalAdjacency(AdjMatrix, nn.Module):
+    """Class representing a uniform categorical distribution over multiple adjacency matrices."""
+
+    def __init__(self, device: torch.device):
+        super().__init__()
+        self.adj_matrices: Optional[torch.Tensor] = None
+        self.device = device
+
+    def set_adj_matrices(self, adj_matrices: np.ndarray) -> None:
+        self.adj_matrices = nn.Parameter(
+            torch.from_numpy(adj_matrices.astype(np.float32)).to(self.device), requires_grad=False
+        )
+
+    def _build_categorical(self) -> td.Distribution:
+        assert self.adj_matrices is not None
+
+        dist = td.Categorical(logits=torch.ones(self.adj_matrices.shape[0], device=self.device))
+        return dist
+
+    def entropy(self) -> torch.Tensor:
+        return self._build_categorical().entropy()
+
+    def sample_A(self) -> torch.Tensor:
+        assert self.adj_matrices is not None
+
+        return self.adj_matrices[self._build_categorical().sample()]
+
+    def log_prob_A(self, A: torch.Tensor) -> torch.Tensor:
+        assert self.adj_matrices is not None
+        assert any((torch.isclose(A, adj).all() for adj in self.adj_matrices)), "log probability of negative infinity"
+
+        return torch.log(torch.as_tensor(1 / self.adj_matrices.shape[0]))
+
+    def get_adj_matrix(self, do_round: bool = True) -> torch.Tensor:
+        assert self.adj_matrices is not None
+        return self.adj_matrices[0]

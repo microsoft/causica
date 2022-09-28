@@ -1,4 +1,4 @@
-from typing import List, Optional, Type
+from typing import Dict, List, Optional, Tuple, Type
 
 import torch
 from torch import nn
@@ -137,6 +137,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         res_connection: bool = True,
         encoder_layer_sizes: Optional[List[int]] = None,
         decoder_layer_sizes: Optional[List[int]] = None,
+        embedding_size: Optional[int] = None,
     ):
         """
         Init method for TemporalContractiveInvertibleGNN.
@@ -147,6 +148,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
             res_connection: Whether to use residual connection
             encoder_layer_sizes: List of layer sizes for the encoder.
             decoder_layer_sizes: List of layer sizes for the decoder.
+            embedding_size: The size of embeddings in Temporal FGNNI.
         """
         super().__init__()
         self.group_mask = group_mask.to(device)
@@ -154,6 +156,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         self.device = device
         assert lag > 0, "Lag must be greater than 0"
         self.lag = lag
+        self.embedding_size = embedding_size
 
         # Initialize the associated weights by calling self.W = self._initialize_W(). self.W has shape [lag+1, num_nodes, num_nodes]
         self.W = self._initialize_W()
@@ -166,6 +169,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
             res_connection=res_connection,
             layers_g=encoder_layer_sizes,
             layers_f=decoder_layer_sizes,
+            embedding_size=self.embedding_size,
         )
 
     def _initialize_W(self) -> torch.Tensor:
@@ -206,6 +210,108 @@ class TemporalContractiveInvertibleGNN(nn.Module):
             X = X.unsqueeze(0)  # [1, lag+1, processed_dim_all]
         return self.f.feed_forward(X, W_adj).squeeze(0)
 
+    def simulate_SEM_conditional(
+        self,
+        conditional_dist: nn.Module,
+        Z: torch.Tensor,
+        W_adj: torch.Tensor,
+        X_history: torch.Tensor,
+        gumbel_max_regions: Optional[List[List[int]]] = None,
+        gt_zero_region: Optional[List[List[int]]] = None,
+        intervention_mask: Optional[torch.Tensor] = None,
+        intervention_values: Optional[torch.Tensor] = None,
+    ):
+        """
+        This simulates the SEM with history dependent noise. This is achieved in a similar logic as simulate_SEM. The difference is
+        that at each time step, we need to generate history dependent noise from the based noise Z for all cts nodes at that time step.
+        This is achieved by calling conditional_dist.transform_noise(...).
+        Args:
+            conditional_dist: nn.Module, the conditional distributions used for sampling noise.
+            Z: the noise from the base distribution with shape [batch_size, time_span, proc_dim_all]
+            W_adj: Weighted adjacency matrix with shape [lag+1, num_node, num_node]. Note that this cannot be batched.
+            X_history: The history observations with shape [batch, lag, proc_dim_all]
+            gumbel_max_regions: a list of index lists `a` such that each subarray X[a] represents a one-hot encoded discrete random variable that must be
+                sampled by applying the max operator.
+            gt_zero_region: a list of indices such that X[a] should be thresholded to equal 1, if positive, 0 if negative. This is used to sample
+                binary random variables. This also uses the Gumbel max trick implicitly
+            intervention_mask: a binary mask of shape [max_intervention_ahead_time, proc_dim_all] that indicates which variables are intervened on.
+            intervention_values: a tensor of shape [total_intervention_dim] that contains the intervened values.
+
+
+        Returns:
+            The history+simulated observations with shape [batch, history_length+time_span, processed_dim_all].
+            The simulated observations with shape [batch, time_span, processed_dim_all].
+        """
+        # Assert the input noise should have shape [batch_size, time_span, proc_dim_all]
+        assert len(Z.shape) == 3
+        time_span = Z.shape[1]
+        assert time_span > 0, "The time span must be >0"
+        assert X_history.shape[0] == Z.shape[0], "The batch size of the history must match input noise batch"
+        assert (
+            W_adj.dim() == 3
+        ), "The weighted adjacency matrix must have shape [lag+1, num_nodes, num_nodes], it should not be batched."
+        # Create batched W_adj_batch
+        W_adj_batch = W_adj.expand(Z.shape[0], -1, -1, -1)  # [batch, lag+1, num_nodes, num_nodes]
+        # get continuous node index
+        cts_node = conditional_dist.cts_node
+
+        # Create tensor to store the simulated observations
+        X_all = torch.cat(
+            [X_history, torch.zeros_like(Z)], dim=1
+        )  # shape [batch_size, time_span+history_length, processed_dim_all]
+        size_history = X_history.shape[1]
+
+        if intervention_mask is not None and intervention_values is not None:
+            assert (
+                Z.shape[1] >= intervention_mask.shape[0]
+            ), "The future ahead time for observation generation must be >= the ahead time for intervention"
+            # Convert the time_length in intervention mask to be compatible with X_all
+            false_matrix_conditioning = torch.full(X_history.shape[1:], False, dtype=torch.bool, device=self.device)
+            false_matrix_future = torch.full(
+                (Z.shape[1] - intervention_mask.shape[0], Z.shape[2]), False, dtype=torch.bool, device=self.device
+            )
+            intervention_mask = torch.cat(
+                (false_matrix_conditioning, intervention_mask, false_matrix_future), dim=0
+            )  # shape [history_length+ time_span, processed_dim_all]
+
+        for time in range(time_span):
+            # Loop over num_nodes to propagate the instantaneous effect
+            history_start_idx = size_history + time - self.lag
+            inst_end_idx = size_history + time + 1
+            # conditional noise for cts node.
+
+            Z[:, time, cts_node] = conditional_dist.transform_noise(  # type:ignore
+                Z=Z[:, time, cts_node], X_history=X_all[:, history_start_idx : inst_end_idx - 1, :], W=W_adj
+            )  # shape [batch_size, cts_dim]
+            for _ in range(self.num_nodes):
+                # Add intervention logic here.
+                if intervention_mask is not None and intervention_values is not None:
+                    # Assign the intervention values to the corresponding indices in X_all, specified by intervention_mask
+                    X_all[..., intervention_mask] = intervention_values
+                # Generate the observations based on the history (given history + previously-generated observations)
+                # and exogenous noise Z.
+                generated_observations = (
+                    self.f.feed_forward(X_all[:, history_start_idx:inst_end_idx, :], W_adj_batch) + Z[:, time, :]
+                )  # shape [batch_size, processed_dim_all]
+
+                # Logic for processing discrete and binary variables. This is similar to static version.
+                if gumbel_max_regions is not None:
+                    for region in gumbel_max_regions:
+                        maxes = generated_observations[:, region].max(-1, keepdim=True)[0]  # shape [batch_size, 1]
+                        generated_observations[:, region] = (generated_observations[:, region] >= maxes).float()
+                if gt_zero_region is not None:
+                    generated_observations[:, gt_zero_region] = (generated_observations[:, gt_zero_region] > 0).float()
+
+                X_all[:, size_history + time, :] = generated_observations
+        # Add intervention logic here to make sure the generated observations respect the intervened values.
+        if intervention_mask is not None and intervention_values is not None:
+            # assign intervention_values to X_all at corresponding index specified by intervention_mask
+            X_all[..., intervention_mask] = intervention_values
+
+        X_simulate = X_all[:, size_history:, :].clone()  # shape [batch_size, time_span, proc_dim]
+
+        return X_all, X_simulate
+
     def simulate_SEM(
         self,
         Z: torch.Tensor,
@@ -233,8 +339,8 @@ class TemporalContractiveInvertibleGNN(nn.Module):
                 sampled by applying the max operator.
             gt_zero_region: a list of indices such that X[a] should be thresholded to equal 1, if positive, 0 if negative. This is used to sample
                 binary random variables. This also uses the Gumbel max trick implicitly
-            intervention_mask: A mask of the interventions with shape [time_length, data_proc_dim]. If None or all elements are False, it means no interventions.
-            intervention_values: The values of the interventions with shape [proc_dim] (Note proc_dim is not the same as data_proc_dim since proc_dim depends on the num_intervened_variables).
+            intervention_mask: A mask of the interventions with shape [time_length, processed_dim_all]. If None or all elements are False, it means no interventions.
+            intervention_values: The values of the interventions with shape [proc_dim] (Note proc_dim is not the same as proc_dim_all since proc_dim depends on the num_intervened_variables).
             If None, it means no interventions.
         Returns:
             The history+simulated observations with shape [batch_size, history_length+time_span, processed_dim_all].
@@ -270,8 +376,19 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         # For future support of interventions, one can add the intervention logic before each generation, similar to static version.
 
         if intervention_mask is not None and intervention_values is not None:
+            assert (
+                Z.shape[1] >= intervention_mask.shape[0]
+            ), "The future ahead time for observation generation must be >= the ahead time for intervention"
             # Convert the time_length in intervention mask to be compatible with X_all
-            pass
+            false_matrix_conditioning = torch.full(
+                (X_history.shape[1], X_history.shape[2]), False, dtype=torch.bool, device=self.device
+            )
+            false_matrix_future = torch.full(
+                (Z.shape[1] - intervention_mask.shape[0], Z.shape[2]), False, dtype=torch.bool, device=self.device
+            )
+            intervention_mask = torch.cat(
+                (false_matrix_conditioning, intervention_mask, false_matrix_future), dim=0
+            )  # shape [history_length+ time_span, processed_dim_all]
 
         for time in range(time_span):
             # Loop over num_nodes to propagate the instantaneous effect
@@ -279,7 +396,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
                 # Add intervention logic here.
                 if intervention_mask is not None and intervention_values is not None:
                     # Assign the intervention values to the corresponding indices in X_all, specified by intervention_mask
-                    pass
+                    X_all[..., intervention_mask] = intervention_values
                 # Generate the observations based on the history (given history + previously-generated observations)
                 # and exogenous noise Z.
                 start_idx = size_history + time - self.lag
@@ -301,7 +418,7 @@ class TemporalContractiveInvertibleGNN(nn.Module):
         # Add intervention logic here to make sure the generated observations respect the intervened values.
         if intervention_mask is not None and intervention_values is not None:
             # assign intervention_values to X_all at corresponding index specified by intervention_mask
-            pass
+            X_all[..., intervention_mask] = intervention_values
 
         X_simulate = X_all[:, size_history:, :].clone()  # shape [batch_size, time_span, proc_dim]
 
@@ -524,3 +641,146 @@ class TemporalFGNNI(FGNNI):
         # output has shape (batch_size, processed_dim_all)
         X_rec *= self.group_mask  # shape (batch_size, num_nodes, processed_dim_all)
         return X_rec.sum(dim=1)  # shape (batch_size, processed_dim_all)
+
+
+class TemporalHyperNet(nn.Module):
+    """
+    This hypernet class is for predicting the spline flow parameters with lagged parents
+    """
+
+    def __init__(
+        self,
+        cts_node: List[int],
+        group_mask: torch.Tensor,
+        device: torch.device,
+        lag: int,
+        param_dim: List[int],
+        embedding_size: Optional[int] = None,
+        out_dim_g: Optional[int] = None,
+        norm_layer: Optional[Type[nn.LayerNorm]] = None,
+        res_connection: bool = False,
+        layers_g: Optional[List[int]] = None,
+        layers_f: Optional[List[int]] = None,
+    ):
+        """
+        This initialize the temporal hypernet instances. The hypernet has the form:
+        param_i = f(g(G,X), e_i) where G is the temporal graph, X has shape [n_batch, lag+1, proc_dim_all] and e_i is the
+        embedding for node i.
+        Args:
+            cts_node: A list of node idx specifies the cts variables.
+            group_mask: A mask of shape [num_nodes, proc_dims] such that group_mask[i, j] = 1 when col j is in group i.
+            device: Device to use
+            lag: The specified lag for the temporal SEM model.
+            param_dim: A list of ints that specifies the output parameters dims from the hypernet.
+                For conditional spline flow, the output dims dependes on the order = linear or order = quadratic.
+            embedding_size: The embedding size for the node embeddings.
+            out_dim_g: The output dims of the inner g network.
+            norm_layer: Whether to use layer normalization
+            res_connection: whether to use residual connection
+            layers_g: the hidden layers of the g
+            layers_f: the hidden layers of the f
+        """
+        super().__init__()
+        self.cts_node = cts_node
+        self.lag = lag
+        self.param_dim = param_dim
+        self.total_param = sum(self.param_dim)
+        self.group_mask = group_mask
+        self.num_nodes, self.processed_dim_all = group_mask.shape
+        self.device = device
+        # Initialize embeddings
+        self.embedding_size = embedding_size or self.processed_dim_all
+        self.embeddings = self.initialize_embeddings()  # Shape (num_node, embedding_size)
+        self.init_scale = nn.Parameter(torch.tensor(0.001), requires_grad=True)
+        # Set value for out_dim_g
+        out_dim_g = out_dim_g or max(
+            8 * 4, self.embedding_size
+        )  # default num_bins for conditional flow is 8, and we need f to output 4 of them.
+        # Set NNs sizes
+        a = max(4 * self.processed_dim_all, self.embedding_size, 64)
+        layers_g = layers_g or [a, a]
+        layers_f = layers_f or [a, a]
+        in_dim_g = self.processed_dim_all + self.embedding_size
+        in_dim_f = self.embedding_size + out_dim_g
+        self.g = generate_fully_connected(
+            input_dim=in_dim_g,
+            output_dim=out_dim_g,
+            hidden_dims=layers_g,
+            non_linearity=nn.LeakyReLU,
+            activation=nn.Identity,
+            device=self.device,
+            normalization=norm_layer,
+            res_connection=res_connection,
+        )
+        self.f = generate_fully_connected(
+            input_dim=in_dim_f,
+            output_dim=self.total_param,
+            hidden_dims=layers_f,
+            non_linearity=nn.LeakyReLU,
+            activation=nn.Identity,
+            device=self.device,
+            normalization=norm_layer,
+            res_connection=res_connection,
+        )
+
+    def initialize_embeddings(self) -> torch.Tensor:
+        """
+        This overwrites the method in FunctionSEM. It will initialize the node embeddings with shape [lag+1, num_nodes, embedding_size].
+        """
+        # Initialize the embeddings.
+        aux = (
+            torch.randn(self.lag + 1, self.num_nodes, self.embedding_size, device=self.device) * 0.01
+        )  # shape (lag+1, num_nodes, embedding_size)
+        return nn.Parameter(aux, requires_grad=True)
+
+    def forward(self, X: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, ...]:
+        """
+        This feed-forwards the input to generate predicted parameters for conditional flow. This will return a parameter
+        list of shape [len(self.param_dim), N_batch, num_cts_node*param_dim]. The first is the
+        length of the tuple (i.e. the num of parameters required for conditional flow), second is the batch number, and third is
+        the concatenated parameters for all continuous nodes.
+        Args:
+            X: A dict consists with two keys, "W" is the weighted adjacency matrix with shape [lag+1, num_node, num_node]
+            and "X" is the history data with shape [N_batch, lag, proc_dim_all].
+
+        Returns:
+            A tuple of parameters with shape [N_batch, num_cts_node*param_dim_each].
+                The length of tuple is len(self.param_dim),
+        """
+        assert "W" in X and "X" in X and len(X) == 2, "The key for input can only contain three keys, 'W', 'X'."
+
+        X_hist = X["X"]
+        W = X["W"]
+        assert W.dim() == 3, "W must have shape [lag+1, num_node, num_node]"
+
+        # assert lag
+        assert X_hist.shape[1] == W.shape[0] - 1, "The input observation should be the history observation."
+
+        X_hist = X_hist.unsqueeze(-2)  # [batch, lag, 1, proc_dim]
+        X_hist_masked = X_hist * self.group_mask  # [batch, lag, node, proc_dim]
+        E = self.embeddings.expand(
+            X_hist_masked.shape[0], -1, -1, -1
+        )  # shape (batch_size, lag+1, num_nodes, embedding_size)
+        E_lag = E[..., 1:, :, :]  # shape [batch_size, lag, num_nodes, embedding_size]
+        E_inst = E[..., 0, :, :]  # shape [batch_size, num_nodes, embedding_size]
+        X_in_g = torch.cat(
+            [X_hist_masked, E_lag], dim=-1
+        )  # shape (batch_size, lag, num_nodes, embedding_size+proc_dim)
+        X_emb = self.g(X_in_g)  # shape (batch_size, lag, num_nodes, out_dim_g)
+        W_lag_exp = W[1:, :, :].unsqueeze(0)  # shape [1, lag, node, node]
+
+        X_aggr_sum = torch.einsum(
+            "blij,klio->kjo", W_lag_exp.flip([1]), X_emb
+        )  # shape (batch_size, num_nodes, out_dim_g)
+
+        X_in_f = torch.cat([X_aggr_sum, E_inst], dim=-1)  # shape (batch_size, num_nodes, embedding_size+out_dim_g)
+        X_rec = self.f(X_in_f)  # shape (batch_size, num_nodes, total_params)
+        X_selected = X_rec[..., self.cts_node, :] * self.init_scale  # shape [batch_size, cts_node, total_params]
+        param_list = torch.split(
+            X_selected, self.param_dim, dim=-1
+        )  # a list of tensor with shape [batch_size, cts_node, each_params]
+
+        output = tuple(
+            param.reshape([-1, len(self.cts_node) * param.shape[-1]]) for param in param_list
+        )  # Tuple with shape [batch, cts_node*each_param]
+        return output

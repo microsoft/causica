@@ -13,6 +13,7 @@ from causica.datasets.variables import Variable, Variables
 from causica.experiment.steps.eval_step import (
     eval_causal_discovery,
     eval_individual_treatment_effects,
+    eval_latent_confounded_causal_discovery,
     eval_treatment_effects,
     evaluate_treatment_effect_estimation,
     run_eval_main,
@@ -399,10 +400,59 @@ def test_run_eval_causal_discovery(tmpdir_factory):
     temporal_causal_dataset = dataset.to_temporal(
         adjacency_data=temporal_adj_matrix, intervention_data=None, transition_matrix=None, counterfactual_data=None
     )
-    eval_causal_discovery(temporal_causal_dataset, temporal_model, conversion_type="full_time")
-    # expected assertion error
-    with pytest.raises(AssertionError):
-        eval_causal_discovery(temporal_causal_dataset, temporal_model, conversion_type="auto_regressive")
+    eval_causal_discovery(temporal_causal_dataset, temporal_model)
+
+
+def test_run_eval_latent_confounded_causal_discovery(tmpdir_factory):
+    variables = Variables(
+        [
+            Variable("continuous_input_1", True, "continuous", 0, 1),
+            Variable("continuous_input_2", True, "continuous", 0, 1),
+            Variable("continuous_input_3", True, "continuous", 0, 1),
+        ]
+    )
+
+    model_config = {
+        "tau_gumbel": 0.25,
+        "lambda_dag": 100.0,
+        "lambda_sparse": 5.0,
+        "base_distribution_type": "gaussian",
+        "spline_bins": 8,
+        "var_dist_A_mode": "enco",
+        "mode_adjacency": "learn",
+        "random_seed": [0],
+    }
+
+    dataset = Dataset(
+        train_data=np.ones((5, 3)),
+        train_mask=np.ones((5, 3), dtype=bool),
+        val_data=np.ones((5, 3)),
+        val_mask=np.ones((5, 3), dtype=bool),
+        test_data=np.ones((5, 3)),
+        test_mask=np.ones((5, 3), dtype=bool),
+        variables=variables,
+    )
+
+    directed_adj_matrix = np.zeros((3, 3))
+    directed_adj_mask = np.ones((3, 3))
+    bidirected_adj_matrix = np.zeros((3, 3))
+    bidirected_adj_mask = np.ones((3, 3))
+    confounded_causal_dataset = dataset.to_latent_confounded_causal(
+        directed_adjacency_data=directed_adj_matrix,
+        directed_subgraph_data=directed_adj_mask,
+        bidirected_adjacency_data=bidirected_adj_matrix,
+        bidirected_subgraph_data=bidirected_adj_mask,
+        intervention_data=None,
+    )
+
+    model = DECI.create(
+        model_id="model_id",
+        variables=variables,
+        save_dir=tmpdir_factory.mktemp("save_dir"),
+        model_config_dict=model_config,
+        device="cpu",
+    )
+    eval_latent_confounded_causal_discovery(confounded_causal_dataset, model)
 
 
 @pytest.fixture

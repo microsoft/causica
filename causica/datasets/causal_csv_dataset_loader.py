@@ -4,10 +4,10 @@ from typing import List, Optional, Tuple, TypedDict, Union
 
 import numpy as np
 
-from ..datasets.csv_dataset_loader import CSVDatasetLoader
-from ..datasets.dataset import CausalDataset, InterventionData
-from ..utils.helper_functions import convert_dict_of_lists_to_ndarray
 from ..utils.io_utils import read_json_as
+from .csv_dataset_loader import CSVDatasetLoader
+from .dataset import CausalDataset
+from .intervention_data import InterventionData, InterventionDataContainer
 
 
 class OptionalInterventionDataDict(TypedDict, total=False):
@@ -154,102 +154,22 @@ class CausalCSVDatasetLoader(CSVDatasetLoader):
         elif os.path.exists(intervention_data_path + ".npy"):
             logger.info("Intervention data npy found.")
 
-            raw_intervention_npy_data = np.load(intervention_data_path + ".npy", allow_pickle=True)
+            raw_intervention_npy_data = np.load(intervention_data_path + ".npy", allow_pickle=True).item()
+            assert isinstance(raw_intervention_npy_data, dict)  # mypy
 
-            intervention_data = self._parse_intervention_dict_list(
-                raw_intervention_npy_data, is_counterfactual=is_counterfactual
-            )
+            intervention_data_container = InterventionDataContainer.from_dict(raw_intervention_npy_data)
+            intervention_data_container.validate(counterfactual=is_counterfactual)
+            intervention_data = intervention_data_container.environments
+
         elif os.path.exists(intervention_data_path + ".json"):
             logger.info("Intervention data json found.")
-
-            raw_intervention_json_data_lists = read_json_as(intervention_data_path + ".json", list)
-            raw_intervention_json_data_ndarrays = [
-                convert_dict_of_lists_to_ndarray(d) for d in raw_intervention_json_data_lists
-            ]
-
-            intervention_data = self._parse_intervention_dict_list(
-                raw_intervention_json_data_ndarrays, is_counterfactual=is_counterfactual
-            )
+            raw_intervention_json_data = read_json_as(intervention_data_path + ".json", dict)
+            intervention_data_container = InterventionDataContainer.from_dict(raw_intervention_json_data)
+            intervention_data_container.validate(counterfactual=is_counterfactual)
+            intervention_data = intervention_data_container.environments
         else:
             logger.info("Intervention data not found.")
             intervention_data = None
-
-        return intervention_data
-
-    @classmethod
-    def _parse_intervention_dict_list(
-        cls, raw_intervention_data, is_counterfactual: bool = False
-    ) -> List[InterventionData]:
-        """Process list of dicts containing intervention data.
-
-        Args:
-            raw_intervention_data: List of dicts containing intervention data. This is passed as a np.ndarray.
-            is_counterfactual (bool): Whether the data is counterfactual or not.
-
-        Returns:
-            intervention_data: List of InterventionData objects.
-        """
-
-        intervention_data = []
-        # The interventional data is saved as follows:
-        # [
-        #     {
-        #         "conditioning": np.array[mixed],
-        #         "intervention": np.array[mixed],
-        #         "reference": Optional[np.array[mixed]],
-        #         "effect_mask": Optional[np.array[bool]],
-        #         "intervention_samples": np.array[mixed],
-        #         "reference_samples": Optional[np.array[mixed]],
-        #     },
-        #     ...
-        # ]
-
-        for intervention_dict in raw_intervention_data:
-            conditioning_values, conditioning_mask = cls.process_data(intervention_dict["conditioning"])
-
-            # Conditioning arrays in counterfactual dicts contain all base samples
-            # so we set conditioning_idxs to all column indices
-            if is_counterfactual:
-                conditioning_idxs = np.array(range(conditioning_mask.shape[1]))
-
-            else:
-                conditioning_idxs = np.where(conditioning_mask == 1)[0]
-
-            intervention_values, intervention_mask = cls.process_data(intervention_dict["intervention"])
-            intervention_samples = intervention_dict["intervention_samples"]
-            intervention_idxs = np.where(intervention_mask == 1)[0]
-
-            if is_counterfactual:
-                assert (
-                    conditioning_values.shape[0] == intervention_samples.shape[0]
-                ), "Counterfactual data expects the conditioning to be of equivalent shape as the interventional data."
-                assert (conditioning_mask == 1).all(), "Counterfactual data expects the conditioning to be full."
-
-            # Optional fields:
-            reference_values = None
-            reference_samples = None
-            effect_mask = intervention_dict.get("effect_mask", None)
-            effect_idxs = np.where(effect_mask == 1)[0]
-
-            if "reference" in intervention_dict:
-                assert isinstance(intervention_dict["reference"], np.ndarray)  # Mypy hint.
-                reference_values, reference_mask = cls.process_data(intervention_dict["reference"])
-                reference_samples = intervention_dict["reference_samples"]
-                assert np.all(reference_mask == intervention_mask), "Intervention and reference indices must match."
-                assert isinstance(reference_samples, np.ndarray), "Reference samples must be provided."
-
-            cur_intervention_data = InterventionData(
-                conditioning_idxs=conditioning_idxs,
-                conditioning_values=conditioning_values,
-                effect_idxs=effect_idxs,
-                intervention_idxs=intervention_idxs,
-                intervention_values=intervention_values,
-                intervention_reference=reference_values,
-                test_data=intervention_samples,
-                reference_data=reference_samples,
-            )
-
-            intervention_data.append(cur_intervention_data)
 
         return intervention_data
 

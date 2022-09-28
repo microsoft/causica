@@ -1,7 +1,8 @@
 import pytest
 import torch
 
-from causica.models.deci.generation_functions import TemporalContractiveInvertibleGNN, TemporalFGNNI
+from causica.models.deci.base_distributions import TemporalConditionalSplineFlow
+from causica.models.deci.generation_functions import TemporalContractiveInvertibleGNN, TemporalFGNNI, TemporalHyperNet
 
 
 @pytest.fixture
@@ -170,3 +171,175 @@ def test_simulate_SEM(generate_scalar_group_masks, generate_W_adj):
     assert X_simulate[0, 0, 1].item() == 675352640
     assert X_simulate[0, 0, 2] == 45322149550985280
     assert X_simulate.shape[1] == time_span
+
+    # Simulate with intervention mask and value
+    intervention_mask = torch.tensor([[True, False, False, True], [False, False, True, False]], dtype=torch.bool).to(
+        device
+    )
+    intervention_value = torch.tensor([0.1, 0.01, 0.2], dtype=torch.float).to(device)
+    _, X_simulate = temporal_ICGNN.simulate_SEM(
+        Z, W_adj, X_history, intervention_mask=intervention_mask, intervention_values=intervention_value
+    )
+    assert X_simulate[0, 0, 0] == 0.1
+    assert X_simulate[0, 0, 3] == 0.01
+    assert X_simulate[0, 1, 2] == 0.2
+
+    # Simulate with wrong intervention mask length, raise assertion error
+    intervention_mask = torch.tensor(
+        [[True, False, False, True], [False, False, True, False], [False, False, False, False]], dtype=torch.bool
+    ).to(device)
+    intervention_value = torch.tensor([0.1, 0.01, 0.2], dtype=torch.float).to(device)
+
+    with pytest.raises(AssertionError):
+        temporal_ICGNN.simulate_SEM(
+            Z, W_adj, X_history, intervention_mask=intervention_mask, intervention_values=intervention_value
+        )
+
+
+@pytest.fixture
+def generate_conditional_dist(generate_scalar_group_masks):
+    group_mask = generate_scalar_group_masks
+    cts_node = [0, 1, 3]
+    flow_dist = TemporalConditionalSplineFlow(
+        cts_node=cts_node, group_mask=group_mask, device=torch.device("cpu"), lag=2
+    )
+    return flow_dist
+
+
+def test_simulate_SEM_conditional(generate_scalar_group_masks, generate_W_adj, generate_conditional_dist):
+    flow_dist = generate_conditional_dist
+    scalar_group_mask = generate_scalar_group_masks
+    lag = 2
+    device = torch.device("cpu")
+    temporal_ICGNN = TemporalContractiveInvertibleGNN(scalar_group_mask, lag, device)
+
+    W_adj = generate_W_adj.to(device)  # [lag+1, num_nodes, num_nodes] = [3, 4, 4]
+    time_span = 2
+    Z = torch.zeros(1, time_span, 4).to(device)  # [bathc_size, time_span, proc_dim] = [1, 2, 4]
+    X_history = torch.tensor([[[4, 4, 4, 4], [3, 3, 3, 3], [2, 2, 2, 2], [1, 1, 1, 1]]]).to(
+        device
+    )  # [batch_size, history_length, proc_dim] = [1, 4, 4]
+    # without intervention masks
+    _, X_simulate = temporal_ICGNN.simulate_SEM_conditional(
+        conditional_dist=flow_dist,
+        Z=Z,
+        W_adj=W_adj,
+        X_history=X_history,
+        gt_zero_region=[[2]],
+    )
+    assert X_simulate.shape == torch.Size([1, 2, 4])
+    # with intervention masks
+    intervention_mask = torch.tensor([[True, False, False, True], [False, False, True, False]], dtype=torch.bool).to(
+        device
+    )
+    intervention_value = torch.tensor([0.1, 0.01, 0.2], dtype=torch.float).to(device)
+    _, X_simulate = temporal_ICGNN.simulate_SEM_conditional(
+        conditional_dist=flow_dist,
+        Z=Z,
+        W_adj=W_adj,
+        X_history=X_history,
+        intervention_mask=intervention_mask,
+        intervention_values=intervention_value,
+    )
+    assert X_simulate[0, 0, 0] == 0.1
+    assert X_simulate[0, 0, 3] == 0.01
+    assert X_simulate[0, 1, 2] == 0.2
+
+
+@pytest.fixture
+def get_hypernet_setup():
+    lag = 2
+    num_bins = 8
+    param_dim = [num_bins, num_bins, (num_bins - 1)]
+    embedding_size = 16
+    output_dim_g = 64
+    layer_g = [13, 13]
+    layer_f = [14, 14]
+
+    return lag, param_dim, embedding_size, output_dim_g, layer_g, layer_f
+
+
+@pytest.fixture
+def get_hypernet(generate_scalar_group_masks, get_hypernet_setup):
+    group_mask = generate_scalar_group_masks
+    lag, param_dim, embedding_size, output_dim_g, layer_g, layer_f = get_hypernet_setup
+
+    hypernet = TemporalHyperNet(
+        cts_node=[0, 1, 2, 3],
+        group_mask=group_mask,
+        device=torch.device("cpu"),
+        lag=lag,
+        param_dim=param_dim,
+        embedding_size=embedding_size,
+        out_dim_g=output_dim_g,
+        layers_g=layer_g,
+        layers_f=layer_f,
+    )
+    return hypernet
+
+
+def test_init_TemporalHyperNet(get_hypernet, get_hypernet_setup, generate_scalar_group_masks):
+    """
+    This test the init of Temporal hypernet. It will test the shape of embedding and f,g, layer sizes.
+    """
+    group_mask = generate_scalar_group_masks
+    lag, _, embedding_size, output_dim_g, layer_g, layer_f = get_hypernet_setup
+    hypernet = get_hypernet
+    assert hypernet.embeddings.shape == torch.Size([lag + 1, group_mask.shape[0], embedding_size])
+    # test the shape of first layer of g
+    assert list(hypernet.g.modules())[0][0][0].in_features == group_mask.shape[1] + embedding_size
+    assert list(hypernet.g.modules())[0][0][0].out_features == layer_g[0]
+    # test the shape of first layer of f
+    assert list(hypernet.f.modules())[0][0][0].in_features == output_dim_g + embedding_size
+    assert list(hypernet.f.modules())[0][0][0].out_features == layer_f[0]
+
+
+@pytest.fixture
+def simple_hypernet(generate_scalar_group_masks):
+    group_mask = generate_scalar_group_masks
+    hypernet = TemporalHyperNet(
+        cts_node=[0, 2, 3],
+        group_mask=group_mask,
+        device=torch.device("cpu"),
+        lag=1,
+        param_dim=[3, 4, 5],
+        embedding_size=2,
+        out_dim_g=2,
+        layers_g=[2],
+        layers_f=[2],
+    )
+    # fix the weight
+    for param in hypernet.g.parameters():
+        param.data = torch.ones_like(param)
+    for param in hypernet.f.parameters():
+        param.data = torch.ones_like(param)
+
+    hypernet.embeddings.data = torch.ones_like(hypernet.embeddings)
+    return hypernet
+
+
+def test_TemporalHyperNet_forward(simple_hypernet):
+    """
+    This will test the temporal hypernet forward method.
+    """
+    hypernet = simple_hypernet
+    X_hist = torch.tensor([[[1, 2, 3, 4]], [[0.1, 0.2, 0.3, 0.4]]])
+    W = torch.tensor(
+        [
+            [[0, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 0]],
+            [[0, 1, 0, 0], [0, 1, 1, 0], [0, 0, 1, 1], [1, 0, 0, 0]],
+        ]
+    ).float()
+    X = {}
+    X["X"], X["W"] = X_hist, W
+
+    w, h, d = hypernet(X)
+    # assert shape
+    assert w.shape == torch.Size([2, 9])
+    assert h.shape == torch.Size([2, 12])
+    assert d.shape == torch.Size([2, 15])
+    # assert value, since the hyper network has fixed weights
+    assert all(torch.isclose(w[0], torch.tensor([0.067, 0.067, 0.067, 0.0950, 0.0950, 0.0950, 0.0590, 0.0590, 0.0590])))
+    assert all(
+        torch.isclose(w[1], torch.tensor([0.0382, 0.0382, 0.0382, 0.0662, 0.0662, 0.0662, 0.0374, 0.0374, 0.0374]))
+    )

@@ -32,8 +32,16 @@ class TorchModel(Model, torch.nn.Module):
     _model_type_path = "model_type.txt"
     _variables_path = "variables.json"
     model_file = "model.pt"
+    best_model_file = "best_model.pt"
 
-    def __init__(self, model_id: str, variables: Variables, save_dir: str, device: torch.device, **_) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        variables: Variables,
+        save_dir: str,
+        device: torch.device,
+        **_,
+    ) -> None:
         """
         Args:
             model_id: Unique model ID for referencing this model instance.
@@ -47,13 +55,20 @@ class TorchModel(Model, torch.nn.Module):
         Model.__init__(self, model_id, variables, save_dir)
         self.device = device
 
-    def save(self) -> None:
+    def save(self, best: bool = False) -> None:
         """
         Save the torch model state_dict, as well as an ONNX representation of the model,
         if implemented.
+
+        Args:
+            best: Flag indicating whether this is a new best checkpoint. This saves to a different location.
         """
         self.variables.save(os.path.join(self.save_dir, self._variables_path))
-        model_path = os.path.join(self.save_dir, self.model_file)
+        if best:
+            model_path = os.path.join(self.save_dir, self.best_model_file)
+        else:
+            model_path = os.path.join(self.save_dir, self.model_file)
+
         torch.save(self.state_dict(), model_path)
 
         # TODO save variables? For most cases, the 'create' method will already
@@ -68,7 +83,7 @@ class TorchModel(Model, torch.nn.Module):
             except ONNXNotImplemented:
                 logger.debug("Save ONNX not implemented for this model.")
 
-    def save_onnx(self, save_dir: str) -> None:
+    def save_onnx(self, save_dir: str, best: bool = False) -> None:
         raise ONNXNotImplemented
 
     def validate_loss_config(self, loss_config: LossConfig):
@@ -172,7 +187,12 @@ class TorchModel(Model, torch.nn.Module):
 
     @classmethod
     def _create(
-        cls: Type[T], model_id: str, variables: Variables, save_dir: str, device: torch.device, **model_config_dict
+        cls: Type[T],
+        model_id: str,
+        variables: Variables,
+        save_dir: str,
+        device: torch.device,
+        **model_config_dict,
     ) -> T:
         model = cls(model_id, variables, save_dir, device, **model_config_dict)
         num_trainable_parameters = sum(p.numel() for p in model.parameters())

@@ -1,7 +1,11 @@
-from typing import Optional, Union
+from itertools import product
+from typing import Any, Dict, Optional, Type, Union
 
 import numpy as np
 import torch
+import torch.distributions as td
+
+from ..datasets.dataset import CausalDataset
 
 
 def is_there_adjacency(adj_matrix):
@@ -309,3 +313,129 @@ def piecewise_linear(x, start, width, max_val=1):
     It is used to define the coefficient of the DAG-loss in NRI-MV.
     """
     return max_val * max(min((x - start) / width, 1), 0)
+
+
+def enum_all_graphs(num_nodes: int, dags_only: Optional[bool] = False):
+    """
+    Enumerates all graphs of size num_nodes with no self-loops (all diagonals elements are strictly 0 in adj. matrix).
+    Useful for computing the full posterior and true posterior.
+
+    Args:
+        num_nodes: An int specifying the number of nodes in the graphs (should be less than 6).
+        dags_only: Whether to return only DAGs of size num_nodes.
+
+    Returns: Adjacency matrices corresponding to all the graphs
+    """
+
+    assert (
+        num_nodes < 6
+    ), f"Enumeration of DAGs possible when No. of nodes is less than 6, received {num_nodes} instead."
+    comb_ = list(product([0, 1], repeat=num_nodes * (num_nodes - 1)))  # Exclude diagonal
+    comb = np.array(comb_)
+    idxs_upper = np.triu_indices(num_nodes, k=1)
+    idxs_lower = np.tril_indices(num_nodes, k=-1)
+    output = np.zeros(comb.shape[:-1] + (num_nodes, num_nodes))
+    output[..., idxs_upper[0], idxs_upper[1]] = comb[..., : (num_nodes * (num_nodes - 1)) // 2]
+    output[..., idxs_lower[0], idxs_lower[1]] = comb[..., (num_nodes * (num_nodes - 1)) // 2 :]
+    if dags_only:
+        return output[dag_constraint(output) == 0]
+    return output
+
+
+def dag_constraint(A: np.ndarray):
+    """
+    Computes the DAG constraint based on the matrix exponential.
+    Computes tr[e^(A * A)] - num_nodes.
+
+    Args:
+        A: Batch of adjacency matrices of size [batch_size, num_nodes, num_nodes]
+    Returns: The DAG constraint values for each adj. matrix in the batch.
+    """
+    assert A.shape[-1] == A.shape[-2]
+
+    num_nodes = A.shape[-1]
+    expm_A = torch.linalg.matrix_exp(torch.from_numpy(A * A)).cpu().numpy()
+    return np.trace(expm_A, axis1=-1, axis2=-2) - num_nodes
+
+
+def compute_true_posterior(
+    dataset: CausalDataset,
+    model: Type,
+    train_config_dict: Optional[Dict[str, Any]] = None,
+):
+
+    """
+    Compute the true posterior for a given dataset by enumerating all the graphs and then taking the MLE estimate of the conditional parameters given the graph.
+
+    Args:
+        dataset: The dataset to compute the true posterior for, as defined by the Dataset object.
+        model: A class of the posterior (of a DECI like class) which has methods:
+                1. run_train which trains the MLE of the parameters
+                2. log_prob which calulates the log likelihood of a dataset on the MLE of the parameters and a fixed graph.
+                3. log_prior_A which calulates the prior for any given graph
+        train_config_dict: Config dict for training the MLE estimators of the functional parameter.
+
+
+    Returns:
+        Posterior distribution over graphs (torch.distributions object)
+
+    """
+
+    train_data, _ = dataset.train_data_and_mask
+    all_graphs = enum_all_graphs(num_nodes=train_data.shape[-1], dags_only=False)
+    logits = torch.zeros(len(all_graphs))
+    for i, graph in enumerate(all_graphs):
+        dataset.set_adjacency_data_matrix(A=graph)
+        model.run_train(dataset=dataset, train_config_dict=train_config_dict)
+        train_data, _ = dataset.train_data_and_mask
+        logits[i] = model.log_prob(
+            X=train_data, most_likely_graph=True
+        ) + model._log_prior_A(  # pylint: disable=protected-access
+            torch.from_numpy(graph)
+        )
+
+    return td.categorical.Categorical(logits=logits)
+
+
+def evaluate_true_posterior(
+    trained_model: Type,
+    saved_true_posterior: Optional[str] = None,
+    dataset: Optional[CausalDataset] = None,
+    model: Optional[Type] = None,
+    train_config_dict: Optional[Dict[str, Any]] = None,
+    metric="kl",
+):
+
+    """
+    Evaluate the trained model with respect to the true posterior for a given dataset
+
+    Args:
+        trained_model: The trained DECI model to be evaluated.
+        saved_true_posterior: Path to saved true posterior if the true posterior is already trained.
+        dataset: The dataset to compute the true posterior for, as defined by the Dataset object. Should be specified if the true posterior is not already trained.
+        model: A class of the posterior (of a DECI like class) which is used for calculating the MLE. Should be specified if the true posterior is not already trained.
+        train_config_dict: Config dict for training the MLE estimators of the functional parameter.
+        metric: Type of divergence to use for comparing the distributions.
+
+
+    Returns:
+        Divergence between the model and the true posterior (float)
+
+    """
+    if saved_true_posterior is None:
+        if model is None or dataset is None:
+            raise Exception
+        else:
+            true_posterior = compute_true_posterior(dataset=dataset, model=model, train_config_dict=train_config_dict)
+    else:
+        true_posterior = torch.load(saved_true_posterior)
+
+    all_graphs = enum_all_graphs(num_nodes=trained_model.num_nodes, dags_only=False)
+    logits = trained_model.var_dist_A.log_prob(value=torch.from_numpy(all_graphs).to(trained_model.device))
+
+    approximate_posterior = td.categorical.Categorical(logits=logits)
+
+    if metric == "kl":
+        return td.kl.kl_divergence(true_posterior, approximate_posterior)
+    else:
+        raise NotImplementedError

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 from dowhy import CausalModel
-from dowhy.causal_identifier import CausalIdentifier
+from dowhy.causal_identifier.auto_identifier import METHOD_NAMES
 from joblib import Parallel, delayed
 from scipy.stats import multivariate_normal
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
@@ -113,8 +113,9 @@ class DoWhy(Model, IModelForInterventions):
         self._random_seed = random_seed
         self.parallel_n_jobs = parallel_n_jobs
 
+        method_names = {method_name.value for method_name in METHOD_NAMES}
         assert (
-            causal_identifier_method in CausalIdentifier.METHOD_NAMES
+            causal_identifier_method in method_names
         ), f"causal_identifier_method {causal_identifier_method} is unknown."
         self._causal_identifier_method = causal_identifier_method
 

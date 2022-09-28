@@ -1,0 +1,18 @@
+{
+
+    "model_hyperparams": {
+
+        "lag": 2,
+        "lambda_w": 0.005,
+        "lambda_a": 0.005,
+        "random_seed": [0]
+
+    },
+
+    "training_hyperparams": {
+        "max_iter": 1000,
+        "h_tol": 1e-8,
+        "w_threshold": 0
+    }
+
+}

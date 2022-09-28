@@ -8,7 +8,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">= 3.8, < 3.10"
-dowhy = {git = "https://github.com/py-why/dowhy.git", rev = "8b2cf6a722572a7e0d6a1f7fef22e743dbd3b13a"}
+dowhy = {git = "https://github.com/py-why/dowhy.git", rev = "f523accf96d6bb1afa6f3f3f3ba13cb1272b4150"}
 econml = "^0.12.0"
 gcastle = {git = "https://github.com/confoundry/trustworthyAI.git", rev = "a768c0a"}
 gitpython = "^3.1.27"
@@ -25,16 +25,24 @@ numpy = "^1.22.4"
 numpyro = "^0.9.2"
 pandas = "^1.4.2"
 pyro-ppl = "^1.8.1"
-scikit-learn = "^1.1.1"
+scikit-learn = "^1.0.2"
 scipy = "^1.8.1"
 seaborn = "^0.11.2"
 tensorboard = "^2.9.0"
 torch = "^1.12.0"
 tqdm = "^4.64.0"
+causal-learn = "^0.1.2.8"
+causalnex = {git = "https://github.com/WenboGong/causalnex.git", branch = "develop" }
+tigramite = {git = "https://github.com/WenboGong/tigramite.git", branch = "develop"}
+dcor = "0.5.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^0.981"
+pylint = "^2.15.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

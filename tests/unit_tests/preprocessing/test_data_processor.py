@@ -340,7 +340,7 @@ def test_process_data_standardize(data_processor_standardize):
 @pytest.mark.parametrize("input_idxs, output_idxs", [[(0, 2), (0, 5)], [(1, 3), (1, 2, 3, 4, 6, 7, 8)]])
 def test_process_data_subset_by_group(data_processor, input_idxs, output_idxs):
     # In this test, each group has num_unproc_col = 1, hence we can subset using input_idxs
-    processed_subset = data_processor.process_data_subset_by_group(good_data[:, input_idxs], input_idxs)
+    processed_subset = data_processor.process_data_subset_by_group(good_data[:, input_idxs], np.array(input_idxs))
     good_subset = processed_good_data[:, output_idxs]
     print(processed_subset, good_subset)
     assert np.allclose(processed_subset, good_subset)

@@ -6,6 +6,7 @@ if __name__ == "__main__":
     num_samples_train = 5000
     num_samples_test = 5000
     noise_mult_factor = 2
+    expected_num_latent_confounders = 0
 
     N_interventions = 5
     generate_references = True
@@ -35,9 +36,19 @@ if __name__ == "__main__":
                         else:
                             noise_mult_factor_ = noise_mult_factor
 
-                            name = get_name(graph_type, N, E, sem_type, noise_type, base_seed)
+                            if expected_num_latent_confounders > 0:
+                                name = "latent_" + get_name(graph_type, N, E, sem_type, noise_type, base_seed)
+                            else:
+                                name = get_name(graph_type, N, E, sem_type, noise_type, base_seed)
                             print(name)
-                            X_train_test, X_train, X_test, adj_matrix, all_intervention_data = gen_dataset(
+                            (
+                                X_train_test,
+                                X_train,
+                                X_test,
+                                directed_matrix,
+                                bidirected_matrix,
+                                all_intervention_data,
+                            ) = gen_dataset(
                                 base_seed,
                                 num_samples_train,
                                 num_samples_test,
@@ -54,18 +65,26 @@ if __name__ == "__main__":
                                 noise_mult_factor=noise_mult_factor,
                                 discrete_dims_list=discrete_dims_list,
                                 discrete_temperature=None,
+                                expected_num_latent_confounders=expected_num_latent_confounders,
                             )
 
                             print(
                                 X_train_test.shape,
                                 X_train.shape,
                                 X_test.shape,
-                                adj_matrix.shape,
+                                directed_matrix.shape,
                                 all_intervention_data.shape,
                             )
 
                             save_data(
-                                dataset_folder, name, adj_matrix, X_train_test, X_train, X_test, all_intervention_data
+                                dataset_folder,
+                                name,
+                                directed_matrix,
+                                bidirected_matrix,
+                                X_train_test,
+                                X_train,
+                                X_test,
+                                all_intervention_data,
                             )
 
                             # https://stackoverflow.com/questions/47941079/can-i-make-random-mask-with-numpy
@@ -83,14 +102,15 @@ if __name__ == "__main__":
                                 X_train_test.shape,
                                 X_train.shape,
                                 X_test.shape,
-                                adj_matrix.shape,
+                                directed_matrix.shape,
                                 all_intervention_data.shape,
                             )
 
                             save_data(
                                 dataset_folder,
                                 name + "_partial",
-                                adj_matrix,
+                                directed_matrix,
+                                bidirected_matrix,
                                 X_train_test_partial,
                                 X_train_partial,
                                 X_test,

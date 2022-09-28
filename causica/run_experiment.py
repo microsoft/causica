@@ -76,6 +76,7 @@ def run_experiment(
     max_steps: int = np.iinfo(np.int64).max,
     max_al_rows: int = np.iinfo(np.int64).max,
     causal_discovery: bool = False,
+    latent_confounded_causal_discovery: bool = False,
     treatment_effects: bool = False,
     output_dir: str = "runs",
     device: str = "cpu",
@@ -88,6 +89,7 @@ def run_experiment(
     logger_level: str = "INFO",
     eval_likelihood: bool = True,
     conversion_type: str = "full_time",
+    delete_kwargs_files: bool = True,
 ):
     if active_learning_users_to_plot is None:
         active_learning_users_to_plot = []
@@ -126,6 +128,7 @@ def run_experiment(
         "run_inference": run_inference,
         "active_learning": active_learning,
         "causal_discovery": causal_discovery,
+        "latent_confounded_causal_discovery": latent_confounded_causal_discovery,
         "treatment_effects": treatment_effects,
         "device": device,
         "run_train": model_id is None,
@@ -146,6 +149,8 @@ def run_experiment(
     if pipeline_creation_mode:
         train_step_outputs: List[Any] = []
 
+    kwargs_files: List[str] = []
+
     for model_seed, model_config, dataset_seed, dataset_config in configs:
         kwargs_dict = dict(
             dataset_name=dataset_name,
@@ -159,6 +164,7 @@ def run_experiment(
             max_steps=max_steps,
             max_al_rows=max_al_rows,
             causal_discovery=causal_discovery,
+            latent_confounded_causal_discovery=latent_confounded_causal_discovery,
             treatment_effects=treatment_effects,
             device=device,
             quiet=quiet,
@@ -181,8 +187,10 @@ def run_experiment(
         )
 
         kwargs_file = run_context.aml_step(
-            (lambda **kwargs: run_single_seed_experiment(ExperimentArguments(**kwargs))), pipeline_creation_mode
+            (lambda **kwargs: run_single_seed_experiment(ExperimentArguments(**kwargs))),
+            pipeline_creation_mode,
         )(**kwargs_dict)
+        kwargs_files.append(kwargs_file)
 
         if pipeline_creation_mode:
             step_ouput = pipeline.add_step(
@@ -204,6 +212,8 @@ def run_experiment(
         experiment_name=experiment_name,
         aml_tags=aml_tags,
     )
+    kwargs_files.append(kwargs_file)
+
     if pipeline_creation_mode:
         pipeline.add_step(
             script_name="run_experiment_step.py",  # TODO: remove
@@ -212,6 +222,10 @@ def run_experiment(
             step_name=experiment_name,
         )
         pipeline.run(aml_tags)
+
+        if delete_kwargs_files:
+            for kwargs_file in kwargs_files:
+                os.remove(kwargs_file)
 
     # TODO this return value is provided only for the sake of end_to_end tests. Remove it?
     return models_dir
@@ -248,6 +262,7 @@ def run_experiment_on_parsed_args(args: argparse.Namespace, run_context: RunCont
             max_steps=args.max_steps,
             max_al_rows=args.max_al_rows,
             causal_discovery=args.causal_discovery,
+            latent_confounded_causal_discovery=args.latent_confounded_causal_discovery,
             treatment_effects=args.treatment_effects,
             output_dir=args.output_dir,
             device=args.device,

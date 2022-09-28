@@ -1,10 +1,7 @@
-# This is required in python 3 to allow return types of the same class.
-from __future__ import annotations
-
 import os
 import time
 from collections import defaultdict
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, cast
 
 import mlflow
 import networkx as nx
@@ -16,7 +13,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from ...datasets.dataset import CausalDataset, Dataset, TemporalDataset
+from ...datasets.dataset import CausalDataset, Dataset, LatentConfoundedCausalDataset, TemporalDataset
 from ...datasets.variables import Variables
 from ...models.imodel import (
     IModelForCausalInference,
@@ -27,6 +24,8 @@ from ...models.imodel import (
 from ...models.torch_model import TorchModel
 from ...preprocessing.data_processor import DataProcessor
 from ...utils.causality_utils import (
+    admg2dag,
+    eval_temporal_causal_discovery,
     get_ate_from_samples,
     get_cate_from_samples,
     get_ite_from_samples,
@@ -38,17 +37,14 @@ from ...utils.causality_utils import (
 from ...utils.fast_data_loader import FastTensorDataLoader
 from ...utils.helper_functions import to_tensors
 from ...utils.linprog import col_row_constrained_lin_prog
-from ...utils.nri_utils import (
-    convert_temporal_to_static_adjacency_matrix,
-    edge_prediction_metrics_multisample,
-    make_temporal_adj_matrix_compatible,
-)
+from ...utils.nri_utils import edge_prediction_metrics_multisample
 from ...utils.torch_utils import generate_fully_connected
 from ...utils.training_objectives import get_input_and_scoring_masks
 from .base_distributions import BinaryLikelihood, CategoricalLikelihood, DiagonalFLowBase, GaussianBase
 from .generation_functions import ContractiveInvertibleGNN
 from .variational_distributions import (
     AdjMatrix,
+    CategoricalAdjacency,
     DeterministicAdjacency,
     ThreeWayGraphDist,
     VarDistA_ENCO,
@@ -144,6 +140,7 @@ class DECI(
                         Default is False.
         """
         super().__init__(model_id, variables, save_dir, device)
+        self.base_distribution_type = base_distribution_type
         self.dense_init = dense_init
         self.embedding_size = embedding_size
         self.device = device
@@ -172,7 +169,8 @@ class DECI(
         self.ICGNN = self._create_ICGNN_for_deci()
 
         self.spline_bins = spline_bins
-        self.likelihoods = nn.ModuleDict(self._generate_error_likelihoods(base_distribution_type, variables))
+        self.likelihoods = nn.ModuleDict(self._generate_error_likelihoods(self.base_distribution_type, self.variables))
+
         self.variables = variables
 
         self.imputation = imputation
@@ -196,6 +194,9 @@ class DECI(
         self.var_dist_A = self._create_var_dist_A_for_deci(var_dist_A_mode)
 
         self.set_graph_constraint(graph_constraint_matrix)
+        # Adding a buffer to hold the log likelihood. This will be saved with the state dict.
+        self.register_buffer("log_p_x", torch.tensor(-np.inf))
+        self.log_p_x: torch.Tensor  # This is simply a scalar.
 
     def get_extra_state(self) -> Dict[str, Any]:
         """Return extra state for the model, including the data processor."""
@@ -211,9 +212,12 @@ class DECI(
         Args:
             state: State to load.
         """
-        self.data_processor = state.pop("data_processor", None)
-        self.neg_constraint_matrix = state.pop("neg_constraint_matrix")
-        self.pos_constraint_matrix = state.pop("pos_constraint_matrix")
+        if "data_processor" in state:
+            self.data_processor = state["data_processor"]
+        if "neg_constraint_matrix" in state:
+            self.neg_constraint_matrix = state["neg_constraint_matrix"]
+        if "pos_constraint_matrix" in state:
+            self.pos_constraint_matrix = state["pos_constraint_matrix"]
 
     def set_prior_A(
         self,
@@ -275,6 +279,8 @@ class DECI(
             var_dist_A = DeterministicAdjacency(device=self.device)
         elif var_dist_A_mode == "three":
             var_dist_A = ThreeWayGraphDist(device=self.device, input_dim=self.num_nodes, tau_gumbel=self.tau_gumbel)
+        elif var_dist_A_mode == "categorical":
+            var_dist_A = CategoricalAdjacency(device=self.device)
         else:
             raise NotImplementedError()
 
@@ -429,11 +435,11 @@ class DECI(
         return self._apply_constraints(adj)
 
     def _apply_constraints(self, G: torch.Tensor) -> torch.Tensor:
-        # Set all entries where self.neg_contraint_matrix=0 to 0, leave elements where self.neg_constraint_matrix=1 unchanged
-        G = G * self.neg_constraint_matrix
-        # Set all entries where self.pos_contraint_matrix=1 to 1, leave elements where self.pos_constraint_matrix=0 unchanged
-        G = 1.0 - (1.0 - G) * (1.0 - self.pos_constraint_matrix)
-        return G
+        """
+        Set all entries where self.neg_contraint_matrix=0 to 0, leave elements where self.neg_constraint_matrix=1 unchanged
+        Set all entries where self.pos_contraint_matrix=1 to 1, leave elements where self.pos_constraint_matrix=0 unchanged
+        """
+        return 1.0 - (1.0 - G * self.neg_constraint_matrix) * (1.0 - self.pos_constraint_matrix)
 
     def get_adj_matrix(
         self,
@@ -455,7 +461,11 @@ class DECI(
         return adj_matrix.detach().cpu().numpy().astype(np.float64)
 
     def get_weighted_adj_matrix(
-        self, do_round: bool = True, samples: int = 100, most_likely_graph: bool = False, squeeze: bool = False
+        self,
+        do_round: bool = True,
+        samples: int = 100,
+        most_likely_graph: bool = False,
+        squeeze: bool = False,
     ) -> torch.Tensor:
         """
         Returns the weighted adjacency matrix (or several) as a numpy array.
@@ -511,10 +521,7 @@ class DECI(
         return torch.mean(torch.Tensor(tracker_dag_penalty)).item()
 
     def _log_prob(
-        self,
-        x: torch.Tensor,
-        predict: torch.Tensor,
-        intervention_mask: Optional[torch.Tensor] = None,
+        self, x: torch.Tensor, predict: torch.Tensor, intervention_mask: Optional[torch.Tensor] = None, **_
     ) -> torch.Tensor:
         """
         Computes the log probability of the observed data given the predictions from the SEM.
@@ -653,11 +660,21 @@ class DECI(
             raise NotImplementedError("Fixed seed not supported by DECI")
 
         assert Nsamples_per_graph > 1, "Nsamples_per_graph must be greater than 1"
-        intervention_idxs_tensor, _, intervention_values_tensor = intervention_to_tensor(
-            intervention_idxs, intervention_values, group_mask=self.variables.group_mask, device=self.device
+        (intervention_idxs_tensor, _, intervention_values_tensor,) = intervention_to_tensor(
+            intervention_idxs,
+            intervention_values,
+            group_mask=self.variables.group_mask,
+            device=self.device,
         )
         assert Ngraphs is not None, "Ngraphs must be specified"
         Nsamples = Ngraphs * Nsamples_per_graph
+
+        # Get variables we're computing CATE for.
+        if hasattr(self, "latent_variables"):
+            assert isinstance(self.observed_variables, Variables)
+            cate_variables: Variables = self.observed_variables
+        else:
+            cate_variables = self.variables
 
         with torch.no_grad():
             if reference_values is None:
@@ -690,14 +707,14 @@ class DECI(
                 assert effect_idxs is not None, "need to specify effect indices for CATE computation"
                 effect_mask = get_mask_from_idxs(
                     effect_idxs,
-                    group_mask=self.variables.group_mask,
+                    group_mask=cate_variables.group_mask,
                     device=self.device,
                 )
 
                 (conditioning_idxs, conditioning_mask, conditioning_values,) = intervention_to_tensor(
                     conditioning_idxs,
                     conditioning_values,
-                    self.variables.group_mask,
+                    cate_variables.group_mask,
                     device=self.device,
                 )
 
@@ -717,7 +734,7 @@ class DECI(
                     conditioning_mask=conditioning_mask,
                     conditioning_values=conditioning_values,
                     effect_mask=effect_mask,
-                    variables=self.variables,
+                    variables=cate_variables,
                     normalise=False,
                     rff_lengthscale=self.cate_rff_lengthscale,
                     rff_n_features=self.cate_rff_n_features,
@@ -729,7 +746,7 @@ class DECI(
                     conditioning_mask=conditioning_mask,
                     conditioning_values=conditioning_values,
                     effect_mask=effect_mask,
-                    variables=self.variables,
+                    variables=cate_variables,
                     normalise=True,
                     rff_lengthscale=self.cate_rff_lengthscale,
                     rff_n_features=self.cate_rff_n_features,
@@ -747,21 +764,21 @@ class DECI(
                 model_ate = get_ate_from_samples(
                     model_intervention_samples.cpu().numpy().astype(np.float64),
                     reference_samples.cpu().numpy().astype(np.float64),
-                    self.variables,
+                    cate_variables,
                     normalise=False,
                     processed=True,
                 )
                 model_norm_ate = get_ate_from_samples(
                     model_intervention_samples.cpu().numpy().astype(np.float64),
                     reference_samples.cpu().numpy().astype(np.float64),
-                    self.variables,
+                    cate_variables,
                     normalise=True,
                     processed=True,
                 )
                 # We always compute intervention effect on all variable by model construction. We then throw away info we dont need
                 if effect_idxs is not None:
                     effect_mask = get_mask_from_idxs(
-                        effect_idxs, group_mask=self.variables.group_mask, device="cpu"
+                        effect_idxs, group_mask=cate_variables.group_mask, device="cpu"
                     ).numpy()
                     model_ate, model_norm_ate = (
                         model_ate[effect_mask],
@@ -813,7 +830,7 @@ class DECI(
                 axis=0,  # type: ignore
             ) / len(W_adjs)
 
-            if reference_values:
+            if reference_values is not None:
                 reference_counterfactuals = np.sum(
                     # requires type ignore as np.sum shouldn't work with a generator
                     (self._counterfactual(X, W_adj, intervention_idxs, reference_values) for W_adj in W_adjs),
@@ -829,18 +846,25 @@ class DECI(
             if isinstance(counterfactuals, torch.Tensor):
                 counterfactuals = counterfactuals.cpu().numpy().astype(np.float64)
 
+            # Get variables we're computing ITE for.
+            if hasattr(self, "latent_variables"):
+                assert isinstance(self.observed_variables, Variables)
+                ite_variables: Variables = self.observed_variables
+            else:
+                ite_variables = self.variables
+
             # Calculate the difference between the counterfactuals and the baseline. This currently only supports continuous variables.
             model_ite = get_ite_from_samples(
                 counterfactuals,
                 reference_counterfactuals,
-                self.variables,
+                ite_variables,
                 normalise=False,
             )
 
             model_norm_ite = get_ite_from_samples(
                 counterfactuals,
                 reference_counterfactuals,
-                self.variables,
+                ite_variables,
                 normalise=True,
             )
 
@@ -1051,17 +1075,15 @@ class DECI(
 
             for _ in range(Nsamples_per_graph):
 
-                W_adj = self.get_weighted_adj_matrix(
-                    do_round=most_likely_graph,
-                    samples=1,
-                    most_likely_graph=most_likely_graph,
-                    squeeze=True,
-                )
+                A_sample = self.get_adj_matrix_tensor(do_round=False, samples=1, most_likely_graph=False).squeeze(0)
+                W_adj = A_sample * self.ICGNN.get_weighted_adjacency()
                 # This sets certain elements of W_adj to 0, to respect the intervention
                 W_adj = intervene_graph(W_adj, intervention_idxs, copy_graph=False)
 
                 predict = self.ICGNN.predict(X, W_adj)
-                log_prob_samples.append(self._log_prob(X, predict, intervention_mask))  # (B)
+                # Note that the W input is for AR-DECI, DECI will not use W.
+                W = A_sample if self.base_distribution_type == "conditional_spline" else None
+                log_prob_samples.append(self._log_prob(X, predict, intervention_mask, W=W))  # (B)
 
             log_prob = torch.logsumexp(torch.stack(log_prob_samples, dim=0), dim=0) - np.log(Nsamples_per_graph)
             return log_prob.detach().cpu().numpy().astype(np.float64)
@@ -1154,7 +1176,9 @@ class DECI(
         predict = self.ICGNN.predict(X, W_adj)
         log_p_A = self._log_prior_A(A_sample)  # A number
         penalty_dag = self.dagness_factor(A_sample)  # A number
-        log_p_base = self._log_prob(X, predict)  # (B)
+        log_p_base = self._log_prob(
+            X, predict, W=A_sample if self.base_distribution_type == "conditional_spline" else None
+        )  # (B)
         log_q_A = -self.var_dist_A.entropy()  # A number
         cts_mse = self._icgnn_cts_mse(X, predict)  # (B)
 
@@ -1177,12 +1201,26 @@ class DECI(
         train_config_dict: Dict[str, Any],
         alpha: float = None,
         rho: float = None,
+        **kwargs,
     ) -> Tuple[torch.Tensor, Dict]:
+        """Computes the loss and updates trackers of different terms.
+
+        Args:
+            step: Inner auglag step.
+            x: Input data of shape (batch_size, input_dim).
+            mask_train_batch: Mask indicating which values are missing in the dataset of shape (batch_size, input_dim).
+            input_mask: Mask indicating which additional values are aritificially masked.
+            num_samples: Number of samples used to compute a stochastic estimate of the loss.
+            tracker: Tracks terms in the loss during the inner auglag optimisation.
+            train_config_dict: Contains training configuration.
+            alpha: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
+            rho: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
+
+        Returns:
+            Tuple containing the loss and the tracker.
         """
-        Computes loss and updates trackers of different terms. mask_train_batch is the mask indicating
-        which values are missing in the dataset, and input_mask indicates which additional values
-        are artificially masked.
-        """
+        _ = kwargs
+
         if self.imputation:
             # Get mean for imputation with artificially masked data, "regularizer" for imputation network
             _, _, mean_rec = self.impute_and_compute_entropy(x, input_mask)
@@ -1277,8 +1315,22 @@ class DECI(
         processed_dataset = self.data_processor.process_dataset(dataset)
 
         if isinstance(self.var_dist_A, DeterministicAdjacency):
-            assert isinstance(dataset, CausalDataset) and not isinstance(dataset, TemporalDataset)
-            self.var_dist_A.set_adj_matrix(dataset.get_adjacency_data_matrix().astype(np.float32))
+            if isinstance(dataset, LatentConfoundedCausalDataset):
+                true_directed_adj = torch.as_tensor(dataset.get_directed_adjacency_data_matrix())
+                true_bidirected_adj = torch.as_tensor(dataset.get_bidirected_adjacency_data_matrix())
+                true_adj = admg2dag(true_directed_adj, true_bidirected_adj).numpy().astype(np.float32)
+
+            else:
+                assert isinstance(dataset, CausalDataset) and not isinstance(dataset, TemporalDataset)
+
+                if hasattr(self, "get_admg_matrices"):
+                    true_directed_adj = torch.as_tensor(dataset.get_adjacency_data_matrix())
+                    true_bidirected_adj = torch.zeros_like(true_directed_adj)
+                    true_adj = admg2dag(true_directed_adj, true_bidirected_adj).numpy().astype(np.float32)
+                else:
+                    true_adj = dataset.get_adjacency_data_matrix().astype(np.float32)
+
+            self.var_dist_A.set_adj_matrix(true_adj)
 
         data, mask = processed_dataset.train_data_and_mask
         data = data.astype(np.float32)
@@ -1317,6 +1369,9 @@ class DECI(
         if train_config_dict is None:
             train_config_dict = {}
 
+        # Tracker for the best logprob during training
+        best_log_p_x = -np.inf
+
         dataloader, num_samples = self._create_dataset_for_deci(dataset, train_config_dict)
 
         # initialise logging machinery
@@ -1329,12 +1384,22 @@ class DECI(
         rho = train_config_dict["rho"]
         alpha = train_config_dict["alpha"]
         progress_rate = train_config_dict["progress_rate"]
-
+        base_beta = train_config_dict["beta"] if "beta" in train_config_dict else 1.0
         base_lr = train_config_dict["learning_rate"]
+        anneal_beta = train_config_dict["anneal_beta"] if "anneal_beta" in train_config_dict else None
+        anneal_beta_max_steps = (
+            train_config_dict["anneal_beta_max_steps"]
+            if "anneal_beta_max_steps" in train_config_dict
+            else int(train_config_dict["max_steps_auglag"] / 2)
+        )
 
         # This allows the setting of the starting learning rate of each of the different submodules in the config, e.g. "likelihoods_learning_rate".
         parameter_list = [
-            {"params": module.parameters(), "lr": train_config_dict.get(f"{name}_learning_rate", base_lr), "name": name}
+            {
+                "params": module.parameters(),
+                "lr": train_config_dict.get(f"{name}_learning_rate", base_lr),
+                "name": name,
+            }
             for name, module in self.named_children()
         ]
 
@@ -1362,13 +1427,19 @@ class DECI(
             if rho >= train_config_dict["safety_rho"]:
                 num_max_rho += 1
 
+            # Anneal beta.
+            if anneal_beta == "linear":
+                beta = base_beta * min((step + 1) / anneal_beta_max_steps, 1.0)
+            else:
+                beta = base_beta
+
             # Inner loop
             print(f"Auglag Step: {step}")
 
             # Optimize adjacency for fixed rho and alpha
             outer_step_start_time = time.time()
             done_inner, tracker_loss_terms = self.optimize_inner_auglag(
-                rho, alpha, step, num_samples, dataloader, train_config_dict
+                rho, alpha, beta, step, num_samples, dataloader, train_config_dict
             )
             outer_step_time = time.time() - outer_step_start_time
             dag_penalty = np.mean(tracker_loss_terms["penalty_dag"])
@@ -1376,11 +1447,20 @@ class DECI(
             # Print some stats about the DAG distribution
             print(f"Dag penalty after inner: {dag_penalty:.10f}")
             print("Time taken for this step", outer_step_time)
-            matrix = self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1)
-            prob_matrix = self.get_adj_matrix(do_round=False, most_likely_graph=True, samples=1)
-            print("Unrounded adj matrix:")
-            print(prob_matrix)
-            print(f"Number of edges in adj matrix (unrounded) {prob_matrix.sum()}, (rounded) {matrix.sum()}.")
+            try:
+                directed_adjacency, bidirected_adjacency = cast(Any, self).get_admg_matrices(
+                    do_round=False, most_likely_graph=True, samples=1
+                )
+                print("Unrounded directed matrix:")
+                print(directed_adjacency)
+                print("Unrounded bidirected matrix:")
+                print(bidirected_adjacency)
+            except AttributeError:
+                matrix = self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1)
+                prob_matrix = self.get_adj_matrix(do_round=False, most_likely_graph=True, samples=1)
+                print("Unrounded adj matrix:")
+                print(prob_matrix)
+                print(f"Number of edges in adj matrix (unrounded) {prob_matrix.sum()}, (rounded) {matrix.sum()}.")
 
             # Update alpha (and possibly rho) if inner optimization done or if 2 consecutive not-done
             if done_inner or num_not_done == 1:
@@ -1410,34 +1490,57 @@ class DECI(
                 print("Not done inner optimization.")
 
             # Logging outer progress and adjacency matrix
-            if isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
+            if (
+                isinstance(dataset, CausalDataset)
+                and dataset.has_adjacency_data_matrix
+                and not hasattr(self, "latent_variables")
+            ):
                 adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
                 adj_true = dataset.get_adjacency_data_matrix()
                 if isinstance(dataset, TemporalDataset):
-                    # Need to change temporal adj to static adj
-                    adj_true, adj_matrix = make_temporal_adj_matrix_compatible(
-                        adj_true,
-                        adj_matrix,
-                        is_static=(self.name() == "fold_time_deci"),
-                        adj_matrix_2_lag=self.lag,  # type: ignore
-                    )
-                    adj_true = convert_temporal_to_static_adjacency_matrix(adj_true, conversion_type="full_time")
-                    adj_matrix = (
-                        adj_matrix
-                        if self.name() == "fold_time_deci"
-                        else convert_temporal_to_static_adjacency_matrix(adj_matrix, conversion_type="full_time")
-                    )
-                    subgraph_mask = None
+                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
+
                 else:
                     subgraph_mask = dataset.get_known_subgraph_mask_matrix()
-                adj_metrics = edge_prediction_metrics_multisample(
-                    adj_true,
-                    adj_matrix,
-                    adj_matrix_mask=subgraph_mask,
-                    compute_mean=False,
-                )
+                    adj_metrics = edge_prediction_metrics_multisample(
+                        adj_true,
+                        adj_matrix,
+                        adj_matrix_mask=subgraph_mask,
+                        compute_mean=False,
+                    )
+            elif (
+                isinstance(dataset, LatentConfoundedCausalDataset)
+                and dataset.has_directed_adjacency_data_matrix
+                and dataset.has_bidirected_adjacency_data_matrix
+            ):
+                try:
+                    directed_adj_true = dataset.get_directed_adjacency_data_matrix()
+                    bidirected_adj_true = dataset.get_bidirected_adjacency_data_matrix()
+
+                    directed_adj_pred, bidirected_adj_pred = cast(Any, self).get_admg_matrices(
+                        do_round=True, samples=100
+                    )
+                    directed_adj_metrics = edge_prediction_metrics_multisample(directed_adj_true, directed_adj_pred)
+                    bidirected_adj_metrics = edge_prediction_metrics_multisample(
+                        bidirected_adj_true, bidirected_adj_pred
+                    )
+                    adj_metrics = {
+                        **{f"directed_{k}": v for k, v in directed_adj_metrics.items()},
+                        **{f"bidirected_{k}": v for k, v in bidirected_adj_metrics.items()},
+                    }
+                except AttributeError:
+                    adj_metrics = None
             else:
                 adj_metrics = None
+
+            # Calculating the log prob as the average over the terms in the tracker
+            # and saving if it's better than the previous best.
+            avg_tracker_log_px = np.mean(tracker_loss_terms["log_p_x"])
+            self.log_p_x.fill_(avg_tracker_log_px)
+            if done_inner and avg_tracker_log_px > best_log_p_x:
+                print(f"Saved new best checkpoint with {self.log_p_x} instead of {best_log_p_x}")
+                self.save(best=True)
+                best_log_p_x = avg_tracker_log_px
 
             base_idx = _log_epoch_metrics(writer, tracker_loss_terms, adj_metrics, step, outer_step_time, base_idx)
 
@@ -1453,6 +1556,7 @@ class DECI(
         self,
         rho: float,
         alpha: float,
+        beta: float,
         step: int,
         num_samples: int,
         dataloader,
@@ -1511,6 +1615,7 @@ class DECI(
                     train_config_dict,
                     alpha,
                     rho,
+                    beta=beta,
                 )
                 self.opt.zero_grad()
                 loss.backward()

@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import jax
 import matplotlib.pyplot as plt
@@ -76,15 +76,18 @@ def generate_dataset(
 
     # Run base model
     print("Observational")
-    seeded_base_model = seed(expand_model(base_model, draw_samples_train, "plate"), obs_seed)
+    seeded_base_model = seed(expand_model(base_model, draw_samples_train + draw_samples_per_test, "plate"), obs_seed)
     base_model_trace = trace(seeded_base_model).get_trace()
-    samples_base = {k: v["value"] for k, v in base_model_trace.items()}
+    samples_base = {k: v["value"][:draw_samples_train, ...] for k, v in base_model_trace.items()}
     samples_base.pop("plate")
+    samples_test = {k: v["value"][draw_samples_train:, ...] for k, v in base_model_trace.items()}
+    samples_test.pop("plate")
 
     # Run intervention model
     print("Interventional")
     intervention_samples = []
     intervention_rng_keys = random.split(int_seed, len(intervention_dicts))
+    samples_int = {}
     for intervention_dict, rng_key_i in zip(intervention_dicts, intervention_rng_keys):
         intervened_model = do(base_model, data=intervention_dict)
 
@@ -94,8 +97,8 @@ def generate_dataset(
         samples_int.pop("plate")
 
         # In numpyro, the do-variables are not actually altered, only subsequent data is changed
-        for var in intervention_dict.keys():
-            samples_int[var] = np.ones(draw_samples_per_test) * intervention_dict[var]
+        for name, value in intervention_dict.items():
+            samples_int[name] = np.repeat(value[None, ...], draw_samples_per_test, axis=0)
 
         intervention_samples.append(samples_int)
 
@@ -111,8 +114,8 @@ def generate_dataset(
             samples_int = {k: v["value"] for k, v in int_model_trace.items()}
             samples_int.pop("plate")
 
-            for var in counterfactual_dict.keys():
-                samples_int[var] = np.ones(draw_samples_train) * counterfactual_dict[var]
+            for name, value in counterfactual_dict.items():
+                samples_int[name] = np.repeat(value[None, ...], draw_samples_train, axis=0)
 
             counterfactual_samples.append(samples_int)
     else:
@@ -138,17 +141,32 @@ def generate_dataset(
             mcmc.print_summary()
             samples_int_cond = mcmc.get_samples()
 
-            for var in intervention_dict.keys():
-                samples_int_cond[var] = np.ones(samples_int_cond[var].shape) * intervention_dict[var]
+            for name, value in intervention_dict.items():
+                target_shape = samples_int_cond[name].shape
+                samples_int_cond[name] = np.broadcast_to(value, target_shape)
 
-            for var in condition_dict.keys():
-                samples_int_cond[var] = np.ones(samples_int[var].shape) * condition_dict[var]
+            for name, value in condition_dict.items():
+                target_shape = samples_int[name].shape
+                samples_int_cond[name] = np.broadcast_to(value, target_shape)
 
             cond_intervention_samples.append(samples_int_cond)
     else:
         cond_intervention_samples = [None, None]
 
-    return samples_base, intervention_samples, cond_intervention_samples, counterfactual_samples
+    return samples_base, samples_test, intervention_samples, cond_intervention_samples, counterfactual_samples
+
+
+def _enumerate_sample_components(samples: Dict[str, np.ndarray], labels: List[str]) -> Dict[str, np.ndarray]:
+    """Return a new sample dictionary with all samples split into components (by axis=1)."""
+    samples_by_component = {}
+    for name in labels:
+        sample = samples[name]
+        if sample.ndim <= 1:
+            samples_by_component[name] = sample
+        else:
+            for i, component in enumerate(np.split(sample, sample.shape[1], axis=1)):
+                samples_by_component[f"{name}_{i}"] = np.squeeze(component, axis=1)
+    return samples_by_component
 
 
 def plot_conditioning_and_interventions(
@@ -171,43 +189,41 @@ def plot_conditioning_and_interventions(
     df_list = []
 
     if samples_base is not None:
-        df1 = pd.DataFrame(data=np.stack([samples_base[a] for a in labels], axis=1), index=None, columns=labels)
-        df1["intervention"] = "base dist"
-        df_list.append(df1)
+        df = pd.DataFrame(data=_enumerate_sample_components(samples_base, labels))
+        df["intervention"] = "base dist"
+        df_list.append(df)
 
     if intervention_dict is not None:
         assert samples_int is not None
-        df1_int = pd.DataFrame(data=np.stack([samples_int[a] for a in labels], axis=1), index=None, columns=labels)
-        df1_int["intervention"] = f"do({intervention_dict})"
-        df_list.append(df1_int)
+        df_int = pd.DataFrame(data=_enumerate_sample_components(samples_int, labels))
+        df_int["intervention"] = f"do({intervention_dict})"
+        df_list.append(df_int)
 
     if reference_dict is not None:
         assert samples_ref is not None
-        df1_ref = pd.DataFrame(data=np.stack([samples_ref[a] for a in labels], axis=1), index=None, columns=labels)
-        df1_ref["intervention"] = f"do({reference_dict})"
-        df_list.append(df1_ref)
+        df_ref = pd.DataFrame(data=_enumerate_sample_components(samples_ref, labels))
+        df_ref["intervention"] = f"do({reference_dict})"
+        df_list.append(df_ref)
 
     if condition_dict is not None:
         assert samples_ref_cond is not None
-        df1_ref_cond = pd.DataFrame(
-            data=np.stack([samples_ref_cond[a] for a in labels], axis=1), index=None, columns=labels
-        )
-        df1_ref_cond["intervention"] = f"do({reference_dict}), cond {condition_dict}"
-        df_list.append(df1_ref_cond)
+        df_ref_cond = pd.DataFrame(data=_enumerate_sample_components(samples_ref_cond, labels))
+        df_ref_cond["intervention"] = f"do({reference_dict}), cond {condition_dict}"
+        df_list.append(df_ref_cond)
 
         assert samples_int_cond is not None
-        df1_int_cond = pd.DataFrame(
-            data=np.stack([samples_int_cond[a] for a in labels], axis=1), index=None, columns=labels
-        )
-        df1_int_cond["intervention"] = f"do({intervention_dict}), cond {condition_dict}"
-        df_list.append(df1_int_cond)
+        df_int_cond = pd.DataFrame(data=_enumerate_sample_components(samples_int_cond, labels))
+        df_int_cond["intervention"] = f"do({intervention_dict}), cond {condition_dict}"
+        df_list.append(df_int_cond)
 
     sns.set_style("ticks", {"axes.grid": True})
 
     if discrete:
-        sns.pairplot(pd.concat(df_list), hue="intervention", plot_kws={}, grid_kws={}, kind="hist")
+        sns.pairplot(pd.concat(df_list, ignore_index=True), hue="intervention", plot_kws={}, grid_kws={}, kind="hist")
     else:
-        sns.pairplot(pd.concat(df_list), hue="intervention", plot_kws=dict(alpha=0.05, size=0.7), grid_kws={})
+        sns.pairplot(
+            pd.concat(df_list, ignore_index=True), hue="intervention", plot_kws=dict(alpha=0.05, size=0.7), grid_kws={}
+        )
 
     if name is not None:
         plt.title(name)
