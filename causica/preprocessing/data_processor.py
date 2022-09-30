@@ -260,12 +260,18 @@ class DataProcessor:
             test_data, test_mask = None, None
 
         if isinstance(dataset, TemporalDataset):
-            assert (
-                dataset._intervention_data is None
-            ), "Currently, does not support processing temporal intervention data. "
-            proc_intervention = None
-            assert dataset._counterfactual_data is None
-            proc_counterfactual = None
+
+            if dataset._intervention_data is not None:
+                proc_intervention = self.process_intervention_data(dataset._intervention_data)
+            else:
+                proc_intervention = None
+
+            # process counterfactual data
+            if dataset._counterfactual_data is not None:
+                proc_counterfactual = self.process_intervention_data(dataset._counterfactual_data)
+            else:
+                proc_counterfactual = None
+
             return TemporalDataset(
                 train_data=train_data,
                 train_mask=train_mask,
@@ -312,7 +318,13 @@ class DataProcessor:
             )
         elif isinstance(dataset, (SparseDataset, Dataset)):
             return type(dataset)(
-                train_data, train_mask, val_data, val_mask, test_data, test_mask, variables=dataset.variables
+                train_data,
+                train_mask,
+                val_data,
+                val_mask,
+                test_data,
+                test_mask,
+                variables=dataset.variables,
             )
         else:
             raise TypeError(f"Unsupported dataset type: {type(dataset)}")
@@ -456,9 +468,18 @@ class DataProcessor:
 
         Args:
             data: Array of shape (num_rows, feature_count + aux_count)
+                or (num_timeseries, num_timesteps, feature_count + aux_count). If it's temporal data
+                the data will be flattened (num_rows, feature_count + aux_count) and the columns
+                will be processed irrespective of the timeseries.
         Returns:
-            processed_data: Array of shape (num_rows, num_processed_cols)
+            processed_data: Array of shape (num_rows, num_processed_cols) or (num_timeseries, num_timesteps, num_processed_cols)
         """
+
+        is_temporal = len(data.shape) == 3
+
+        if is_temporal:
+            orig_shape = data.shape
+            data = data.reshape((np.prod(orig_shape[:2]), -1))
 
         num_rows, _ = data.shape
 
@@ -505,6 +526,9 @@ class DataProcessor:
         if self._txt_unproc_cols:
             processed_data[:, self._txt_proc_cols] = self._text_embedder.encode(data[:, self._txt_unproc_cols])
 
+        if is_temporal:
+            processed_data = processed_data.reshape(list(orig_shape[:-1]) + [-1])
+
         return processed_data
 
     def process_data_subset_by_group(
@@ -513,17 +537,33 @@ class DataProcessor:
         """
         Args:
             data: Array of shape (num_rows, num_unprocessed_cols_subset) or (num_unprocessed_cols_subset)
+                or (num_timeseries, num_rows, num_unprocessed_cols_subset).
                 Data should be ordered by group, and then by variables within that group in the same
-                order as the main dataset.
+                order as the main dataset. If the data is temporal it will be flattened to
+                (num_rows, num_unprocessed_cols_subset) and the columnswill be processed irrespective of the timeseries.
             idxs: Array indicating the ordered indices of the groups represented in the data.
         Returns:
-            processed_data: Array of shape (num_rows, num_processed_cols_subset) or (num_processed_cols_subset))
+            processed_data: Array of shape (num_rows, num_processed_cols_subset) or (num_processed_cols_subset)
+                or (num_timeseries, num_rows, num_processed_cols_subset)
         """
         # Add statement idxs is None, to avoid mypy error: None type has no __iter__. I assume if data is None or idxs is None, just return None.
         if data is None or idxs is None:  # Helpful when calling from `process_dataset`
             return None
 
-        if len(data.shape) == 1:
+        is_temporal = len(data.shape) == 3
+
+        # For temporal data, remove time index from idxs.
+        if idxs.ndim > 1:
+            idxs = idxs[..., 0]
+
+        if is_temporal:
+            orig_shape = data.shape
+            data = data.reshape((np.prod(orig_shape[:2]), -1))
+
+        if len(data.shape) == 0:
+            data = np.array([data.item()])
+            num_rows = 1
+        elif len(data.shape) == 1:
             num_rows = 1
         else:
             num_rows, _ = data.shape
@@ -551,6 +591,9 @@ class DataProcessor:
         if len(data.shape) == 1:
             return_data = return_data.squeeze(0)
 
+        if is_temporal:
+            return_data = return_data.reshape(list(orig_shape[:-1]) + [-1])
+
         return return_data
 
     def process_mask(self, mask: V) -> V:
@@ -565,7 +608,11 @@ class DataProcessor:
         if isinstance(mask, np.ndarray):  # If numpy array opperate on bools
             processed_mask = np.zeros((num_rows, self._num_processed_cols), dtype=bool)
         elif isinstance(mask, torch.Tensor):  # If torch tensors operate on floats
-            processed_mask = torch.zeros((num_rows, self._num_processed_cols), dtype=mask.dtype, device=mask.device)
+            processed_mask = torch.zeros(
+                (num_rows, self._num_processed_cols),
+                dtype=mask.dtype,
+                device=mask.device,
+            )
         else:
             raise ValueError("Wrong type of mask object")
 

@@ -10,7 +10,12 @@ import mlflow
 import psutil
 
 from ..datasets.dataset import CausalDataset
-from ..experiment.steps.eval_step import eval_causal_discovery, evaluate_treatment_effect_estimation, run_eval_main
+from ..experiment.steps.eval_step import (
+    eval_causal_discovery,
+    eval_latent_confounded_causal_discovery,
+    evaluate_treatment_effect_estimation,
+    run_eval_main,
+)
 from ..experiment.steps.step_func import load_data, preprocess_configs
 from ..experiment.steps.train_step import run_train_main
 from ..models.imodel import IModelForCausalInference, IModelForImputation
@@ -63,6 +68,7 @@ class ExperimentArguments:
     max_steps: int
     max_al_rows: int
     causal_discovery: bool
+    latent_confounded_causal_discovery: bool
     treatment_effects: bool
     device: str
     quiet: bool
@@ -167,10 +173,13 @@ def run_single_seed_experiment(args: ExperimentArguments):
         )
 
     # Evaluate causal discovery
-    if args.causal_discovery:
+    if args.latent_confounded_causal_discovery:
+        assert isinstance(model, IModelForCausalInference)
+        eval_latent_confounded_causal_discovery(dataset, model)
+    elif args.causal_discovery:
         assert isinstance(model, IModelForCausalInference)
         causal_model = cast(IModelForCausalInference, model)
-        eval_causal_discovery(dataset, causal_model, conversion_type=args.conversion_type)
+        eval_causal_discovery(dataset, causal_model)
 
     # Treatment effect estimation
     if args.treatment_effects:
@@ -201,12 +210,14 @@ def _clean_partial_results_in_aml_run(output_dir: str, logger: logging.Logger, r
         if os.path.isdir(output_dir):
             logger.info("Partial results are present.")
             for folder in os.listdir(output_dir):
-                if os.path.isdir(folder):
-                    logger.info(f"Removing partial results' directory: {folder}.")
-                    shutil.rmtree(folder)
+                path = os.path.join(output_dir, folder)
+                assert os.path.exists(path), "Partial results do not exist"
+                if os.path.isdir(path):
+                    logger.info(f"Removing partial results' directory: {path}.")
+                    shutil.rmtree(path)
                 else:
-                    logger.info(f"Removing partial results' file: {folder}.")
-                    os.remove(folder)
+                    logger.info(f"Removing partial results' file: {path}.")
+                    os.remove(path)
 
 
 def _copy_results_in_aml_run(output_dir: str, run_context: RunContext):

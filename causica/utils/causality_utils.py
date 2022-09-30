@@ -1,16 +1,31 @@
+import logging
 from itertools import product
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import scipy
 import torch
 
+from ..datasets.dataset import TemporalDataset
 from ..datasets.intervention_data import InterventionData
 from ..datasets.variables import Variables
-from ..models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForInterventions
+from ..models.imodel import (
+    IModelForCausalInference,
+    IModelForCounterfactuals,
+    IModelForInterventions,
+    IModelForTimeseries,
+)
 from ..utils.helper_functions import to_tensors
 from ..utils.torch_utils import LinearModel, MultiROFFeaturiser
 from .evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
+from .nri_utils import (
+    convert_temporal_to_static_adjacency_matrix,
+    edge_prediction_metrics,
+    edge_prediction_metrics_multisample,
+    make_temporal_adj_matrix_compatible,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def intervene_graph(
@@ -67,15 +82,14 @@ def intervention_to_tensor(
         if intervention_values.dim() == 0:
             intervention_values = None
 
-        intervention_mask = get_mask_from_idxs(intervention_idxs, group_mask, device)
-
         if is_temporal:
-            raise NotImplementedError
-        #     intervention_mask = get_mask_from_idxs(intervention_idxs, group_mask, device)
-        # else:
-        #     intervention_idxs, intervention_mask, intervention_values = get_mask_and_value_from_temporal_idxs(
-        #         intervention_idxs, intervention_values, group_mask, device
-        #     )
+            assert intervention_idxs is not None, "For temporal interventions, intervention_idxs must be provided"
+            intervention_idxs, intervention_mask, intervention_values = get_mask_and_value_from_temporal_idxs(
+                intervention_idxs, intervention_values, group_mask, device
+            )
+        else:
+
+            intervention_mask = get_mask_from_idxs(intervention_idxs, group_mask, device)
 
     assert intervention_idxs is None or isinstance(intervention_idxs, torch.Tensor)
     assert intervention_values is None or isinstance(intervention_values, torch.Tensor)
@@ -108,7 +122,49 @@ def get_mask_and_value_from_temporal_idxs(
     # the order that is consistent with intervention_mask. The re-ordering of intervention_idxs can be done in a similar way, where the surrogate_intervention_idxs
     # (shape [time_length, num_nodes]) contains the indices instead.
 
-    raise NotImplementedError
+    # Initialize the intervention_mask, surrogate_intervention_values and surrogate_intervention_idxs
+    num_node, data_proc_dim = group_mask.shape
+    time_length = int(torch.max(intervention_idxs[:, -1]).item()) + 1
+    intervention_mask = torch.zeros(time_length, data_proc_dim, device=device, dtype=torch.bool)
+    surrogate_intervention_value = torch.full((time_length, data_proc_dim), torch.nan, device=device)
+    surrogate_intervention_idxs = torch.full((time_length, num_node), torch.nan, device=device)
+
+    # covert group_mask to tensor
+    (group_mask_tensor,) = to_tensors(group_mask, device=device, dtype=torch.bool)
+
+    # Iterate through each variables in intervention_idxs
+    value_start_idx = 0
+    for idx, (variable_idx, variable_time) in enumerate(intervention_idxs):
+        # Get binary mask array from group_mask
+        row_mask = group_mask_tensor[variable_idx]  # shape [data_proc_dim]
+        cur_proc_dim = int(torch.sum(row_mask).item())
+        # Get the candidate intervention_mask
+        candidate_intervention_mask = torch.zeros(time_length, data_proc_dim, device=device, dtype=torch.bool)
+        candidate_intervention_mask[variable_time] = row_mask  # shape [time_length, data_proc_dim]
+        # Update intervention_mask
+        intervention_mask += candidate_intervention_mask
+        if intervention_values is not None:
+            # Update surrogate_intervention_values
+            surrogate_intervention_value[candidate_intervention_mask] = intervention_values[
+                value_start_idx : value_start_idx + cur_proc_dim
+            ]
+        value_start_idx += cur_proc_dim
+        # Update surrogate_intervention_idxs
+        surrogate_intervention_idxs[variable_time, variable_idx] = idx
+
+    # Get intervention_mask
+    intervention_mask = intervention_mask.bool()  # shape [time_length, data_proc_dim]
+    # Generate the re-ordered intervention_idxs, intervention_values
+    if intervention_values is not None:
+        reordered_intervention_values = surrogate_intervention_value[~torch.isnan(surrogate_intervention_value)]
+    else:
+        reordered_intervention_values = None
+
+    reordered_intervention_idxs = intervention_idxs[
+        surrogate_intervention_idxs[~torch.isnan(surrogate_intervention_idxs)].long()
+    ]
+
+    return reordered_intervention_idxs, intervention_mask, reordered_intervention_values
 
 
 def get_mask_from_idxs(idxs, group_mask, device) -> torch.Tensor:
@@ -148,8 +204,9 @@ def get_treatment_data_logprob(
             intervention_values=intervention_data.intervention_values,
         )
         # Evaluate log-prob per dimension
+        assert intervention_data.intervention_idxs is not None
         intervention_log_probs = intervention_log_probs / (
-            intervention_data.test_data.shape[1] - len(intervention_data.intervention_idxs)
+            intervention_data.test_data.shape[1] - intervention_data.intervention_idxs.shape[0]
         )
 
         all_log_probs.append(intervention_log_probs)
@@ -212,7 +269,7 @@ def get_ate_rms(
 
         # Filter effect groups
         if intervention_data.effect_idxs is not None:
-            [ate, norm_ate], filtered_variables = filter_effect_columns(
+            [ate, norm_ate], filtered_variables = filter_effect_groups(
                 [ate, norm_ate], variables, intervention_data.effect_idxs, processed
             )
 
@@ -236,17 +293,32 @@ def get_ate_rms(
                 Nsamples_per_graph = 2
 
         assert intervention_data.intervention_values is not None
-        model_ate, model_norm_ate = model.cate(
-            intervention_idxs=intervention_data.intervention_idxs,
-            intervention_values=intervention_data.intervention_values,
-            reference_values=intervention_data.intervention_reference,
-            effect_idxs=intervention_data.effect_idxs,
-            conditioning_idxs=intervention_data.conditioning_idxs,
-            conditioning_values=intervention_data.conditioning_values,
-            most_likely_graph=most_likely_graph,
-            Nsamples_per_graph=Nsamples_per_graph,
-            Ngraphs=Ngraphs,
-        )
+
+        if isinstance(model, IModelForTimeseries):
+            model_ate, model_norm_ate = model.cate(
+                intervention_idxs=np.array(intervention_data.intervention_idxs),
+                intervention_values=intervention_data.intervention_values,
+                reference_values=intervention_data.intervention_reference,
+                effect_idxs=intervention_data.effect_idxs,
+                conditioning_idxs=None,
+                conditioning_values=None,
+                most_likely_graph=most_likely_graph,
+                Nsamples_per_graph=Nsamples_per_graph,
+                Ngraphs=Ngraphs,
+                conditioning_history=intervention_data.conditioning_values,
+            )
+        else:
+            model_ate, model_norm_ate = model.cate(
+                intervention_idxs=np.array(intervention_data.intervention_idxs),
+                intervention_values=intervention_data.intervention_values,
+                reference_values=intervention_data.intervention_reference,
+                effect_idxs=intervention_data.effect_idxs,
+                conditioning_idxs=intervention_data.conditioning_idxs,
+                conditioning_values=intervention_data.conditioning_values,
+                most_likely_graph=most_likely_graph,
+                Nsamples_per_graph=Nsamples_per_graph,
+                Ngraphs=Ngraphs,
+            )
 
         group_rmses.append(calculate_per_group_rmse(model_ate, ate, filtered_variables))
         norm_group_rmses.append(calculate_per_group_rmse(model_norm_ate, norm_ate, filtered_variables))
@@ -468,31 +540,40 @@ def calculate_per_group_rmse(a: np.ndarray, b: np.ndarray, variables: Variables)
     return rmse_array
 
 
-def filter_effect_columns(
-    arrs: List[np.ndarray], variables: Variables, effect_idxs: np.ndarray, processed: bool
+def filter_effect_groups(
+    arrs: List[np.ndarray], variables: Variables, effect_group_idxs: np.ndarray, processed: bool
 ) -> Tuple[List[np.ndarray], Variables]:
     """
-    Returns the columns associated with effect variables. If `proccessed` is True, assume
+    Returns the groups (nodes) associated with effect variables. If `proccessed` is True, assume
     that arrs has been processed and handle expanded columns appropriately.
 
     Args:
         arrs (List[ndarray]): A list of ndarrays to be filtered
         variables (Variables): A Variables instance containing metadata
-        effect_idxs (np.ndarray): An array containing idxs of effect variables
+        effect_group_idxs (np.ndarray): An array containing idxs of effect variables
         processed (bool): Whether to treat data in `arrs` as having been processed
 
     Returns: A list of ndarrays corresponding to `arrs` with columns relating to effect variables,
         and a new Variables instance relating to effect variables
     """
+    if effect_group_idxs.ndim == 2:
+        # temporal
+        temporal_idxs = effect_group_idxs[:, 1]
+
+        arrs = [a[..., temporal_idxs, :] for a in arrs]
+
+        effect_group_idxs = effect_group_idxs[:, 0]
+
+    effect_variable_idxs = [j for i in effect_group_idxs for j in variables.group_idxs[i]]
     if processed:
         # Get effect idxs according to processed data
         processed_effect_idxs = []
-        for i in effect_idxs:
+        for i in effect_variable_idxs:
             processed_effect_idxs.extend(variables.processed_cols[i])
     else:
-        processed_effect_idxs = effect_idxs.tolist()
+        processed_effect_idxs = effect_variable_idxs
 
-    return [a[..., processed_effect_idxs] for a in arrs], variables.subset(effect_idxs.tolist())
+    return [a[..., processed_effect_idxs] for a in arrs], variables.subset(effect_variable_idxs)
 
 
 def get_ite_evaluation_results(
@@ -562,9 +643,9 @@ def get_ite_evaluation_results(
         )
 
         # if there are defined target variables, only use these for evaluation
-        if counterfactual_int_data.effect_idxs:
+        if counterfactual_int_data.effect_idxs is not None:
             arrs = [sample_ite, model_ite, sample_norm_ite, model_norm_ite]
-            filtered_arrs, filtered_variables = filter_effect_columns(
+            filtered_arrs, filtered_variables = filter_effect_groups(
                 arrs, variables, counterfactual_int_data.effect_idxs, processed
             )
             [sample_ite, model_ite, sample_norm_ite, model_norm_ite] = filtered_arrs
@@ -684,6 +765,11 @@ def cpdag2dags(cp_mat: np.ndarray, samples: Optional[int] = None) -> np.ndarray:
 
     # choose random order for mask iteration
     max_dags = 2**N_undetermined
+
+    if max_dags > 10000:
+        logger.warning("The number of possible dags are too large (>10000), limit to 10000")
+        max_dags = 10000
+
     if samples is None:
         samples = max_dags
     mask_indices = list(np.random.permutation(np.arange(max_dags)))
@@ -721,6 +807,71 @@ def cpdag2dags(cp_mat: np.ndarray, samples: Optional[int] = None) -> np.ndarray:
         dag_list.append(cp_determined_subgraph)
 
     return np.stack(dag_list, axis=0)
+
+
+def admg2dag(directed_adj: torch.Tensor, bidirected_adj: torch.Tensor) -> torch.Tensor:
+    """Converts the ADNG specified by directed_adj and bidirected_adj into a DAG.
+
+    Args:
+        directed_adj: Directed adjacency matrix over the observed variables.
+        bidirected_adj: Bidirected adjacency matrix over the observed variables.
+
+    Returns:
+        The DAG represented by directed_adj and bidirected_adj.
+    """
+    assert directed_adj.shape == bidirected_adj.shape
+    assert len(directed_adj.shape) == 2
+    assert directed_adj.shape[0] == directed_adj.shape[1]
+
+    num_observed = directed_adj.shape[-1]
+    num_latent = num_observed * (num_observed - 1) // 2
+    num_nodes = num_latent + num_observed
+    adj_tensor = torch.zeros((num_nodes, num_nodes), device=directed_adj.device)
+
+    # Add directed edges
+    adj_tensor[:num_observed, :num_observed] = directed_adj
+
+    # Add bidirected edges.
+    for idx1 in range(1, num_observed):
+        i = idx1 * (idx1 - 1) // 2
+        for idx2 in range(idx1):
+            j = num_observed + i + idx2
+            adj_tensor[j, idx1] = bidirected_adj[idx1, idx2]
+            adj_tensor[j, idx2] = bidirected_adj[idx1, idx2]
+
+    return adj_tensor
+
+
+def dag2admg(adj: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Converts a DAG over n observed variables and n * (n - 1) // 2 latent variables into a directed and bidirected
+    adjacency matrix over the observed variables.
+
+    Args:
+        adj: The adjacency matrix.
+
+    Returns:
+        (directed_adj, bidirected_adj) representing the ADMG parameterisation of the DAG.
+    """
+    assert len(adj.shape) == 2
+    assert adj.shape[0] == adj.shape[1]
+    d = adj.shape[0]
+    n_float = -0.5 + np.sqrt(0.25 + 2 * d)
+    assert np.isclose(n_float, round(n_float)), "n is not an integer."
+
+    n = round(n_float)
+
+    # Check latent variables are confounders.
+    assert np.all(adj[:, n:].detach().cpu().numpy() == 0), "Latent variables are not confounders."
+
+    directed_adj = adj[:n, :n]
+    bidirected_adj = torch.zeros(n, n, device=adj.device)
+
+    for idx1 in range(1, n):
+        for idx2 in range(idx1):
+            i = n + idx1 * (idx1 - 1) // 2 + idx2
+            bidirected_adj[idx1, idx2] = bidirected_adj[idx2, idx1] = adj[i, idx1]
+
+    return directed_adj, bidirected_adj
 
 
 def pag_to_admg_possibilities(adjacency_pag: np.ndarray, idx1: int, idx2: int):
@@ -989,3 +1140,160 @@ def eval_test_quality_by_ate_error(
     ipw_estimated_value = get_ipw_estimated_ate(interventional_X, treatment_probability, treatment_mask, outcome_idxs)
 
     return (ground_truth_value - ipw_estimated_value) ** 2
+
+
+def organize_temporal_discovery_results(
+    adj_metrics_all_full: Optional[dict] = None,
+    adj_metrics_all_temp: Optional[dict] = None,
+    adj_metrics_inst: Optional[dict] = None,
+    adj_metrics_lag: Optional[dict] = None,
+) -> dict:
+    """
+    This will aggregate the causal discovery results into a single result dict.
+    Args:
+        adj_metrics_all_full: The results for full-graph discovery
+        adj_metrics_all_temp: The results for temporal graph discovery
+        adj_metrics_inst: The results for temporal graph discovery with just instantaneous effect.
+        adj_metrics_lag: The results for temporal graph discovery with just lagged effect.
+
+    Returns:
+        adj_results: results dict aggregating the above metrics.
+    """
+    adj_results = {}
+    if adj_metrics_all_full is not None:
+        for key, value in adj_metrics_all_full.items():
+            adj_results[f"{key}_overall_full_time"] = value
+
+    if adj_metrics_all_temp is not None:
+        for key, value in adj_metrics_all_temp.items():
+            adj_results[f"{key}_overall_temporal"] = value
+
+    if adj_metrics_inst is not None:
+        for key, value in adj_metrics_inst.items():
+            adj_results[f"{key}_inst"] = value
+
+    if adj_metrics_lag is not None:
+        for key, value in adj_metrics_lag.items():
+            adj_results[f"{key}_lag"] = value
+
+    return adj_results
+
+
+def eval_temporal_causal_discovery(dataset: TemporalDataset, model: IModelForCausalInference) -> dict:
+    """
+    This will evaluate the temporal causal discovery performance. It includes 4 different comparisons:
+    (1) full-time graph with inst and lag; (2) temporal graph with inst and lag; (3) temporal graph with just inst;
+    (4) temporal graph with just inst.
+
+    Args:
+        dataset: The dataset used which contains the ground truth temporal adj matrix.
+        model: the trained model we want to evaluate.
+
+    Returns:
+        adj_metrics: dict containing the discovery results
+    """
+    adj_ground_truth = dataset.get_adjacency_data_matrix()
+
+    # For DECI-based model, the default is to give 100 samples of the graph posterior
+    adj_pred = model.get_adj_matrix().astype(float).round()
+    adj_agg_metrics = {}
+    if model.name() in ("auto_regressive_deci", "varlingam", "dynotears", "pcmci_plus"):
+        adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
+            adj_ground_truth, adj_pred, is_static=False
+        )  # [maxlag+1, num_nodes, num_nodes], [batch, maxlag+1, num_nodes, num_nodes]
+        for name_dict in ["all_full", "all_temp", "inst", "lag"]:
+            results = evaluate_temporal_causal_discovery_subtype(
+                adj_ground_truth=adj_ground_truth, adj_pred=adj_pred, subtype=name_dict
+            )
+
+            adj_agg_metrics["adj_metrics_" + name_dict] = results
+
+    elif model.name() == "fold_time_deci":
+        adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
+            adj_ground_truth, adj_pred, is_static=True, adj_matrix_2_lag=model.lag  # type: ignore
+        )
+        results = evaluate_temporal_causal_discovery_subtype(
+            adj_ground_truth=adj_ground_truth, adj_pred=adj_pred, subtype="all_full", is_static=True
+        )
+
+        adj_agg_metrics["adj_metrics_all_full"] = results
+
+    adj_results = organize_temporal_discovery_results(**adj_agg_metrics)
+    return adj_results
+
+
+def evaluate_temporal_causal_discovery_subtype(
+    adj_ground_truth: np.ndarray, adj_pred: np.ndarray, subtype: str, is_static: bool = False
+) -> Dict[str, float]:
+    """
+    This will evaluate the temporal causal discovery with a specific evaluation type. Currently, it supports
+        (1) "adj_metrics_all_full": the full-time graph with both inst and lagged effect; (2) "adj_metrics_all_temp":
+        the temporal graph with both inst and lagged effect; (3) "adj_metrics_inst": the temporal graph with just inst;
+        (4) "adj_metrics_lag": the temporal graph with just lagged effect.
+
+    Args:
+        adj_ground_truth: The ground truth temporal adj matrix with shape [lag+1, num_nodes, num_nodes]. It should have the
+            compatible lags with adj_pred.
+        adj_pred: The sampled adj matrix from the model with shape either [batch, lag+1, num_nodes, num_nodes] or
+            [model_lag+1, num_nodes, num_nodes] for temporal model. For static temporal model, it should be [(lag+1)*num_nodes, (lag+1)*num_nodes] or
+            [batch, (lag+1)*num_nodes, (lag+1)*num_nodes]. It should have the compatible lags with adj_ground_truth.
+        subtype: the type of evaluation to perform. It supports "all_full", "all_temp", "inst"
+            and "lag". (1) "all_full": It will convert the temporal graph ([lat+1, num_nodes, num_nodes]) to full-time
+            static graph ([(lag+1)*num_nodes, (lag+1)*num_nodes]); (2) "all_temp": Same as "all_full" but now convert to
+            static version of temporal graph, not full-time graph; (3) "inst": Extract the instantaneous adj matrix from temporal adj matrix;
+            (4) "lag": It will convert the lag part of temporal adj matrix to its static version similar to "all_temp".
+        is_static: whether the adj_pred matrix generated by a temporal model based on static discovery method. E.g. fold-time DECI.
+    Returns:
+        adj_metrics: dict containing the discovery results
+    """
+
+    assert subtype in [
+        "all_full",
+        "all_temp",
+        "inst",
+        "lag",
+    ], "Unknown subtype"
+    if is_static:
+        assert subtype == "all_full", "For static temporal model, only full-time graph is supported."
+        assert adj_pred.ndim in (2, 3)
+        assert (
+            adj_pred.shape[-1] // adj_ground_truth.shape[-1] == adj_ground_truth.shape[0]
+        ), "adj_pred should have a compatible lag with adj_ground_truth"
+    else:
+        assert adj_pred.ndim in (3, 4)
+        assert (
+            adj_pred.shape[-3] == adj_ground_truth.shape[0]
+        ), "adj_pred should have a compatible lag with adj_ground_truth"
+
+    if subtype == "all_full":
+        # full-time graph with both inst and lag
+        cur_adj_true = convert_temporal_to_static_adjacency_matrix(adj_ground_truth, conversion_type="full_time")
+        if not is_static:
+            cur_adj_pred = convert_temporal_to_static_adjacency_matrix(adj_pred, conversion_type="full_time")
+        else:
+            cur_adj_pred = adj_pred
+    elif subtype == "all_temp":
+        # temporal graph with inst and lag
+        cur_adj_true = convert_temporal_to_static_adjacency_matrix(adj_ground_truth, conversion_type="auto_regressive")
+        cur_adj_pred = convert_temporal_to_static_adjacency_matrix(adj_pred, conversion_type="auto_regressive")
+    elif subtype == "inst":
+        # temporal graph wth just inst
+        cur_adj_true = adj_ground_truth[0]
+        cur_adj_pred = adj_pred[..., 0, :, :]  # [num_nodes, num_nodes] or [batch, num_nodes, num_nodes]
+    elif subtype == "lag":
+        # temporal graph with just lag
+        cur_adj_true = convert_temporal_to_static_adjacency_matrix(
+            adj_ground_truth[1:, :, :], conversion_type="auto_regressive"
+        )
+        cur_adj_pred = convert_temporal_to_static_adjacency_matrix(
+            adj_pred[..., 1:, :, :], conversion_type="auto_regressive"
+        )
+
+    if len(cur_adj_pred.shape) == 2:
+        # If predicts single adjacency matrix
+        results = edge_prediction_metrics(cur_adj_true, cur_adj_pred, adj_matrix_mask=None)
+    elif len(cur_adj_pred.shape) == 3:
+        # If predicts multiple adjacency matrices (stacked)
+        results = edge_prediction_metrics_multisample(cur_adj_true, cur_adj_pred, adj_matrix_mask=None)
+
+    return results

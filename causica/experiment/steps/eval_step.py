@@ -9,18 +9,28 @@ import os
 import warnings
 from functools import partial
 from logging import Logger
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, cast
 
 import mlflow
 import numpy as np
 from scipy.sparse import csr_matrix, issparse
 
-from ...baselines.varlingam import VARLiNGAM
-from ...datasets.dataset import CausalDataset, Dataset, InterventionData, SparseDataset, TemporalDataset
+from ...datasets.dataset import (
+    CausalDataset,
+    Dataset,
+    InterventionData,
+    LatentConfoundedCausalDataset,
+    SparseDataset,
+    TemporalDataset,
+)
 from ...models.deci.deci import DECI
-from ...models.deci.fold_time_deci import FoldTimeDECI
 from ...models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForImputation
-from ...utils.causality_utils import get_ate_rms, get_ite_evaluation_results, get_treatment_data_logprob
+from ...utils.causality_utils import (
+    eval_temporal_causal_discovery,
+    get_ate_rms,
+    get_ite_evaluation_results,
+    get_treatment_data_logprob,
+)
 from ...utils.evaluation_dataclasses import AteRMSEMetrics, IteRMSEMetrics, TreatmentDataLogProb
 from ...utils.imputation import (
     eval_imputation,
@@ -29,12 +39,7 @@ from ...utils.imputation import (
     run_imputation_with_stats,
 )
 from ...utils.metrics import compute_target_metrics, save_confusion_plot, save_train_val_test_metrics
-from ...utils.nri_utils import (
-    convert_temporal_to_static_adjacency_matrix,
-    edge_prediction_metrics,
-    edge_prediction_metrics_multisample,
-    make_temporal_adj_matrix_compatible,
-)
+from ...utils.nri_utils import edge_prediction_metrics, edge_prediction_metrics_multisample
 from ...utils.plot_functions import violin_plot_imputations
 from ...utils.torch_utils import set_random_seeds
 
@@ -214,7 +219,6 @@ def run_eval_main(
 def eval_causal_discovery(
     dataset: CausalDataset,
     model: IModelForCausalInference,
-    conversion_type: str = "full_time",
 ):
     """
     Args:
@@ -235,45 +239,45 @@ def eval_causal_discovery(
 
     # Convert temporal adjacency matrices to static adjacency matrices, currently does not support partially observed ground truth (i.e. subgraph_idx=None).
     if isinstance(dataset, TemporalDataset):
-        if isinstance(model, (VARLiNGAM)):
-            adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
-                adj_ground_truth, adj_pred, is_static=False
-            )
-            adj_ground_truth = convert_temporal_to_static_adjacency_matrix(
-                adj_ground_truth, conversion_type=conversion_type
-            )
-            adj_pred = convert_temporal_to_static_adjacency_matrix(adj_pred, conversion_type=conversion_type)
-        elif isinstance(model, FoldTimeDECI):
-            assert conversion_type == "full_time", "fold_time_deci only supports full_time conversion type"
-            adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
-                adj_ground_truth, adj_pred, is_static=True, adj_matrix_2_lag=model.lag
-            )
-            adj_ground_truth = convert_temporal_to_static_adjacency_matrix(
-                adj_ground_truth, conversion_type=conversion_type
-            )
-        subgraph_idx = None
+        if adj_ground_truth.ndim == 3:
+            results = eval_temporal_causal_discovery(dataset, model)
+            # Log metrics
+            for suffix in ["overall_full_time", "overall_temporal", "inst", "lag"]:
+                mlflow.log_metric(f"adjacency_{suffix}.recall", results.get(f"adjacency_recall_{suffix}", -1))
+                mlflow.log_metric(f"adjacency_{suffix}.precision", results.get(f"adjacency_precision_{suffix}", -1))
+                mlflow.log_metric(f"adjacency_{suffix}.f1", results.get(f"adjacency_fscore_{suffix}", -1), True)
+                mlflow.log_metric(f"orientation_{suffix}.recall", results.get(f"orientation_recall_{suffix}", -1))
+                mlflow.log_metric(f"orientation_{suffix}.precision", results.get(f"orientation_precision_{suffix}", -1))
+                mlflow.log_metric(f"orientation_{suffix}.f1", results.get(f"orientation_fscore_{suffix}", -1), True)
+                mlflow.log_metric(f"causal_accuracy_{suffix}", results.get(f"causal_accuracy_{suffix}", -1))
+                mlflow.log_metric(f"causalshd_{suffix}", results.get(f"shd_{suffix}", -1))
+                mlflow.log_metric(f"causalnnz_{suffix}", results.get(f"nnz_{suffix}", -1))
+        elif adj_ground_truth.ndim == 2:
+            raise NotImplementedError("No implementation for aggregated adj matrix ")
+        else:
+            raise ValueError("Invalid dimension of ground truth adjacency matrix")
     else:
         subgraph_idx = dataset.get_known_subgraph_mask_matrix()
+        if len(adj_pred.shape) == 2:
+            # If predicts single adjacency matrix
+            results = edge_prediction_metrics(adj_ground_truth, adj_pred, adj_matrix_mask=subgraph_idx)
+        elif len(adj_pred.shape) == 3:
+            # If predicts multiple adjacency matrices (stacked)
+            results = edge_prediction_metrics_multisample(adj_ground_truth, adj_pred, adj_matrix_mask=subgraph_idx)
+        # Log metrics
+        mlflow.log_metric("adjacency.recall", results["adjacency_recall"])
+        mlflow.log_metric("adjacency.precision", results["adjacency_precision"])
+        mlflow.log_metric("adjacency.f1", results["adjacency_fscore"], True)
+        mlflow.log_metric("orientation.recall", results["orientation_recall"])
+        mlflow.log_metric("orientation.precision", results["orientation_precision"])
+        mlflow.log_metric("orientation.f1", results["orientation_fscore"], True)
+        mlflow.log_metric("causal_accuracy", results["causal_accuracy"])
+        mlflow.log_metric("causalshd", results["shd"])
+        mlflow.log_metric("causalnnz", results["nnz"])
 
     # save adjacency matrix
     np.save(os.path.join(model.save_dir, "adj_matrices"), adj_pred, allow_pickle=True, fix_imports=True)
 
-    if len(adj_pred.shape) == 2:
-        # If predicts single adjacency matrix
-        results = edge_prediction_metrics(adj_ground_truth, adj_pred, adj_matrix_mask=subgraph_idx)
-    elif len(adj_pred.shape) == 3:
-        # If predicts multiple adjacency matrices (stacked)
-        results = edge_prediction_metrics_multisample(adj_ground_truth, adj_pred, adj_matrix_mask=subgraph_idx)
-    # Log metrics
-    mlflow.log_metric("adjacency.recall", results["adjacency_recall"])
-    mlflow.log_metric("adjacency.precision", results["adjacency_precision"])
-    mlflow.log_metric("adjacency.f1", results["adjacency_fscore"], True)
-    mlflow.log_metric("orientation.recall", results["orientation_recall"])
-    mlflow.log_metric("orientation.precision", results["orientation_precision"])
-    mlflow.log_metric("orientation.f1", results["orientation_fscore"], True)
-    mlflow.log_metric("causal_accuracy", results["causal_accuracy"])
-    mlflow.log_metric("causalshd", results["shd"])
-    mlflow.log_metric("causalnnz", results["nnz"])
     # Save causality results to a file
     save_train_val_test_metrics(
         train_metrics={},
@@ -281,6 +285,59 @@ def eval_causal_discovery(
         test_metrics=results,
         save_file=os.path.join(model.save_dir, "target_results_causality.json"),
     )
+
+
+def eval_latent_confounded_causal_discovery(
+    dataset: Union[CausalDataset, LatentConfoundedCausalDataset],
+    model: IModelForCausalInference,
+):
+    if isinstance(dataset, LatentConfoundedCausalDataset):
+        true_directed_adj = dataset.get_directed_adjacency_data_matrix()
+        true_bidirected_adj = dataset.get_bidirected_adjacency_data_matrix()
+    else:
+        true_directed_adj = dataset.get_adjacency_data_matrix()
+        true_bidirected_adj = np.zeros_like(true_directed_adj)
+
+    if hasattr(model, "get_admg_matrices"):
+        directed_adj, bidirected_adj = cast(Any, model).get_admg_matrices()
+        directed_adj = directed_adj.astype(float).round()
+        bidirected_adj = bidirected_adj.astype(float).round()
+    else:
+        assert hasattr(model, "get_adj_matrix")
+        directed_adj = model.get_adj_matrix().astype(float).round()
+        bidirected_adj = np.zeros_like(directed_adj)
+
+    # save matrices
+    np.save(os.path.join(model.save_dir, "pred_directed_adj"), directed_adj, allow_pickle=True, fix_imports=True)
+    np.save(os.path.join(model.save_dir, "pred_bidirected_adj"), bidirected_adj, allow_pickle=True, fix_imports=True)
+
+    for adj_type, adj_pred, adj_ground_truth in zip(
+        ["directed", "bidirected"], [directed_adj, bidirected_adj], [true_directed_adj, true_bidirected_adj]
+    ):
+        if len(adj_pred.shape) == 2:
+            # If predicts single adjacency matrix
+            results = edge_prediction_metrics(adj_ground_truth, adj_pred, adj_matrix_mask=None)
+        elif len(adj_pred.shape) == 3:
+            # If predicts multiple adjacency matrices (stacked)
+            results = edge_prediction_metrics_multisample(adj_ground_truth, adj_pred, adj_matrix_mask=None)
+
+        # Log metrics
+        mlflow.log_metric(f"{adj_type}.adjacency.recall", results["adjacency_recall"])
+        mlflow.log_metric(f"{adj_type}.adjacency.precision", results["adjacency_precision"])
+        mlflow.log_metric(f"{adj_type}.adjacency.f1", results["adjacency_fscore"], True)
+        mlflow.log_metric(f"{adj_type}.orientation.recall", results["orientation_recall"])
+        mlflow.log_metric(f"{adj_type}.orientation.precision", results["orientation_precision"])
+        mlflow.log_metric(f"{adj_type}.orientation.f1", results["orientation_fscore"], True)
+        mlflow.log_metric(f"{adj_type}.causal_accuracy", results["causal_accuracy"])
+        mlflow.log_metric(f"{adj_type}.causalshd", results["shd"])
+        mlflow.log_metric(f"{adj_type}.causalnnz", results["nnz"])
+        # Save causality results to a file
+        save_train_val_test_metrics(
+            train_metrics={},
+            val_metrics={},
+            test_metrics=results,
+            save_file=os.path.join(model.save_dir, f"target_results_causality_{adj_type}.json"),
+        )
 
 
 def evaluate_treatment_effect_estimation(

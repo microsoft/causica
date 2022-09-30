@@ -155,7 +155,13 @@ class IModelForImputation(IModel):
 class IBatchImputer(IModelForImputation):
     @abstractmethod
     def impute_processed_batch(
-        self, data: torch.Tensor, mask: torch.Tensor, *, sample_count: int, preserve_data: bool = True, **kwargs
+        self,
+        data: torch.Tensor,
+        mask: torch.Tensor,
+        *,
+        sample_count: int,
+        preserve_data: bool = True,
+        **kwargs,
     ) -> torch.Tensor:
         raise NotImplementedError()
 
@@ -165,7 +171,12 @@ class IModelWithReconstruction(IModel):
     # TODO: This is different level of abstraction than impute_processed_batch declared above. We should decide which level of abstraction we want
     @abstractmethod
     def reconstruct(
-        self, data: torch.Tensor, mask: Optional[torch.Tensor], sample: bool = True, count: int = 1, **kwargs: Any
+        self,
+        data: torch.Tensor,
+        mask: Optional[torch.Tensor],
+        sample: bool = True,
+        count: int = 1,
+        **kwargs: Any,
     ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor, Tuple[torch.Tensor, torch.Tensor],]:
         raise NotImplementedError
 
@@ -279,5 +290,27 @@ class IModelForCounterfactuals(IModel):
     ):
         """
         Calculate the individual treatment effect on interventions on observations X.
+        """
+        raise NotImplementedError
+
+
+class IModelForTimeseries(IModel):
+    @abstractmethod
+    def cate(
+        self,
+        intervention_idxs: Union[torch.Tensor, np.ndarray],
+        intervention_values: Union[torch.Tensor, np.ndarray],
+        reference_values: Optional[np.ndarray] = None,
+        effect_idxs: Optional[np.ndarray] = None,
+        conditioning_idxs: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        conditioning_values: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        Nsamples_per_graph: int = 1,
+        Ngraphs: Optional[int] = 1000,
+        most_likely_graph: bool = False,
+        fixed_seed: Optional[int] = None,
+        conditioning_history: Optional[Union[torch.Tensor, np.ndarray]] = None,
+    ):
+        """
+        Evaluate (optionally conditional) average treatment effect given the learnt causal model.
         """
         raise NotImplementedError

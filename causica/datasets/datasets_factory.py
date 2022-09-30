@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from .causal_csv_dataset_loader import CausalCSVDatasetLoader
 from .csv_dataset_loader import CSVDatasetLoader
 from .dataset import CausalDataset, Dataset, SparseDataset, TemporalDataset
+from .latent_confounded_causal_csv_dataset_loader import LatentConfoundedCausalCSVDatasetLoader
 from .temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
 
 
@@ -31,6 +32,9 @@ def create_dataset_loader(
 
     if dataset_format == "temporal_causal_csv":
         return TemporalCausalCSVDatasetLoader(dataset_dir)
+
+    if dataset_format == "latent_confounded_causal_csv":
+        return LatentConfoundedCausalCSVDatasetLoader(dataset_dir)
 
     raise NotImplementedError(
         f"Dataset format {dataset_format} not supported. Valid dataset formats are 'csv' and 'sparse_csv'."

@@ -1,6 +1,8 @@
 from math import sqrt
 
 import numpy as np
+import pytest
+import torch
 
 from causica.datasets.intervention_data import InterventionData
 from causica.datasets.variables import Variable, Variables
@@ -210,6 +212,30 @@ def test_cpdag2dags_dont_add_extra_collider():
         assert np.all(dag == solution0)
 
 
+def test_admg2dag_and_dag2admg():
+
+    directed_adj = torch.zeros((4, 4))
+    directed_adj[0, 2] = 1
+    directed_adj[1, 2] = 1
+    directed_adj[2, 3] = 1
+
+    bidirected_adj = torch.zeros((4, 4))
+    bidirected_adj[0, 1] = bidirected_adj[1, 0] = 1
+    bidirected_adj[0, 3] = bidirected_adj[3, 0] = 1
+
+    adj = torch.zeros((10, 10))
+    adj[0, 2] = adj[1, 2] = adj[2, 3] = 1
+    adj[4, 0] = adj[4, 1] = 1
+    adj[7, 0] = adj[7, 3] = 1
+
+    adj_pred = causality_utils.admg2dag(directed_adj, bidirected_adj).numpy()
+    assert np.all(adj_pred == adj.numpy())
+
+    directed_adj_pred, bidirected_adj_pred = causality_utils.dag2admg(adj)
+    assert np.all(directed_adj_pred.numpy() == directed_adj.numpy())
+    assert np.all(bidirected_adj_pred.numpy() == bidirected_adj.numpy())
+
+
 def test_pag2admgs():
 
     pag = np.zeros((4, 4))
@@ -384,17 +410,17 @@ def test_calculate_per_group_rmse():
     np.testing.assert_equal(per_group_rmse, np.array([[sqrt(0.5), 0], [0, 2]]))
 
 
-def test_filter_effect_columns():
+def test_filter_effect_groups():
 
     processed_data = np.array([[9, 0, 0, 1]])
 
     variable_1 = Variable("1", True, "continuous", 0, 10, group_name="Group 1")
-    variable_2 = Variable("2", True, "categorical", 0, 2, group_name="Group 1")
+    variable_2 = Variable("2", True, "categorical", 0, 2, group_name="Group 2")
     variables = Variables([variable_1, variable_2])
 
     effect_idxs = np.array([1])
 
-    [filtered_data], filtered_variables = causality_utils.filter_effect_columns(
+    [filtered_data], filtered_variables = causality_utils.filter_effect_groups(
         [processed_data], variables, effect_idxs, processed=True
     )
 
@@ -410,7 +436,7 @@ def test_filter_effect_columns():
 
     effect_idxs = np.array([1, 2])
 
-    [filtered_data_1, filtered_data_2], filtered_variables = causality_utils.filter_effect_columns(
+    [filtered_data_1, filtered_data_2], filtered_variables = causality_utils.filter_effect_groups(
         [unprocessed_data_1, unprocessed_data_2], variables, effect_idxs, processed=False
     )
 
@@ -759,3 +785,48 @@ def test_convert_temporal_adj_matrix_to_static():
     _, adj_mat_2 = make_temporal_adj_matrix_compatible(true_adj, adj_mat_2, is_static=True, adj_matrix_2_lag=1)
 
     assert np.array_equal(adj_mat_2, adj_mat_2_target)
+
+
+@pytest.fixture
+def example_group_mask():
+    return np.array([[1, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0], [0, 0, 1, 1, 1, 0], [0, 0, 0, 0, 0, 1]])
+
+
+@pytest.mark.parametrize(
+    "int_idxs, int_values, target_mask, target_values, target_idxs",
+    [
+        (
+            torch.tensor([[1, 1], [0, 2], [0, 0], [2, 0], [3, 2], [2, 1]]),
+            torch.tensor([0, 1.1, 1.3, 0, 1, 0, 2.5, 0, 0, 1]),
+            torch.tensor([[1, 0, 1, 1, 1, 0], [0, 1, 1, 1, 1, 0], [1, 0, 0, 0, 0, 1]]).bool(),
+            torch.tensor([1.3, 0, 1, 0, 0, 0, 0, 1, 1.1, 2.5]),
+            torch.tensor([[0, 0], [2, 0], [1, 1], [2, 1], [0, 2], [3, 2]]),
+        ),
+        (
+            torch.tensor([[0, 0], [2, 0], [2, 1], [0, 2], [3, 2]]),
+            torch.tensor([1.4, 1, 0, 0, 0, 1, 0, 1.6, 3.2]),
+            torch.tensor([[1, 0, 1, 1, 1, 0], [0, 0, 1, 1, 1, 0], [1, 0, 0, 0, 0, 1]]).bool(),
+            torch.tensor([1.4, 1, 0, 0, 0, 1, 0, 1.6, 3.2]),
+            torch.tensor([[0, 0], [2, 0], [2, 1], [0, 2], [3, 2]]),
+        ),
+    ],
+)
+# pylint: disable=redefined-outer-name
+def test_get_mask_and_value_from_temporal_idxs(
+    example_group_mask, int_idxs, int_values, target_mask, target_values, target_idxs
+):
+    group_mask = example_group_mask
+
+    device = torch.device("cpu")
+    int_idxs = int_idxs.to(device)
+    int_values = int_values.to(device)
+    target_mask = target_mask.to(device)
+    target_values = target_values.to(device)
+    target_idx = target_idxs.to(device)
+    reorder_int_idxs, int_mask, reorder_int_values = causality_utils.get_mask_and_value_from_temporal_idxs(
+        int_idxs, int_values, group_mask, device=device
+    )
+
+    assert torch.equal(reorder_int_idxs, target_idx)
+    assert torch.equal(int_mask, target_mask)
+    assert torch.equal(reorder_int_values, target_values)

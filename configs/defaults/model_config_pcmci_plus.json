@@ -1,0 +1,20 @@
+{
+
+    "model_hyperparams": {
+
+        "max_lag": 2,
+        "cond_ind_test": "parcorr",
+        "verbosity": 0,
+        "cond_ind_test_config": {
+            "significance": "analytic"
+        },
+        "mec_mode": "truth",
+        "random_seed": [0]
+
+    },
+
+    "training_hyperparams": {
+        "pc_alpha": 0.05
+    }
+
+}

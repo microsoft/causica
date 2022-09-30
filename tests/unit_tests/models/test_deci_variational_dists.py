@@ -3,10 +3,12 @@ import pytest
 import torch
 
 from causica.models.deci.variational_distributions import (
+    CategoricalAdjacency,
     DeterministicAdjacency,
     TemporalThreeWayGrahpDist,
     ThreeWayGraphDist,
     VarDistA_ENCO,
+    VarDistA_ENCO_ADMG,
     VarDistA_Simple,
 )
 
@@ -58,6 +60,43 @@ def three_half_a_b():
     return graph
 
 
+@pytest.fixture
+def enco_admg_quarter_a_b():
+    # Set so that p(A -> B) = p(B -> A) = 1/4, p(A <-> B) = 1/2.
+    graph = VarDistA_ENCO_ADMG("cpu", 2)
+
+    directed_logits = graph.logits_edges.detach().numpy()
+    directed_logits[1, ...] = 0.0
+    graph.logits_edges = torch.nn.Parameter(torch.from_numpy(directed_logits), requires_grad=True)
+
+    bidirected_logits = graph.params_bidirected.detach().numpy()
+    bidirected_logits[...] = 0.0
+    graph.params_bidirected = torch.nn.Parameter(torch.from_numpy(bidirected_logits), requires_grad=True)
+    return graph
+
+
+@pytest.fixture
+def enco_admg_half_a_b():
+    # Set so that p(A -> B) = p(B -> A) = 1/2, p(A <-> B) = 1.
+    graph = VarDistA_ENCO_ADMG("cpu", 2)
+
+    directed_logits = graph.logits_edges.detach().numpy()
+    directed_logits[0, ...] = -1e6
+    graph.logits_edges = torch.nn.Parameter(torch.from_numpy(directed_logits), requires_grad=True)
+
+    bidirected_logits = graph.params_bidirected.detach().numpy()
+    bidirected_logits[...] = 1e6
+    graph.params_bidirected = torch.nn.Parameter(torch.from_numpy(bidirected_logits), requires_grad=True)
+    return graph
+
+
+@pytest.fixture
+def categorical_a_b():
+    graph = CategoricalAdjacency("cpu")
+    graph.set_adj_matrices(np.array([[[0, 1], [0, 0]], [[0, 0], [1, 0]]]))
+    return graph
+
+
 @pytest.mark.parametrize(
     "dist,expected",
     [
@@ -67,6 +106,9 @@ def three_half_a_b():
         ["enco_half_a_b", np.array([[0.0, 0.5], [0.5, 0.0]])],
         ["three_third_a_b", np.array([[0.0, 1 / 3], [1 / 3, 0.0]])],
         ["three_half_a_b", np.array([[0.0, 0.5], [0.5, 0.0]])],
+        ["enco_admg_quarter_a_b", np.array([[0.0, 0.25, 0.0], [0.25, 0.0, 0.0], [0.5, 0.5, 0.0]])],
+        ["enco_admg_half_a_b", np.array([[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [1.0, 1.0, 0.0]])],
+        ["categorical_a_b", np.array([[0, 1], [0, 0]])],
     ],
 )
 def test_get_adj_matrix(dist, expected, request):
@@ -85,6 +127,9 @@ def test_get_adj_matrix(dist, expected, request):
         ["enco_half_a_b", 2 * np.log(2)],
         ["three_third_a_b", np.log(3)],
         ["three_half_a_b", np.log(2)],
+        ["enco_admg_quarter_a_b", 2 * (0.25 * np.log(4) + 0.75 * np.log(4 / 3)) + np.log(2)],
+        ["enco_admg_half_a_b", 2 * np.log(2)],
+        ["categorical_a_b", np.log(2)],
     ],
 )
 def test_entropy(dist, expected, request):
@@ -103,6 +148,7 @@ def test_entropy(dist, expected, request):
         "enco_half_a_b",
         "three_third_a_b",
         "three_half_a_b",
+        "categorical_a_b",
     ],
 )
 def test_sample_empty_diag(dist, request):
@@ -110,6 +156,21 @@ def test_sample_empty_diag(dist, request):
     dist = request.getfixturevalue(dist)
     sample = dist.sample_A().detach().cpu().numpy()
     assert (sample.diagonal() == 0.0).all()
+
+
+@pytest.mark.parametrize(
+    "dist",
+    [
+        "simple_indep_a_b",
+        "enco_quarter_a_b",
+        "enco_half_a_b",
+        "categorical_a_b",
+    ],
+)
+def test_log_prob_A(dist, request):
+    dist = request.getfixturevalue(dist)
+    sample = dist.sample_A()
+    dist.log_prob_A(sample)
 
 
 @pytest.mark.parametrize(
@@ -279,3 +340,24 @@ def test_TemporalThreeWayGraphDist_sample_A(generate_logits_extreme):
         dtype=sample_adj.dtype,
     ).to(device)
     assert torch.equal(sample_adj, adj_target)
+
+
+@pytest.mark.parametrize(
+    "dist,expected",
+    [
+        ["enco_admg_quarter_a_b", np.array([[0.0, 0.5], [0.5, 0.0]])],
+        ["enco_admg_half_a_b", np.array([[0.0, 1.0], [1.0, 0.0]])],
+    ],
+)
+def test_get_bidirected_adj_matrix(dist, expected, request):
+    dist = request.getfixturevalue(dist)
+    bidirected_adj_matrix = dist.get_bidirected_adj_matrix().detach().numpy()
+    assert np.allclose(bidirected_adj_matrix, expected)
+
+
+@pytest.mark.parametrize("dist", ["enco_admg_quarter_a_b", "enco_admg_half_a_b"])
+def test_sample_bidirected_adj(dist, request):
+    dist = request.getfixturevalue(dist)
+    sample = dist.sample_bidirected_adj().detach().cpu().numpy()
+    assert (sample.diagonal() == 0.0).all()
+    assert np.all(sample == np.transpose(sample))

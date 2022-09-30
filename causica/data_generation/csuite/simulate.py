@@ -1,14 +1,16 @@
 import os
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
 from jax import nn
+from numpy.typing import ArrayLike
 
+from ...datasets.intervention_data import InterventionData, InterventionDataContainer, InterventionMetadata
 from .pyro_utils import generate_dataset, layer, layerm, plot_conditioning_and_interventions
-from .utils import extract_observations, finalise, make_coding_tensors, to_counterfactual_dict_format
+from .utils import extract_observations, finalise
 
 
 def simulate_data(
@@ -18,14 +20,15 @@ def simulate_data(
     numpyro_model: Callable,
     adjacency_matrix: np.ndarray,
     intervention_idx: int,
-    intervention_value: int,
-    reference_value: List[int],
+    intervention_value: ArrayLike,
+    reference_value: ArrayLike,
     target_idxs: List[int],
-    condition_idx: Optional[List[int]] = None,
-    condition_value: Optional[List[int]] = None,
-    counterfactual_intervention_idx: Optional[List[int]] = None,
-    counterfactual_reference_value: Optional[int] = None,
-    counterfactual_intervention_value: Optional[int] = None,
+    condition_idx: Optional[int] = None,
+    condition_value: Optional[ArrayLike] = None,
+    counterfactual_intervention_idx: Optional[int] = None,
+    counterfactual_reference_value: Optional[ArrayLike] = None,
+    counterfactual_intervention_value: Optional[ArrayLike] = None,
+    make_plots: bool = True,
     plot_discrete: bool = False,
 ):
     """
@@ -37,7 +40,7 @@ def simulate_data(
         foldername: folder where samples will be stored as csv files
         numpyro_model: to simulate from
         adjacency_matrix: as numpy array
-        intervention_idx
+        intervention_idx: int
         intervention_value
         reference_value
         target_idxs
@@ -45,7 +48,8 @@ def simulate_data(
         condition_value=None: if None is specified, no conditional data will be generated and dataset will not allow CATE evaluation
         counterfactual_idx=None: if None is specified, no conditional data will be generated and dataset will not allow ITE evaluation
         counterfactual_value=None: if None is specified, no conditional data will be generated and dataset will not allow ITE evaluation
-        plot_discrete
+        make_plots: bool
+        plot_discrete: bool
     Returns:
         None
     """
@@ -55,11 +59,19 @@ def simulate_data(
 
     os.makedirs(foldername, exist_ok=True)
 
-    intervention_dict = {f"x{intervention_idx}": intervention_value}
-    reference_dict = {f"x{intervention_idx}": reference_value}
+    intervention_value_arr = np.array(intervention_value)
+    reference_value_arr = np.array(reference_value)
+    intervention_dict = {f"x{intervention_idx}": intervention_value_arr}
+    reference_dict = {f"x{intervention_idx}": reference_value_arr}
+
+    # Make sure that these variables exist to avoid unboundedness errors
+    condition_value_arr: Optional[np.ndarray] = None
+    counterfactual_intervention_value_arr: Optional[np.ndarray] = None
+    counterfactual_reference_value_arr: Optional[np.ndarray] = None
 
     if condition_idx is not None and condition_value is not None:
-        condition_dict = {f"x{condition_idx}": condition_value}
+        condition_value_arr = np.array(condition_value)
+        condition_dict = {f"x{condition_idx}": condition_value_arr}
 
     else:
         condition_dict = None
@@ -69,15 +81,23 @@ def simulate_data(
         and counterfactual_reference_value is not None
         and counterfactual_intervention_value is not None
     ):
-        counterfactual_intervention_dict = {f"x{counterfactual_intervention_idx}": counterfactual_intervention_value}
-        counterfactual_reference_dict = {f"x{counterfactual_intervention_idx}": counterfactual_reference_value}
-        counterfactual_dicts = [counterfactual_intervention_dict, counterfactual_reference_dict]
+        counterfactual_intervention_value_arr = np.array(counterfactual_intervention_value)
+        counterfactual_reference_value_arr = np.array(counterfactual_reference_value)
+        counterfactual_intervention_dict = {
+            f"x{counterfactual_intervention_idx}": counterfactual_intervention_value_arr
+        }
+        counterfactual_reference_dict = {f"x{counterfactual_intervention_idx}": counterfactual_reference_value_arr}
+        counterfactual_dicts = [
+            counterfactual_intervention_dict,
+            counterfactual_reference_dict,
+        ]
 
     else:
         counterfactual_dicts = None
 
     (
         samples_base,
+        samples_test,
         [samples_int, samples_ref],
         [samples_int_cond, samples_ref_cond],
         [counterfactual_int, counterfactual_ref],
@@ -92,151 +112,150 @@ def simulate_data(
         counterfactual_dicts=counterfactual_dicts,
     )
 
-    plot_conditioning_and_interventions(
-        samples_base,
-        labels,
-        samples_int=None,
-        samples_ref=None,
-        samples_int_cond=None,
-        samples_ref_cond=None,
-        intervention_dict=None,
-        reference_dict=None,
-        condition_dict=None,
-        savedir=foldername,
-        name="base_distribution",
-        discrete=plot_discrete,
-    )
-    if plot_discrete:
-        plot_conditioning_and_interventions(
-            None,
-            labels,
-            samples_int=samples_int,
-            samples_ref=None,
-            samples_int_cond=samples_int_cond,
-            samples_ref_cond=None,
-            intervention_dict=intervention_dict,
-            reference_dict=None,
-            condition_dict=condition_dict,
-            savedir=foldername,
-            name="intervened_distribution",
-            discrete=plot_discrete,
-        )
-
-        plot_conditioning_and_interventions(
-            None,
-            labels,
-            samples_int=None,
-            samples_ref=samples_ref,
-            samples_int_cond=None,
-            samples_ref_cond=samples_ref_cond,
-            intervention_dict=None,
-            reference_dict=reference_dict,
-            condition_dict=condition_dict,
-            savedir=foldername,
-            name="reference_distribution",
-            discrete=plot_discrete,
-        )
-
-    else:
+    if make_plots:
         plot_conditioning_and_interventions(
             samples_base,
             labels,
-            samples_int=samples_int,
-            samples_ref=samples_ref,
-            samples_int_cond=samples_int_cond,
-            samples_ref_cond=samples_ref_cond,
-            intervention_dict=intervention_dict,
-            reference_dict=reference_dict,
-            condition_dict=condition_dict,
+            samples_int=None,
+            samples_ref=None,
+            samples_int_cond=None,
+            samples_ref_cond=None,
+            intervention_dict=None,
+            reference_dict=None,
+            condition_dict=None,
             savedir=foldername,
-            name="intervened_distribution",
+            name="base_distribution",
             discrete=plot_discrete,
         )
+        if plot_discrete:
+            plot_conditioning_and_interventions(
+                None,
+                labels,
+                samples_int=samples_int,
+                samples_ref=None,
+                samples_int_cond=samples_int_cond,
+                samples_ref_cond=None,
+                intervention_dict=intervention_dict,
+                reference_dict=None,
+                condition_dict=condition_dict,
+                savedir=foldername,
+                name="intervened_distribution",
+                discrete=plot_discrete,
+            )
+
+            plot_conditioning_and_interventions(
+                None,
+                labels,
+                samples_int=None,
+                samples_ref=samples_ref,
+                samples_int_cond=None,
+                samples_ref_cond=samples_ref_cond,
+                intervention_dict=None,
+                reference_dict=reference_dict,
+                condition_dict=condition_dict,
+                savedir=foldername,
+                name="reference_distribution",
+                discrete=plot_discrete,
+            )
+
+        else:
+            plot_conditioning_and_interventions(
+                samples_base,
+                labels,
+                samples_int=samples_int,
+                samples_ref=samples_ref,
+                samples_int_cond=samples_int_cond,
+                samples_ref_cond=samples_ref_cond,
+                intervention_dict=intervention_dict,
+                reference_dict=reference_dict,
+                condition_dict=condition_dict,
+                savedir=foldername,
+                name="intervened_distribution",
+                discrete=plot_discrete,
+            )
 
     train_data = extract_observations(samples_base)
+    test_data = extract_observations(samples_test)
+    # Create indices to first component of each variable
+    event_size = [np.prod(samples_base[label].shape[1:], dtype=np.int32) for label in labels]
+    columns_to_nodes = [node_idx for node_idx, node_dim in enumerate(event_size) for _ in range(node_dim)]
+    node_list = list(range(len(event_size)))
 
-    metadata = []
-    intervention_data = []
-
-    intervention_data.append(extract_observations(samples_int))
-    metadata.append(
-        make_coding_tensors(
-            n_samples_per_test,
-            adjacency_matrix.shape[1],
-            intervention_idx,
-            intervention_value,
-            reference_value=None,
-            condition_idx=None,
-            condition_value=None,
-            target_idxs=target_idxs,
+    intervention_samples = extract_observations(samples_int)
+    reference_samples = extract_observations(samples_ref)
+    intervention_envs = [
+        InterventionData(
+            intervention_idxs=np.array([intervention_idx]),
+            intervention_values=intervention_value_arr,
+            test_data=intervention_samples,
+            intervention_reference=np.array(reference_value),
+            reference_data=reference_samples,
+            effect_idxs=np.array(target_idxs),
         )
-    )
-
-    intervention_data.append(extract_observations(samples_ref))
-    metadata.append(
-        make_coding_tensors(
-            n_samples_per_test,
-            adjacency_matrix.shape[1],
-            intervention_idx,
-            intervention_value,
-            reference_value=reference_value,
-            condition_idx=None,
-            condition_value=None,
-            target_idxs=target_idxs,
+    ]
+    if condition_dict is not None:
+        assert condition_idx is not None, "condition_idx must be set when condition_dict is set."
+        assert samples_int_cond is not None, "samples_int_cond must be set when condition_dict is set."
+        assert samples_ref_cond is not None, "samples_ref_cond must be set when condition_dict is set."
+        conditional_intervention_samples = extract_observations(samples_int_cond)
+        conditional_reference_samples = extract_observations(samples_ref_cond)
+        intervention_envs.append(
+            InterventionData(
+                intervention_idxs=np.array([intervention_idx]),
+                intervention_values=intervention_value_arr,
+                test_data=conditional_intervention_samples,
+                intervention_reference=np.array(reference_value),
+                reference_data=np.array(conditional_reference_samples),
+                conditioning_idxs=np.array([condition_idx]),
+                conditioning_values=condition_value_arr,
+                effect_idxs=np.array(target_idxs),
+            )
         )
+
+    intervention_data_container = InterventionDataContainer(
+        InterventionMetadata(columns_to_nodes),
+        intervention_envs,
     )
+    intervention_data_container.validate()
 
     if counterfactual_dicts is not None:
+        assert counterfactual_int is not None, "counterfactual_int must be set when counterfactual_dicts is set."
+        assert counterfactual_ref is not None, "counterfactual_ref must be set when counterfactual_dicts is set."
         cf_intervention_samples = extract_observations(counterfactual_int)
         cf_reference_samples = extract_observations(counterfactual_ref)
 
-        assert counterfactual_intervention_value is not None
-        assert counterfactual_reference_value is not None
+        assert counterfactual_intervention_value_arr is not None
+        assert counterfactual_reference_value_arr is not None
         assert counterfactual_intervention_idx is not None
 
-        counterfactual_sample_dict = to_counterfactual_dict_format(
-            original_samples=train_data,
-            intervention_samples=cf_intervention_samples,
-            reference_samples=cf_reference_samples,
-            do_idx=counterfactual_intervention_idx,
-            do_value=counterfactual_intervention_value,
-            reference_value=counterfactual_reference_value,
-            target_idxs=target_idxs,
+        cf_data_container = InterventionDataContainer(
+            InterventionMetadata(columns_to_nodes),
+            [
+                InterventionData(
+                    intervention_idxs=np.array([counterfactual_intervention_idx]),
+                    intervention_values=counterfactual_intervention_value_arr,
+                    test_data=cf_intervention_samples,
+                    intervention_reference=counterfactual_reference_value_arr,
+                    reference_data=cf_reference_samples,
+                    conditioning_idxs=np.array(node_list),
+                    conditioning_values=train_data,
+                    effect_idxs=np.array(target_idxs),
+                )
+            ],
         )
-
+        cf_data_container.validate(counterfactual=True)
     else:
-        counterfactual_sample_dict = None
+        cf_data_container = None
 
-    if condition_dict is not None:
-        intervention_data.append(extract_observations(samples_int_cond))
-        metadata.append(
-            make_coding_tensors(
-                n_samples_per_test,
-                adjacency_matrix.shape[1],
-                intervention_idx,
-                intervention_value,
-                reference_value=None,
-                condition_idx=condition_idx,
-                condition_value=condition_value,
-                target_idxs=target_idxs,
-            )
-        )
-
-        intervention_data.append(extract_observations(samples_ref_cond))
-        metadata.append(
-            make_coding_tensors(
-                n_samples_per_test,
-                adjacency_matrix.shape[1],
-                intervention_idx,
-                intervention_value,
-                reference_value=reference_value,
-                condition_idx=condition_idx,
-                condition_value=condition_value,
-                target_idxs=target_idxs,
-            )
-        )
-
-    finalise(foldername, train_data, adjacency_matrix, intervention_data, metadata, counterfactual_sample_dict)
+    finalise(
+        foldername,
+        train_data,
+        test_data,
+        adjacency_matrix,
+        intervention_data_container,
+        cf_data_container,
+        {label: samples_base[label] for label in labels},
+    )
 
 
 def two_node_lin(n_samples_train, n_samples_per_test, datadir, x0_noise_dist, x1_noise_dist, name):
@@ -261,9 +280,9 @@ def two_node_lin(n_samples_train, n_samples_per_test, datadir, x0_noise_dist, x1
     adjacency_matrix = np.zeros((2, 2))
     adjacency_matrix[0, 1] = 1
 
+    intervention_value = np.ones(np.prod(x0_noise_dist.shape(), initial=1, dtype=np.int32))
     intervention_idx = 0
-    intervention_value = 1.0
-    reference_value = -1.0
+    reference_value = -intervention_value
     target_idxs = [1]
 
     def lin_model():
@@ -571,9 +590,9 @@ def symprod_simpson(n_samples, datadir):
     )
 
 
-def large_backdoor(n_samples, datadir, binary_treatment=False):
-    """
-    Simulates a graph with a potentially large backdoor set if chosen maximally.
+def large_backdoor(n_samples: int, datadir: str, binary_treatment: bool = False, dim: int = 1):
+    """Simulates a graph with a potentially large backdoor set if chosen maximally.
+
     The graph is pyramidal with arrows x0 -> x1, x0 -> x2, x_i -> x_{i + 2}, (x6, x7) -> x8.
     We treat x7 as the treatment and x8 as the target.
     Variables are tuned to each have approximate variance of 1.
@@ -581,11 +600,11 @@ def large_backdoor(n_samples, datadir, binary_treatment=False):
     We rely on softplus to generate nonlinearities.
 
     Arguments:
-        n_samples [int]
-        datadir [str]
-        binary_t [bool]: If True, the treatment x8 is converted to a binary
+        n_samples: Number of samples in the train and test sets.
+        datadir: Base directory to create dataset in.
+        binary_t: If True, the treatment x8 is converted to a binary.
+        dim: Number of dimensions for each variable (will be the group size).
     """
-
     adjacency_matrix = np.zeros((9, 9))
     adjacency_matrix[0, 1] = 1
     adjacency_matrix[0, 2] = 1
@@ -597,50 +616,69 @@ def large_backdoor(n_samples, datadir, binary_treatment=False):
     adjacency_matrix[6, 8] = 1
     adjacency_matrix[7, 8] = 1
 
+    # Set up variable shapes
+    shape: Tuple[int, ...] = (dim,)
+    if dim == 1:
+        shape = ()
+
     intervention_idx = 7
     if binary_treatment:
-        intervention_value = 1
-        reference_value = 0
+        intervention_value = np.ones(shape)
+        reference_value = np.zeros(shape)
         condition_idx = None
         condition_value = None
     else:
-        intervention_value = 2.5
-        reference_value = 0.5
-        condition_idx = 1
-        condition_value = 2.5
+        intervention_value = np.full(shape, 2.5)
+        reference_value = np.full(shape, 0.5)
+        if dim == 1:
+            condition_idx = 1
+            condition_value = np.full(shape, 2.5)
+        else:
+            condition_idx = None
+            condition_value = None
     target_idxs = [8]
+
+    loc = np.zeros(shape)
+    scale = np.ones(shape)
 
     def large_backdoor_model():
 
-        x0_noise = numpyro.sample("x0_noise", dist.Normal(0.0, 1.0))
+        x0_noise = numpyro.sample("x0_noise", dist.Normal(loc, scale).to_event())
         x0 = numpyro.deterministic("x0", nn.softplus(1.8 * x0_noise) - 1)
 
-        x1 = numpyro.sample("x1", dist.Normal(layer(x0, 0) * 1.5, 0.25))
+        d1 = dist.Normal(layer(x0, 0) * 1.5, 0.25 * scale)
+        x1 = numpyro.sample("x1", d1.to_event(len(d1.batch_shape[1:])))
 
-        x2_noise = numpyro.sample("x2_noise", dist.Normal(0.0, 1.0))
+        x2_noise = numpyro.sample("x2_noise", dist.Normal(loc, scale).to_event())
         x2 = numpyro.deterministic("x2", layer(x0, x2_noise))
 
-        x3_noise = numpyro.sample("x3_noise", dist.Normal(0.0, 1.0))
+        x3_noise = numpyro.sample("x3_noise", dist.Normal(loc, scale).to_event())
         x3 = numpyro.deterministic("x3", layer(x1, x3_noise))
 
-        x4_noise = numpyro.sample("x4_noise", dist.Normal(0.0, 1.0))
+        x4_noise = numpyro.sample("x4_noise", dist.Normal(loc, scale).to_event())
         x4 = numpyro.deterministic("x4", layer(x2, x4_noise))
 
-        x5_noise = numpyro.sample("x5_noise", dist.Normal(0.0, 1.0))
+        x5_noise = numpyro.sample("x5_noise", dist.Normal(loc, scale).to_event())
         x5 = numpyro.deterministic("x5", layer(x3, x5_noise))
 
-        x6_noise = numpyro.sample("x6_noise", dist.Normal(0.0, 1.0))
+        x6_noise = numpyro.sample("x6_noise", dist.Normal(loc, scale).to_event())
         x6 = numpyro.deterministic("x6", layer(x4, x6_noise))
 
         if binary_treatment:
-            x7_cts = numpyro.sample("x7_cts", dist.LogNormal(nn.softplus(x5 + 1) / 1.5 - 1, 0.15))
-            x7 = numpyro.sample("x7", dist.Delta(jnp.asarray(x7_cts > 0.5, dtype=x6.dtype)))
+            d7_cts = dist.LogNormal(nn.softplus(x5 + 1) / 1.5 - 1, 0.15 * scale)
+            x7_cts = numpyro.sample("x7_cts", d7_cts.to_event(len(d7_cts.batch_shape[1:])))
+            d7 = dist.Delta(jnp.asarray(x7_cts > 0.5, dtype=x6.dtype))
+            x7 = numpyro.sample("x7", d7.to_event(len(d7.batch_shape[1:])))
         else:
-            x7 = numpyro.sample("x7", dist.LogNormal(nn.softplus(x5 + 1) / 1.5 - 1, 0.15))
+            d7 = dist.Normal(nn.softplus(x5 + 1) * 1.5 - 1, 0.3)
+            x7 = numpyro.sample("x7", d7.to_event(len(d7.batch_shape[1:])))
 
-        numpyro.sample("x8", dist.Laplace(-jnp.exp((-x6 * 1.3 + x7) / 3 + 1) / 3 + 2, 0.5))
+        d8 = dist.Laplace(-nn.softplus((-x6 * 1.3 + x7) / 3 + 1) + 2, 0.6)
+        numpyro.sample("x8", d8.to_event(len(d8.batch_shape[1:])))
 
     name = "large_backdoor_binary_t" if binary_treatment else "large_backdoor"
+    if dim != 1:
+        name += f"_{dim}"
     simulate_data(
         n_samples,
         n_samples,
@@ -653,6 +691,7 @@ def large_backdoor(n_samples, datadir, binary_treatment=False):
         target_idxs,
         condition_idx=condition_idx,
         condition_value=condition_value,
+        make_plots=dim == 1,
     )
 
 
@@ -684,8 +723,8 @@ def weak_arrows(n_samples, datadir, binary_treatment=False):
 
     intervention_idx = 7
     if binary_treatment:
-        intervention_value = 1
-        reference_value = 0
+        intervention_value = 1.0
+        reference_value = 0.0
     else:
         intervention_value = 2.5
         reference_value = 0.5
@@ -716,7 +755,8 @@ def weak_arrows(n_samples, datadir, binary_treatment=False):
             x7_cts = numpyro.sample("x7_cts", dist.LogNormal(nn.softplus(x5 + 1) / 2 - 1, 0.12))
             x7 = numpyro.sample("x7", dist.Delta(jnp.asarray(x7_cts > 0.6, dtype=x6.dtype)))
         else:
-            x7 = numpyro.sample("x7", dist.LogNormal(nn.softplus(x5 + 1) / 2 - 1, 0.12))
+            d7 = dist.Normal(nn.softplus(x5 + 1) * 1.5 - 1, 0.3)
+            x7 = numpyro.sample("x7", d7)
 
         x8_mean = nn.softplus(0.1 * x0 + 0.1 * x1 + 0.1 * x2 + 0.1 * x3 + 0.1 * x4 + 0.1 * x5 + 0.5 * x6 + 0.7 * x7 + 1)
         numpyro.sample(
@@ -867,7 +907,10 @@ def cat_to_cts(num_samples_train, num_samples_per_test, datadir):
         cond_means = np.array([-0.5, 0.0, 0.86])
 
         x1_noise = numpyro.sample("x1_noise", dist.Normal(0, 1))
-        numpyro.deterministic("x1", (one_hot(x0, 3) * cond_means).sum(-1) + 1.6 * (nn.softplus(x1_noise) - 1))
+        numpyro.deterministic(
+            "x1",
+            (one_hot(x0, 3) * cond_means).sum(-1) + 1.6 * (nn.softplus(x1_noise) - 1),
+        )
 
     simulate_data(
         num_samples_train,
@@ -968,7 +1011,10 @@ def mixed_simpson(num_samples_train, num_samples_per_test, datadir):
         x0 = numpyro.sample("x0", dist.Categorical(probs=x0_probs))
 
         x1_noise = numpyro.sample("x1_noise", dist.Normal(0, 1))
-        x1 = numpyro.deterministic("x1", (x0 - 0.5) * 0.7 + (x2 - 2.5) * 0.7 + nn.softplus(0.5 * x1_noise) - 0.7)
+        x1 = numpyro.deterministic(
+            "x1",
+            (x0 - 0.5) * 0.7 + (x2 - 2.5) * 0.7 + nn.softplus(0.5 * x1_noise) - 0.7,
+        )
 
         x3_noise = numpyro.sample("x3_noise", dist.Exponential(1))
         numpyro.deterministic("x3", (10 / 3) * jnp.tanh(x1 / 3) + 0.1 * x3_noise - 0.1)
@@ -1183,6 +1229,315 @@ def lin_gaussish(n_samples, datadir):
     )
 
 
+def fork_nonlin(n_samples_train: int, n_samples_per_test: int, datadir: str, noise_dist: dist.Distribution):
+    """Simulate fork non-linear causal model.
+
+    Simulate from the graph (x0) <- (x1) -> (x2) with non-linear relationship.
+    Ensure x0, x1 and x2 have same standard deviation (1).
+    Turns into structural equations
+    x1 ~ E(0, 1)
+    x0 = sqrt(6) * exp(-x1**2) + magic_number * E(0, 1)
+    x2 = softplus(1 - x1) - 1.5 + sqrt(0.15) * E(0, 1)
+
+    E(0, 1) should be any distribution with mean 0 and variance 1.
+
+    Args:
+        num_samples_train: Number of training samples.
+        num_samples_per_test: Number of test samples.
+        datadir: Data directory.
+        noise_dist: A function from shape to np.array of that shape. Should have mean 0 variance 1.
+    """
+    magic_number = np.sqrt(1 - 6 * (1 / np.sqrt(5) - 1 / 3))
+
+    # Set up the graph (x0) <- (x1) -> (x2).
+    adjacency_matrix = np.zeros((3, 3))
+    adjacency_matrix[1, 0] = 1
+    adjacency_matrix[1, 2] = 1
+
+    intervention_idx = 0
+    intervention_value = 1.0
+    reference_value = -1.0
+    target_idxs = [1, 2]
+
+    def fork_nonlin_model():
+        x1 = numpyro.sample("x1", noise_dist)
+
+        x0_noise = numpyro.sample("x0_noise", noise_dist)
+        numpyro.deterministic("x0", np.sqrt(6) * np.exp(-(x1**2)) + magic_number * x0_noise)
+
+        x2_noise = numpyro.sample("x2_noise", noise_dist)
+        numpyro.deterministic("x2", nn.softplus(1 - x1) - 1.5 + np.sqrt(0.15) * x2_noise)
+
+    simulate_data(
+        n_samples_train,
+        n_samples_per_test,
+        f"{datadir}/csuite_fork_nonlin_gauss",
+        fork_nonlin_model,
+        adjacency_matrix,
+        intervention_idx,
+        intervention_value,
+        reference_value,
+        target_idxs,
+        counterfactual_intervention_idx=intervention_idx,
+        counterfactual_intervention_value=intervention_value,
+        counterfactual_reference_value=reference_value,
+    )
+
+
+def fork_lin_nongauss(n_samples_train: int, n_samples_per_test: int, datadir: str, noise_dist: dist.Distribution):
+    """Simulate fork linear non-Gaussian model.
+
+    Simulate from the graph (x0) <- (x1) -> (x2) with linear relationship and non-Gaussian noise.
+    Ensure x0, x1 and x2 have same standard deviation (1).
+
+    Args:
+        num_samples_train: Number of training samples.
+        num_samples_per_test: Number of test samples.
+        datadir: Data directory.
+        noise_dist: A function from shape to np.array of that shape. Should have mean 0 and variance 1.
+    """
+    # Set up the graph (x0) <- (x1) -> (x2)
+    adjacency_matrix = np.zeros((3, 3))
+    adjacency_matrix[1, 0] = 1
+    adjacency_matrix[1, 2] = 1
+
+    intervention_idx = 0
+    intervention_value = 1.0
+    reference_value = -1.0
+    target_idxs = [1, 2]
+
+    def fork_lin_nongauss_model():
+        x1 = numpyro.sample("x1", noise_dist)
+
+        x0_noise = numpyro.sample("x0_noise", noise_dist)
+        numpyro.deterministic("x0", np.sqrt(2 / 3) * x1 + np.sqrt(1 / 3) * (nn.softplus(1.8 * x0_noise) - 1))
+
+        x2_noise = numpyro.sample("x2_noise", noise_dist)
+        numpyro.deterministic("x2", np.sqrt(2 / 3) * x1 + np.sqrt(1 / 3) * (nn.softplus(1.8 * x2_noise) - 1))
+
+    simulate_data(
+        n_samples_train,
+        n_samples_per_test,
+        f"{datadir}/csuite_fork_lin_nongauss",
+        fork_lin_nongauss_model,
+        adjacency_matrix,
+        intervention_idx,
+        intervention_value,
+        reference_value,
+        target_idxs,
+        counterfactual_intervention_idx=intervention_idx,
+        counterfactual_intervention_value=intervention_value,
+        counterfactual_reference_value=reference_value,
+    )
+
+
+def bow_lin(
+    n_samples_train: int,
+    n_samples_per_test: int,
+    datadir: str,
+    noise_dist: dist.Distribution,
+    dataset_name: str = "csuite_bow_lin_gauss",
+):
+    """Simulate bow linear causal model.
+
+    Ensure x0, x1 and x2 have same standard deviation (1).
+    Turns into structural equations
+    x1 ~ E(0, 1)
+    x0 = sqrt(2/3) * x1 + sqrt(1/3) * E(0, 1)
+    x2 = sqrt(1/3) * x1 + sqrt(1/3) * x0 + (sqrt(1/3) - sqrt(sqrt(2/3))) * E(0, 1)
+
+    E(0, 1) should be any distribution with mean 0 and variance 1.
+
+    Args:
+        num_samples_train: Number of training samples.
+        num_samples_per_test: Number of test samples.
+        datadir: Data directory.
+        noise_dist: A function from shape to np.array of that shape. Should have mean 0 variance 1.
+        dataset_name: Name that the simulated dataset will be saved as.
+    """
+    # Set up the graph.
+    adjacency_matrix = np.zeros((3, 3))
+    adjacency_matrix[1, 0] = 1
+    adjacency_matrix[1, 2] = 1
+    adjacency_matrix[0, 2] = 1
+
+    intervention_idx = 0
+    intervention_value = 1.0
+    reference_value = -1.0
+    target_idxs = [1, 2]
+
+    def bow_lin_model():
+        x1 = numpyro.sample("x1", noise_dist)
+
+        x0_noise = numpyro.sample("x0_noise", noise_dist)
+        x0 = numpyro.deterministic("x0", np.sqrt(2 / 3) * x1 + np.sqrt(1 / 3) * x0_noise)
+
+        x2_noise = numpyro.sample("x2_noise", dist.Normal(0, 1))
+        numpyro.deterministic(
+            "x2", np.sqrt(1 / 3) * x1 + np.sqrt(1 / 3) * x0 + (np.sqrt(1 / 3) - np.sqrt(np.sqrt(2 / 3))) * x2_noise
+        )
+
+    simulate_data(
+        n_samples_train,
+        n_samples_per_test,
+        f"{datadir}/{dataset_name}",
+        bow_lin_model,
+        adjacency_matrix,
+        intervention_idx,
+        intervention_value,
+        reference_value,
+        target_idxs,
+        counterfactual_intervention_idx=intervention_idx,
+        counterfactual_intervention_value=intervention_value,
+        counterfactual_reference_value=reference_value,
+    )
+
+
+def bow_lin_nongauss(noise_dist: dist.Distribution, *args, **kwargs):
+    assert not isinstance(noise_dist, dist.Normal)
+    bow_lin(*args, **dict(kwargs, noise_dist=noise_dist))
+
+
+def bow_nonlin(
+    n_samples_train: int,
+    n_samples_per_test: int,
+    datadir: str,
+    noise_dist: dist.Distribution,
+    dataset_name: str = "csuite_bow_nonlin_gauss",
+):
+    """Simulate bow linear causal model.
+
+    Ensure x0, x1 and x2 have approximately standard deviation (1).
+    Turns into structural equations
+    x1 ~ E(0, 1)
+    x0 = sqrt(6) * exp(-x1**2) + magic_number * E(0, 1)
+    x2 = softplus(1 - x1) + exp(-x0) + 0.7 * E(0, 1)
+
+    E(0, 1) should be any distribution with mean 0 and variance 1.
+
+    Args:
+        num_samples_train: Number of training samples.
+        num_samples_per_test: Number of test samples.
+        datadir: Data directory.
+        noise_dist: A function from shape to np.array of that shape. Should have mean 0 variance 1.
+        dataset_name: Name that the simulated dataset will be saved as.
+    """
+    magic_number = np.sqrt(1 - 6 * (1 / np.sqrt(5) - 1 / 3))
+
+    # Set up the graph.
+    adjacency_matrix = np.zeros((3, 3))
+    adjacency_matrix[1, 0] = 1
+    adjacency_matrix[1, 2] = 1
+    adjacency_matrix[0, 2] = 1
+
+    intervention_idx = 0
+    intervention_value = 1.0
+    reference_value = -1.0
+    target_idxs = [1, 2]
+
+    def bow_lin_model():
+        x1 = numpyro.sample("x1", noise_dist)
+
+        x0_noise = numpyro.sample("x0_noise", noise_dist)
+        x0 = numpyro.deterministic("x0", np.sqrt(6) * np.exp(-(x1**2)) + magic_number * x0_noise)
+
+        x2_noise = numpyro.sample("x2_noise", noise_dist)
+        numpyro.deterministic("x2", nn.softplus(x1) + np.exp(-x0) + 0.7 * x2_noise)
+
+    simulate_data(
+        n_samples_train,
+        n_samples_per_test,
+        f"{datadir}/{dataset_name}",
+        bow_lin_model,
+        adjacency_matrix,
+        intervention_idx,
+        intervention_value,
+        reference_value,
+        target_idxs,
+        counterfactual_intervention_idx=intervention_idx,
+        counterfactual_intervention_value=intervention_value,
+        counterfactual_reference_value=reference_value,
+    )
+
+
+def fork_and_collider_nonlin(
+    n_samples_train: int,
+    n_samples_per_test: int,
+    datadir: str,
+    noise_dist: dist.Distribution,
+    dataset_name: str = "csuite_fork_collider_nonlin_gauss",
+):
+    """Simulate fork and collider non-linear causal model.
+
+    Ensure all variables have same standard deviation (1).
+    Turns into structural equations
+    x0 ~ E(0, 1)
+    x1 = E(0, 1)
+    x2 ~ E(0, 1)
+    x3 = sqrt(6) * exp(-x0**2) + 0.1 * E(0, 1)
+    x4 = np.sqrt(6) * exp(-x0**2) + np.sqrt(6) * exp(-x1**2) 0.1 * E(0, 1)
+    x5 = np.sqrt(6) * exp(-x1**3) + np.sqrt(6) * exp(-x2**2) + 0.1 * E(0, 1)
+    x6 = sqrt(6) * exp(-x2**2) + 0.1 * E(0, 1)
+
+    E(0, 1) should be any distribution with mean 0 and variance 1.
+
+    Args:
+        num_samples_train: Number of training samples.
+        num_samples_per_test: Number of test samples.
+        datadir: Data directory.
+        noise_dist: A function from shape to np.array of that shape. Should have mean 0 variance 1.
+        dataset_name: The name the simulated dataset is saved as.
+    """
+    magic_number_small = 0.1
+
+    # Set up the graph.
+    adjacency_matrix = np.zeros((7, 7))
+    adjacency_matrix[0, :] = [0, 0, 0, 1, 1, 0, 0]
+    adjacency_matrix[1, :] = [0, 0, 0, 0, 1, 1, 0]
+    adjacency_matrix[2, :] = [0, 0, 0, 0, 0, 1, 1]
+
+    intervention_idx = 3
+    intervention_value = 1.0
+    reference_value = -1.0
+    target_idxs = [5]
+
+    def fork_and_collider_nonlin_model():
+        x0 = numpyro.sample("x0", noise_dist)
+        x1 = numpyro.sample("x1", noise_dist)
+        x2 = numpyro.sample("x2", noise_dist)
+
+        x3_noise = numpyro.sample("x3_noise", noise_dist)
+        numpyro.deterministic("x3", np.sqrt(6) * np.exp(-(x0**2)) + magic_number_small * x3_noise)
+
+        x4_noise = numpyro.sample("x4_noise", noise_dist)
+        numpyro.deterministic(
+            "x4", np.sqrt(6) * np.exp(-(x0**2)) + np.sqrt(6) * np.exp(-(x1**2)) + magic_number_small * x4_noise
+        )
+
+        x5_noise = numpyro.sample("x5_noise", noise_dist)
+        numpyro.deterministic(
+            "x5", np.sqrt(6) * np.exp(-(x1**2)) + np.sqrt(6) * np.exp(-(x2**2)) + magic_number_small * x5_noise
+        )
+
+        x6_noise = numpyro.sample("x6_noise", noise_dist)
+        numpyro.deterministic("x6", np.sqrt(6) * np.exp(-(x2**2)) + magic_number_small * x6_noise)
+
+    simulate_data(
+        n_samples_train,
+        n_samples_per_test,
+        f"{datadir}/{dataset_name}",
+        fork_and_collider_nonlin_model,
+        adjacency_matrix,
+        intervention_idx,
+        intervention_value,
+        reference_value,
+        target_idxs,
+        counterfactual_intervention_idx=intervention_idx,
+        counterfactual_intervention_value=intervention_value,
+        counterfactual_reference_value=reference_value,
+    )
+
+
 def main():
     n_observation_samples = 4000
     n_test_samples = 2000
@@ -1193,7 +1548,12 @@ def main():
     ###########################################################################################
 
     two_node_lin(
-        n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1), dist.Normal(0, 1), "lingauss_equal_variance"
+        n_observation_samples,
+        n_test_samples,
+        datadir,
+        dist.Normal(0, 1),
+        dist.Normal(0, 1),
+        "lingauss",
     )
 
     two_node_lin(
@@ -1212,9 +1572,30 @@ def main():
         dist.Exponential(0.5), dist.transforms.AffineTransform(loc=-1.0, scale=1.0)
     )
 
-    two_node_lin(n_observation_samples, n_test_samples, datadir, shift_exp_x0, shift_exp_x0, "linexp_equal_variance")
+    two_node_lin(
+        n_observation_samples,
+        n_test_samples,
+        datadir,
+        shift_exp_x0,
+        shift_exp_x0,
+        "linexp",
+    )
 
-    two_node_lin(n_observation_samples, n_test_samples, datadir, shift_exp_x0, shift_exp_x1, "linexp_unequal_variance")
+    two_node_lin(
+        n_observation_samples,
+        n_test_samples,
+        datadir,
+        shift_exp_x0,
+        shift_exp_x1,
+        "linexp_unequal_variance",
+    )
+
+    ndim = 2
+    d = dist.TransformedDistribution(
+        dist.Exponential(np.ones(ndim)),
+        dist.transforms.AffineTransform(loc=-1, scale=1),
+    ).to_event()
+    two_node_lin(n_observation_samples, n_test_samples, datadir, d, d, f"linexp_{ndim}")
 
     collider_lin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
 
@@ -1223,6 +1604,24 @@ def main():
     fork_lin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
 
     two_node_nonlinear_gauss(n_observation_samples, n_test_samples, datadir)
+
+    fork_nonlin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
+
+    fork_lin_nongauss(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
+
+    bow_lin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
+
+    bow_lin_nongauss(
+        n_samples_train=n_observation_samples,
+        n_samples_per_test=n_test_samples,
+        datadir=datadir,
+        noise_dist=dist.Laplace(0, np.sqrt(0.5)),
+        dataset_name="csuite_bow_lin_laplace",
+    )
+
+    bow_nonlin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
+
+    fork_and_collider_nonlin(n_observation_samples, n_test_samples, datadir, dist.Normal(0, 1))
 
     ###########################################################################################
     # Continuous datasets with CATE
@@ -1233,6 +1632,8 @@ def main():
     symprod_simpson(n_test_samples, datadir)
 
     large_backdoor(n_test_samples, datadir)
+
+    large_backdoor(n_test_samples, datadir, dim=5)
 
     weak_arrows(n_test_samples, datadir)
 

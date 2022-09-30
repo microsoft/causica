@@ -70,7 +70,10 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
 
         data, mask = self.read_csv_from_file(data_path, max_num_rows=max_num_rows)
         train_rows, val_rows, test_rows = self.temporal_train_test_val_split(
-            data[:, timeseries_column_index], test_frac, val_frac, random_state=random_state
+            data[:, timeseries_column_index],
+            test_frac,
+            val_frac,
+            random_state=random_state,
         )
 
         train_data, test_data = data[train_rows, :], data[test_rows, :]
@@ -119,7 +122,11 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         return temporal_dataset
 
     def temporal_train_test_val_split(
-        self, series_column: np.ndarray, test_frac: float, val_frac: float, random_state: Union[int, Tuple[int, int]]
+        self,
+        series_column: np.ndarray,
+        test_frac: float,
+        val_frac: float,
+        random_state: Union[int, Tuple[int, int]],
     ) -> Tuple[List[int], List[int], List[int]]:
         """
         This method will output the row selections for training, test and validation data. It currently supports
@@ -254,8 +261,6 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
             timeseries_column_index: index indicate which column specifies the time series index.
         """
         # pylint: disable=protected-access
-        assert dataset._intervention_data is None, "Current implementation does not support intervention data."
-        assert dataset._counterfactual_data is None, "Current implementation does not support counterfactual data"
         train_data, train_mask = dataset._train_data, dataset._train_mask
         test_data, test_mask = dataset._test_data, dataset._test_mask
         val_data, val_mask = dataset._val_data, dataset._val_mask

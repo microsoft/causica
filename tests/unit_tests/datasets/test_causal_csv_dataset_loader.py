@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from causica.datasets.causal_csv_dataset_loader import CausalCSVDatasetLoader
 from causica.datasets.dataset import CausalDataset, InterventionData
@@ -586,7 +587,8 @@ def test_load_predefined_dataset(tmpdir_factory):
     assert dataset.get_intervention_data()[1].reference_data is None
 
 
-def test_load_predefined_dataset_npy(tmpdir_factory):
+@pytest.mark.parametrize("data_format", ["npy", "json"])
+def test_load_predefined_dataset_npy_json(tmpdir_factory, data_format):
     dataset_dir = tmpdir_factory.mktemp("dataset_dir")
     train_data = np.array([[np.nan, 2.1], [2.2, np.nan]])
     val_data = np.array([[np.nan, 3.1]])
@@ -594,37 +596,49 @@ def test_load_predefined_dataset_npy(tmpdir_factory):
 
     adjacency_matrix = np.array([[0, 1], [0, 0]])
 
-    #    datafile column order:  conditioning_cols   intervention_cols     reference_cols     effect_cols   sample_cols
+    interventions = {
+        "metadata": {"columns_to_nodes": [0, 1, 2, 3]},
+        "environments": [
+            {
+                "conditioning_idxs": np.array([0]),
+                "conditioning_values": np.array([1.0]),
+                "intervention_idxs": np.array([1]),
+                "intervention_values": np.array([1.0]),
+                "intervention_reference": np.array([0.0]),
+                "effect_idxs": np.array([3]),
+                "test_data": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
+                "reference_data": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
+            },
+            {
+                "conditioning_idxs": np.array([0]),
+                "conditioning_values": np.array([5.0]),
+                "intervention_idxs": np.array([1]),
+                "intervention_values": np.array([1.0]),
+                "intervention_reference": np.array([0.0]),
+                "effect_idxs": np.array([3]),
+                "test_data": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
+                "reference_data": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
+            },
+        ],
+    }
 
-    interventions = [
-        {
-            "conditioning": np.array([1.0, np.nan, np.nan, np.nan]),
-            "intervention": np.array([np.nan, 1.0, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0.0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-        {
-            "conditioning": np.array([5.0, np.nan, np.nan, np.nan]),
-            "intervention": np.array([np.nan, 1.0, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0.0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-    ]
-
-    counterfactuals = [
-        {
-            "conditioning": np.array([[1, 0.5, 2.1, 3.1], [1, 0.0, 1.8, 2.9], [1, 1.2, 2.4, 3.4], [1, -0.5, 1.7, 3.2]]),
-            "intervention": np.array([np.nan, 1, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-    ]
+    counterfactuals = {
+        "metadata": {"columns_to_nodes": [0, 1, 2, 3]},
+        "environments": [
+            {
+                "conditioning_idxs": np.array([0, 1, 2, 3]),
+                "conditioning_values": np.array(
+                    [[1, 0.5, 2.1, 3.1], [1, 0.0, 1.8, 2.9], [1, 1.2, 2.4, 3.4], [1, -0.5, 1.7, 3.2]]
+                ),
+                "intervention_idxs": np.array([1]),
+                "intervention_values": np.array([1.0]),
+                "intervention_reference": np.array([0.0]),
+                "effect_idxs": np.array([3]),
+                "test_data": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
+                "reference_data": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
+            },
+        ],
+    }
 
     pd.DataFrame(adjacency_matrix).to_csv(os.path.join(dataset_dir, "adj_matrix.csv"), header=None, index=None)
 
@@ -632,8 +646,28 @@ def test_load_predefined_dataset_npy(tmpdir_factory):
     pd.DataFrame(val_data).to_csv(os.path.join(dataset_dir, "val.csv"), header=None, index=None)
     pd.DataFrame(test_data).to_csv(os.path.join(dataset_dir, "test.csv"), header=None, index=None)
 
-    np.save(os.path.join(dataset_dir, "interventions.npy"), interventions)
-    np.save(os.path.join(dataset_dir, "counterfactuals.npy"), counterfactuals)
+    if data_format == "npy":
+        np.save(os.path.join(dataset_dir, "interventions.npy"), interventions)
+        np.save(os.path.join(dataset_dir, "counterfactuals.npy"), counterfactuals)
+
+    elif data_format == "json":
+        with open(os.path.join(dataset_dir, "interventions.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "metadata": interventions["metadata"],
+                    "environments": [convert_dict_of_ndarray_to_lists(e) for e in interventions["environments"]],
+                },
+                f,
+            )
+
+        with open(os.path.join(dataset_dir, "counterfactuals.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "metadata": counterfactuals["metadata"],
+                    "environments": [convert_dict_of_ndarray_to_lists(e) for e in counterfactuals["environments"]],
+                },
+                f,
+            )
 
     dataset_loader = CausalCSVDatasetLoader(dataset_dir=dataset_dir)
     dataset = dataset_loader.load_predefined_dataset(max_num_rows=None)
@@ -646,140 +680,12 @@ def test_load_predefined_dataset_npy(tmpdir_factory):
 
     # Intervention
     for i, intervention_data in enumerate(dataset.get_intervention_data()):
-        conditioning_values, conditioning_mask = CausalCSVDatasetLoader.process_data(interventions[i]["conditioning"])
-        assert np.array_equal(intervention_data.conditioning_idxs, np.where(conditioning_mask)[0])
-        assert np.array_equal(intervention_data.conditioning_values, conditioning_values)
-
-        intervention_values, intervention_mask = CausalCSVDatasetLoader.process_data(interventions[i]["intervention"])
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(intervention_mask)[0])
-        assert np.array_equal(intervention_data.intervention_values, intervention_values)
-
-        intervention_reference, reference_mask = CausalCSVDatasetLoader.process_data(interventions[i]["reference"])
-
-        assert np.array_equal(intervention_data.intervention_reference, intervention_reference)
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(reference_mask)[0])
-
-        assert np.array_equal(intervention_data.test_data, interventions[i]["intervention_samples"])
-        assert np.array_equal(intervention_data.reference_data, interventions[i]["reference_samples"])
-
-        assert np.array_equal(intervention_data.effect_idxs, np.where(interventions[i]["effect_mask"])[0])
+        original_data = interventions["environments"][i]
+        for k in original_data.keys():
+            assert np.array_equal(getattr(intervention_data, k), original_data[k])
 
     # Counterfactual
     for i, intervention_data in enumerate(dataset.get_counterfactual_data()):
-        conditioning_values, conditioning_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["conditioning"])
-        assert np.array_equal(intervention_data.conditioning_idxs, np.array([0, 1, 2, 3]))
-        assert np.array_equal(intervention_data.conditioning_values, conditioning_values)
-
-        intervention_values, intervention_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["intervention"])
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(intervention_mask)[0])
-        assert np.array_equal(intervention_data.intervention_values, intervention_values)
-
-        intervention_reference, reference_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["reference"])
-        assert np.array_equal(intervention_data.intervention_reference, intervention_reference)
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(reference_mask)[0])
-
-        assert np.array_equal(intervention_data.test_data, counterfactuals[i]["intervention_samples"])
-        assert np.array_equal(intervention_data.reference_data, counterfactuals[i]["reference_samples"])
-
-        assert np.array_equal(intervention_data.effect_idxs, np.where(counterfactuals[i]["effect_mask"])[0])
-
-
-def test_load_predefined_dataset_json(tmpdir_factory):
-    dataset_dir = tmpdir_factory.mktemp("dataset_dir")
-    train_data = np.array([[np.nan, 2.1], [2.2, np.nan]])
-    val_data = np.array([[np.nan, 3.1]])
-    test_data = np.array([[4.1, np.nan]])
-
-    adjacency_matrix = np.array([[0, 1], [0, 0]])
-
-    #    datafile column order:  conditioning_cols   intervention_cols     reference_cols     effect_cols   sample_cols
-
-    interventions = [
-        {
-            "conditioning": np.array([1.0, np.nan, np.nan, np.nan]),
-            "intervention": np.array([np.nan, 1.0, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0.0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-        {
-            "conditioning": np.array([5.0, np.nan, np.nan, np.nan]),
-            "intervention": np.array([np.nan, 1.0, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0.0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-    ]
-
-    counterfactuals = [
-        {
-            "conditioning": np.array([[1, 0.5, 2.1, 3.1], [1, 0.0, 1.8, 2.9], [1, 1.2, 2.4, 3.4], [1, -0.5, 1.7, 3.2]]),
-            "intervention": np.array([np.nan, 1, np.nan, np.nan]),
-            "reference": np.array([np.nan, 0, np.nan, np.nan]),
-            "effect_mask": np.array([False, False, False, True]),
-            "intervention_samples": np.array([[1, 1, 2.1, 3.1], [1, 1, 1.8, 2.9], [1, 1, 2.4, 3.4], [1, 1, 1.7, 3.2]]),
-            "reference_samples": np.array([[1, 0, 2.1, 1.1], [1, 0, 1.8, 1.9], [1, 0, 2.4, 1.4], [1, 0, 1.7, 1.2]]),
-        },
-    ]
-
-    pd.DataFrame(adjacency_matrix).to_csv(os.path.join(dataset_dir, "adj_matrix.csv"), header=None, index=None)
-
-    pd.DataFrame(train_data).to_csv(os.path.join(dataset_dir, "train.csv"), header=None, index=None)
-    pd.DataFrame(val_data).to_csv(os.path.join(dataset_dir, "val.csv"), header=None, index=None)
-    pd.DataFrame(test_data).to_csv(os.path.join(dataset_dir, "test.csv"), header=None, index=None)
-
-    with open(os.path.join(dataset_dir, "interventions.json"), "w", encoding="utf-8") as f:
-        json.dump([convert_dict_of_ndarray_to_lists(i) for i in interventions], f)
-
-    with open(os.path.join(dataset_dir, "counterfactuals.json"), "w", encoding="utf-8") as f:
-        json.dump([convert_dict_of_ndarray_to_lists(c) for c in counterfactuals], f)
-
-    dataset_loader = CausalCSVDatasetLoader(dataset_dir=dataset_dir)
-    dataset = dataset_loader.load_predefined_dataset(max_num_rows=None)
-
-    assert isinstance(dataset, CausalDataset)
-    assert np.array_equal(adjacency_matrix, dataset.get_adjacency_data_matrix())
-    assert isinstance(dataset.get_intervention_data(), list)
-    assert isinstance(dataset.get_intervention_data()[0], InterventionData)
-    assert len(dataset.get_intervention_data()) == 2
-
-    # Intervention
-    for i, intervention_data in enumerate(dataset.get_intervention_data()):
-        conditioning_values, conditioning_mask = CausalCSVDatasetLoader.process_data(interventions[i]["conditioning"])
-        assert np.array_equal(intervention_data.conditioning_idxs, np.where(conditioning_mask)[0])
-        assert np.array_equal(intervention_data.conditioning_values, conditioning_values)
-
-        intervention_values, intervention_mask = CausalCSVDatasetLoader.process_data(interventions[i]["intervention"])
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(intervention_mask)[0])
-        assert np.array_equal(intervention_data.intervention_values, intervention_values)
-
-        intervention_reference, reference_mask = CausalCSVDatasetLoader.process_data(interventions[i]["reference"])
-
-        assert np.array_equal(intervention_data.intervention_reference, intervention_reference)
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(reference_mask)[0])
-
-        assert np.array_equal(intervention_data.test_data, interventions[i]["intervention_samples"])
-        assert np.array_equal(intervention_data.reference_data, interventions[i]["reference_samples"])
-
-        assert np.array_equal(intervention_data.effect_idxs, np.where(interventions[i]["effect_mask"])[0])
-
-    # Counterfactual
-    for i, intervention_data in enumerate(dataset.get_counterfactual_data()):
-        conditioning_values, conditioning_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["conditioning"])
-        assert np.array_equal(intervention_data.conditioning_idxs, np.array([0, 1, 2, 3]))
-        assert np.array_equal(intervention_data.conditioning_values, conditioning_values)
-
-        intervention_values, intervention_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["intervention"])
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(intervention_mask)[0])
-        assert np.array_equal(intervention_data.intervention_values, intervention_values)
-
-        intervention_reference, reference_mask = CausalCSVDatasetLoader.process_data(counterfactuals[i]["reference"])
-        assert np.array_equal(intervention_data.intervention_reference, intervention_reference)
-        assert np.array_equal(intervention_data.intervention_idxs, np.where(reference_mask)[0])
-
-        assert np.array_equal(intervention_data.test_data, counterfactuals[i]["intervention_samples"])
-        assert np.array_equal(intervention_data.reference_data, counterfactuals[i]["reference_samples"])
-
-        assert np.array_equal(intervention_data.effect_idxs, np.where(counterfactuals[i]["effect_mask"])[0])
+        original_data = counterfactuals["environments"][i]
+        for k in original_data.keys():
+            assert np.array_equal(getattr(intervention_data, k), original_data[k])

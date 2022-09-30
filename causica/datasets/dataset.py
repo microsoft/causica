@@ -199,6 +199,35 @@ class Dataset(BaseDataset):
             prior_adjacency_mask=prior_adjacency_mask,
         )
 
+    def to_latent_confounded_causal(
+        self,
+        directed_adjacency_data: Optional[np.ndarray],
+        directed_subgraph_data: Optional[np.ndarray],
+        bidirected_adjacency_data: Optional[np.ndarray],
+        bidirected_subgraph_data: Optional[np.ndarray],
+        intervention_data: Optional[List[InterventionData]],
+        counterfactual_data: Optional[List[InterventionData]] = None,
+    ):
+        """
+        Return the admg version of this dataset.
+        """
+        return LatentConfoundedCausalDataset(
+            train_data=self._train_data,
+            train_mask=self._train_mask,
+            directed_adjacency_data=directed_adjacency_data,
+            directed_subgraph_data=directed_subgraph_data,
+            bidirected_adjacency_data=bidirected_adjacency_data,
+            bidirected_subgraph_data=bidirected_subgraph_data,
+            intervention_data=intervention_data,
+            counterfactual_data=counterfactual_data,
+            val_data=self._val_data,
+            val_mask=self._val_mask,
+            test_data=self._test_data,
+            test_mask=self._test_mask,
+            variables=self._variables,
+            data_split=self._data_split,
+        )
+
     @property
     def train_data_and_mask(self) -> Tuple[np.ndarray, np.ndarray]:
         # Add to avoid inconsistent type mypy error
@@ -285,6 +314,12 @@ class CausalDataset(Dataset):
         if self._adjacency_data is None:
             raise TypeError("Adjacency matrix is None. No adjacency matrix has been loaded.")
         return self._adjacency_data
+
+    def set_adjacency_data_matrix(self, A: np.ndarray) -> None:
+        """
+        Externally set the np.ndarray dag adjacency matrix. If already set with a matrix, it will overwrite it
+        """
+        self._adjacency_data = A.copy()
 
     @property
     def has_adjacency_data_matrix(self) -> bool:
@@ -390,3 +425,85 @@ class TemporalDataset(CausalDataset):
         if self.prior_adjacency_data is None or self.prior_adjacency_mask is None:
             raise TypeError("Prior adjacency matrix is None. No prior adjacency matrix has been loaded.")
         return self.prior_adjacency_data, self.prior_adjacency_mask
+
+
+class LatentConfoundedCausalDataset(CausalDataset):
+    """Child class of CausalDataset that represents a causal dataset with latent confounding. This consists of both a
+    directed adjacency matrix indicating direct causal interactions between observed variables, and a bidirected
+    adjacency matrix indicating the presence of a latent confounder between pairs of observed variables."""
+
+    def __init__(
+        self,
+        train_data: np.ndarray,
+        train_mask: np.ndarray,
+        directed_adjacency_data: Optional[np.ndarray],
+        directed_subgraph_data: Optional[np.ndarray],
+        bidirected_adjacency_data: Optional[np.ndarray],
+        bidirected_subgraph_data: Optional[np.ndarray],
+        intervention_data: Optional[List[InterventionData]],
+        counterfactual_data: Optional[List[InterventionData]],
+        val_data: Optional[np.ndarray] = None,
+        val_mask: Optional[np.ndarray] = None,
+        test_data: Optional[np.ndarray] = None,
+        test_mask: Optional[np.ndarray] = None,
+        variables: Optional[Variables] = None,
+        data_split: Optional[Dict[str, Any]] = None,
+    ) -> None:
+
+        super().__init__(
+            train_data=train_data,
+            train_mask=train_mask,
+            adjacency_data=None,
+            subgraph_data=None,
+            intervention_data=intervention_data,
+            counterfactual_data=counterfactual_data,
+            val_data=val_data,
+            val_mask=val_mask,
+            test_data=test_data,
+            test_mask=test_mask,
+            variables=variables,
+            data_split=data_split,
+        )
+
+        self._directed_adjacency_data = directed_adjacency_data
+        self._directed_subgraph_data = directed_subgraph_data
+        self._bidirected_adjacency_data = bidirected_adjacency_data
+        self._bidirected_subgraph_data = bidirected_subgraph_data
+
+    @property
+    def has_directed_adjacency_data_matrix(self) -> bool:
+        """
+        Returns: If the directed adjacency matrix is loaded
+        """
+        return self._directed_adjacency_data is not None
+
+    def get_directed_adjacency_data_matrix(self) -> np.ndarray:
+        """Returns the np.ndarray directed adjacency matrix."""
+        if self._directed_adjacency_data is None:
+            raise TypeError("Directed adjacency matrix is None. No directed adjacency matrix has been loaded.")
+        return self._directed_adjacency_data
+
+    def get_known_directed_subgraph_mask_matrix(self) -> np.ndarray:
+        """Returns the np.ndarray mask matrix for the directed adjacency graph."""
+        if self._directed_subgraph_data is None:
+            raise TypeError("Directed mask matrix is None. No directed mask matrix has been loaded.")
+        return self._directed_subgraph_data
+
+    @property
+    def has_bidirected_adjacency_data_matrix(self) -> bool:
+        """
+        Returns: If the bidirected adjacency matrix is loaded
+        """
+        return self._bidirected_adjacency_data is not None
+
+    def get_bidirected_adjacency_data_matrix(self) -> np.ndarray:
+        """Returns the np.ndarray directed adjacency matrix."""
+        if self._bidirected_adjacency_data is None:
+            raise TypeError("Bidirected adjacency matrix is None. No bidirected adjacency matrix has been loaded.")
+        return self._bidirected_adjacency_data
+
+    def get_known_bidirected_subgraph_mask_matrix(self) -> np.ndarray:
+        """Returns the np.ndarray mask matrix for the bidirected adjacency graph."""
+        if self._bidirected_subgraph_data is None:
+            raise TypeError("Bidirected mask matrix is None. No bidirected mask matrix has been loaded.")
+        return self._bidirected_subgraph_data
