@@ -1,3 +1,5 @@
+from typing import List
+
 import torch
 from pyro.distributions import constraints
 from pyro.distributions.torch_transform import TransformModule
@@ -46,21 +48,6 @@ class AffineDiagonalPyro(TransformModule):
     def log_abs_det_jacobian(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         _, _ = x, y
         return self.a.unsqueeze(0)
-
-
-def create_diagonal_spline_flow(flow_steps, features, num_bins=8, tail_bound=3):
-    """
-    Generate a composite flow as a sequence of diagonal Affine-Spline transofrmations. A final affine layer is appended to the end of transform.
-    """
-    return CompositeTransform(
-        [
-            CompositeTransform(
-                [Affine_diagonal(features), PiecewiseRationalQuadraticTransform(features, num_bins, tail_bound)]
-            )
-            for i in range(flow_steps)
-        ]
-        + [Affine_diagonal(features)]
-    )
 
 
 class CompositeTransform(nn.Module):
@@ -153,7 +140,7 @@ class PiecewiseRationalQuadraticTransform(nn.Module):
         dim: dimensionality of input,
         num_bins: how many bins to use in spline,
         tail_bound: distance of edgemost bins relative to 0,
-        init_scale: standar deviation of Gaussian from which spline parameters are initialised
+        init_scale: standard deviation of Gaussian from which spline parameters are initialised
     """
 
     def __init__(
@@ -211,3 +198,28 @@ class PiecewiseRationalQuadraticTransform(nn.Module):
             transformed_input, jacobian_log_determinant: (batch_size, input_dim), (batch_size, input_dim)
         """
         return self._piecewise_cdf(inputs, inverse=True)
+
+
+def create_diagonal_spline_flow(
+    flow_steps: int, features: int, num_bins: int = 8, tail_bound: float = 3.0
+) -> CompositeTransform:
+    """
+    Generate a composite flow as a sequence of diagonal Affine-Spline transformations.
+
+    A final affine layer is appended to the end of transform.
+
+    Args:
+        flow_steps: the number of layers to use in the spline distribution
+        features: dimensionality of input
+        num_bins: how many bins to use in spline,
+        tail_bound: distance of edgemost bins relative to 0
+    """
+    transforms: List[nn.Module] = [
+        CompositeTransform(
+            [Affine_diagonal(features), PiecewiseRationalQuadraticTransform(features, num_bins, tail_bound)]
+        )
+        for i in range(flow_steps)
+    ]
+    transforms.append(Affine_diagonal(features))
+
+    return CompositeTransform(transforms=transforms)

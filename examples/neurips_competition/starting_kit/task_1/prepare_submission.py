@@ -16,7 +16,7 @@ if __name__ == "__main__":
         model = VARLiNGAM.load("", load_dir, "cpu")
 
         # Generate summary adjacency matrix by aggregating across time
-        adj_mat = (model.get_adj_matrix().sum(0) > 0)
+        adj_mat = model.get_adj_matrix().sum(0) > 0
 
         # Delete bot action column
         mats.append(adj_mat[1:, 1:])

@@ -132,14 +132,24 @@ class FoldTimeDECI(DECI):
             )
         else:
             if isinstance(prior_A, np.ndarray):
+                prior_lag = prior_A.shape[0] - 1
+                assert prior_lag == self.lag, "Prior lag is not consistent with model lag."
+                prior_A = convert_temporal_to_static_adjacency_matrix(prior_A, conversion_type="full_time").astype(
+                    np.float_
+                )
+                prior_mask = convert_temporal_to_static_adjacency_matrix(
+                    prior_mask, conversion_type="full_time", fill_value=1
+                )
                 prior_A = torch.Tensor(prior_A)
                 assert prior_mask is not None
                 prior_mask = torch.Tensor(prior_mask)
 
-            self.prior_A.data = prior_A.to(dtype=self.prior_A.dtype, device=self.prior_A.device)
-            assert prior_mask is not None
-            self.prior_mask.data = prior_mask.to(dtype=self.prior_mask.dtype, device=self.prior_mask.device)
-            self.exist_prior = True
+                self.prior_A.data = prior_A.to(dtype=self.prior_A.dtype, device=self.prior_A.device)
+                assert prior_mask is not None
+                self.prior_mask.data = prior_mask.to(dtype=self.prior_mask.dtype, device=self.prior_mask.device)
+                self.exist_prior = True
+            else:
+                raise TypeError(f"{self.name()} only support np array prior matrix")
 
     def _repeat_variables_for_fold_time(self, variables: Variables) -> Variables:
         """
@@ -263,17 +273,6 @@ class FoldTimeDECI(DECI):
 
         # Set soft prior matrix for fold-time DECI
         assert isinstance(dataset, TemporalDataset)
-        if isinstance(dataset.prior_adjacency_data, np.ndarray):
-            prior_A, prior_mask = dataset.prior_adjacency_data, dataset.prior_adjacency_mask
-            prior_lag = prior_A.shape[0] - 1
-            assert prior_lag == self.lag, "Prior lag is not consistent with model lag."
-            prior_A = convert_temporal_to_static_adjacency_matrix(prior_A, conversion_type="full_time").astype(
-                np.float_
-            )
-            prior_mask = convert_temporal_to_static_adjacency_matrix(
-                prior_mask, conversion_type="full_time", fill_value=1
-            )
-            self.set_prior_A(prior_A, prior_mask)
         if train_config_dict is None:
             train_config_dict = {}
         # Run training

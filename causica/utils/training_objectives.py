@@ -163,7 +163,7 @@ def kl_divergence(
     normal2 = tdist.Normal(mean2, sigma2)
 
     kld = tdist.kl_divergence(normal1, normal2)
-    kld = kld.sum(axis=1)
+    kld = kld.sum(dim=1)
     return kld
 
 

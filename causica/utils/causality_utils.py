@@ -893,7 +893,7 @@ def pag_to_admg_possibilities(adjacency_pag: np.ndarray, idx1: int, idx2: int):
         return [((0, 0), 1)]
 
     # Check idx1 -> idx2.
-    elif adjacency_pag[idx1, idx2] == 1 and adjacency_pag[idx2, idx1] == 0:
+    elif adjacency_pag[idx1, idx2] == 1:
         return [((1, 0), 0)]
 
     # Check idx1 <- idx2.
@@ -901,11 +901,8 @@ def pag_to_admg_possibilities(adjacency_pag: np.ndarray, idx1: int, idx2: int):
         return [((0, 1), 0)]
 
     # Check no causal link.
-    elif adjacency_pag[idx1, idx2] == 0 and adjacency_pag[idx2, idx1] == 0:
-        return [((0, 0), 0)]
-
     else:
-        raise ValueError("Invalid value in the PAG")
+        return [((0, 0), 0)]
 
 
 def build_admg_from_edge_info(
@@ -969,6 +966,11 @@ def pag2admgs(adjacency_pag: np.ndarray, samples: Optional[int] = None) -> Tuple
         if dag_pen_np(new_directed_adj.copy()) == 0.0:
             directed_adj_list.append(new_directed_adj)
             bidirected_adj_list.append(new_bidirected_adj)
+
+    if not directed_adj_list:
+        directed_adj_list = [np.zeros_like(adjacency_pag)]
+    if not bidirected_adj_list:
+        bidirected_adj_list = [np.zeros_like(adjacency_pag)]
 
     return np.stack(directed_adj_list, axis=0), np.stack(bidirected_adj_list, axis=0)
 

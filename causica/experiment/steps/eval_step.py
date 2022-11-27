@@ -23,6 +23,7 @@ from ...datasets.dataset import (
     SparseDataset,
     TemporalDataset,
 )
+from ...models.deci.ddeci import DDECI
 from ...models.deci.deci import DECI
 from ...models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForImputation
 from ...utils.causality_utils import (
@@ -302,6 +303,8 @@ def eval_latent_confounded_causal_discovery(
         directed_adj, bidirected_adj = cast(Any, model).get_admg_matrices()
         directed_adj = directed_adj.astype(float).round()
         bidirected_adj = bidirected_adj.astype(float).round()
+    elif isinstance(model, DDECI):
+        return
     else:
         assert hasattr(model, "get_adj_matrix")
         directed_adj = model.get_adj_matrix().astype(float).round()

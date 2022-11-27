@@ -1,6 +1,9 @@
+import logging
 import os
-from typing import Any, Dict, Type, Union
+from typing import Any, Dict, Optional, Type, Union
 from uuid import uuid4
+
+import numpy as np
 
 from .baselines.do_why import DoWhy
 from .baselines.dynotears import Dynotears
@@ -15,6 +18,7 @@ from .baselines.notears import NotearsLinear, NotearsMLP, NotearsSob
 from .baselines.pc import PC
 from .baselines.pcmci_plus import PCMCI_Plus
 from .baselines.varlingam import VARLiNGAM
+from .datasets.csv_dataset_loader import CSVDatasetLoader
 from .datasets.variables import Variables
 from .models.deci.deci import DECI
 from .models.deci.deci_gaussian import DECIGaussian
@@ -25,6 +29,8 @@ from .models.point_net import PointNet, SparsePointNet
 from .models.set_encoder_base_model import SetEncoderBaseModel
 from .models.transformer_set_encoder import TransformerSetEncoder
 from .models.visl import VISL
+
+logger = logging.getLogger(__name__)
 
 MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
     model.name(): model  # type: ignore
@@ -58,6 +64,78 @@ MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
 
 class ModelClassNotFound(NotImplementedError):
     pass
+
+
+def set_model_prior(model: IModel, prior_path: Optional[str]) -> IModel:
+    """
+    Set the prior for the model.
+    Args:
+        model: the model
+        prior_path: the full path to the prior adj matrix file
+
+    Returns:
+        model: the model with the prior
+    """
+    # set the prior
+    if prior_path is None:
+        logger.info("No prior adj matrix is specified.")
+        return model
+    elif not os.path.exists(prior_path):
+        raise FileNotFoundError("No prior adj matrix found.")
+
+    # Load prior
+    if not isinstance(model, DECI):
+        raise TypeError("Try to set the prior for a model that is not inherited from DECI class.")
+    _, suffix = os.path.splitext(prior_path)
+    if suffix == ".npy":
+        prior_adj_matrix = np.load(prior_path)
+        prior_mask = ~np.isnan(prior_adj_matrix)
+    elif suffix == ".csv":
+        prior_adj_matrix, prior_mask = CSVDatasetLoader.read_csv_from_file(prior_path)
+    else:
+        raise TypeError(f"Prior matrix only supports .npy or .csv file but {suffix} is given")
+
+    # Set prior
+    logger.info("Prior matrix found. Setting the prior for the model.")
+    model.set_prior_A(prior_adj_matrix, prior_mask)
+
+    return model
+
+
+def set_model_constraint(model: IModel, constraint_path: Optional[str]) -> IModel:
+    """
+    Set the hard constraint matrix for the model.
+    Args:
+        model: the model
+        constraint_path: the full path to the constraint adj matrix file
+        logger: for logging purpose
+
+    Returns:
+        model: the model with the constraint
+    """
+    # set the constraint
+    if constraint_path is None:
+        logger.info("No constraint adj matrix is specified.")
+        return model
+    elif not os.path.exists(constraint_path):
+        raise FileNotFoundError("No constraint adj matrix found.")
+
+    if not isinstance(model, DECI):
+        raise TypeError("Try to set the constraint for a model that is not inherited from DECI class.")
+
+    # Load constraint
+    _, suffix = os.path.splitext(constraint_path)
+    if suffix == ".npy":
+        # We only support npy for constraints since it is easier to handle nans
+        constraint_adj_matrix = np.load(constraint_path)
+    else:
+        raise TypeError(f"Constraint matrix only support npy file but {suffix} is given")
+
+    # Set constraint
+    logger.info("Constraint matrix found. Setting the constraint for the model.")
+    model.set_graph_constraint(constraint_adj_matrix)
+
+    return model
 
 
 def create_model(

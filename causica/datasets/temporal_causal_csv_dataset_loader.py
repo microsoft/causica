@@ -25,7 +25,6 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
 
     _adjacency_data_file = "adj_matrix.npy"
     _transition_matrix_file = "transition_matrix.npy"
-    _adjacency_prior = "prior_adj_matrix.npy"
 
     def split_data_and_load_dataset(  # type:ignore
         self,
@@ -96,7 +95,6 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         intervention_data = self._load_data_from_intervention_files(max_num_rows)
         counterfactual_data = self._load_data_from_intervention_files(max_num_rows, True)
         transition_matrix = self._get_transition_matrix()
-        prior_adjacency_data, prior_adjacency_mask = self._get_prior_adjacency_data()
 
         temporal_dataset = TemporalDataset(
             train_data=train_data,
@@ -114,8 +112,6 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
             train_segmentation=None,
             test_segmentation=None,
             val_segmentation=None,
-            prior_adjacency_data=prior_adjacency_data,
-            prior_adjacency_mask=prior_adjacency_mask,
         )
 
         temporal_dataset = self.process_dataset(temporal_dataset, timeseries_column_index)
@@ -239,14 +235,11 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
         intervention_data = self._load_data_from_intervention_files(max_num_rows)
         counterfactual_data = self._load_data_from_intervention_files(max_num_rows, True)
         transition_matrix = self._get_transition_matrix()
-        prior_adjacency_data, prior_adjacency_mask = self._get_prior_adjacency_data()
         temporal_dataset = dataset.to_temporal(
             adjacency_data,
             intervention_data,
             transition_matrix,
             counterfactual_data,
-            prior_adjacency_data=prior_adjacency_data,
-            prior_adjacency_mask=prior_adjacency_mask,
         )
         temporal_dataset = self.process_dataset(temporal_dataset, column_index)
         return temporal_dataset
@@ -402,24 +395,6 @@ class TemporalCausalCSVDatasetLoader(CausalCSVDatasetLoader):
             adjacency_data = np.load(adjacency_data_path)
 
         return adjacency_data
-
-    def _get_prior_adjacency_data(self):
-        """
-        Return the stored adjacency prior with its corresponding mask.
-        """
-
-        prior_adjacency_data_path = os.path.join(self.dataset_dir, self._adjacency_prior)
-
-        if os.path.exists(prior_adjacency_data_path):
-            logger.info("DAG prior adjacency matrix found.")
-            prior_adjacency_data = np.load(prior_adjacency_data_path)
-            prior_adjacency_data, prior_adjacency_mask = self.process_data(prior_adjacency_data)
-        else:
-            logger.info("DAG prior adjacency matrix not found.")
-            prior_adjacency_data = None
-            prior_adjacency_mask = None
-
-        return prior_adjacency_data, prior_adjacency_mask
 
     def _get_transition_matrix(self):
 

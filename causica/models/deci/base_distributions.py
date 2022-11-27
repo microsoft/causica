@@ -14,7 +14,7 @@ from .generation_functions import TemporalHyperNet
 
 # TODO: Add tests for base distributions, and ensure we are not duplicating any pytorch.distributions functionality unnecessarily
 class GaussianBase(nn.Module):
-    def __init__(self, input_dim: int, device: torch.device, train_base: bool = True):
+    def __init__(self, input_dim: int, device: torch.device, train_base: bool = True, log_scale_init: float = 0.0):
         """
         Gaussian base distribution with 0 mean and optionally learnt variance. The distribution is factorised to ensure SEM invertibility.
             The mean is fixed. This class provides an interface analogous to torch.distributions, exposing .sample and .log_prob methods.
@@ -23,10 +23,12 @@ class GaussianBase(nn.Module):
             input_dim: dimensionality of observations
             device: torch.device on which object should be stored
             train_base: whether to fix the variance to 1 or learn it with gradients
+            log_scale_init: initial value for Gaussian log scale values
         """
         super().__init__()
         self.input_dim = input_dim
         self.device = device
+        self.log_scale_init = log_scale_init
         self.mean_base, self.logscale_base = self._initialize_params_base_dist(train=train_base)
 
     def _initialize_params_base_dist(self, train: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -38,7 +40,9 @@ class GaussianBase(nn.Module):
         """
 
         mean = nn.Parameter(torch.zeros(self.input_dim, device=self.device), requires_grad=False)
-        logscale = nn.Parameter(torch.zeros(self.input_dim, device=self.device), requires_grad=train)
+        logscale = nn.Parameter(
+            self.log_scale_init * torch.ones(self.input_dim, device=self.device), requires_grad=train
+        )
         return mean, logscale
 
     def log_prob(self, z: torch.Tensor):
@@ -68,7 +72,7 @@ class GaussianBase(nn.Module):
         return dist.sample((Nsamples,))
 
 
-class DiagonalFLowBase(nn.Module):
+class DiagonalFlowBase(nn.Module):
     def __init__(self, input_dim: int, device: torch.device, num_bins: int = 8, flow_steps: int = 1) -> None:
         """
         Learnable base distribution based on a composite affine-spline transformation of a standard Gaussian. The distribution is factorised to ensure SEM invertibility.

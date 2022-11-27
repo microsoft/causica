@@ -53,7 +53,7 @@ def generate_dataset(
     Args:
         base_model: numpyro model
         draw_samples_train: how many samples to draw from the observational distribution
-        draw_samples_test: how many samples to draw for each interventional distribution
+        draw_samples_per_test: how many samples to draw for each interventional distribution
         thinning: HMC chain subsampling factor
         num_warmup: chain warmup steps
         intervention_dicts: list of dictionaries specifying names of variables to be intervened and their values
@@ -82,6 +82,11 @@ def generate_dataset(
     samples_base.pop("plate")
     samples_test = {k: v["value"][draw_samples_train:, ...] for k, v in base_model_trace.items()}
     samples_test.pop("plate")
+    val_seed, _ = random.split(obs_seed, 2)
+    seeded_val_model = seed(expand_model(base_model, draw_samples_per_test, "plate"), val_seed)
+    val_model_trace = trace(seeded_val_model).get_trace()
+    samples_val = {k: v["value"] for k, v in val_model_trace.items()}
+    samples_val.pop("plate")
 
     # Run intervention model
     print("Interventional")
@@ -153,7 +158,14 @@ def generate_dataset(
     else:
         cond_intervention_samples = [None, None]
 
-    return samples_base, samples_test, intervention_samples, cond_intervention_samples, counterfactual_samples
+    return (
+        samples_base,
+        samples_test,
+        samples_val,
+        intervention_samples,
+        cond_intervention_samples,
+        counterfactual_samples,
+    )
 
 
 def _enumerate_sample_components(samples: Dict[str, np.ndarray], labels: List[str]) -> Dict[str, np.ndarray]:

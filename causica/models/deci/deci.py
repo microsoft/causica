@@ -40,7 +40,7 @@ from ...utils.linprog import col_row_constrained_lin_prog
 from ...utils.nri_utils import edge_prediction_metrics_multisample
 from ...utils.torch_utils import generate_fully_connected
 from ...utils.training_objectives import get_input_and_scoring_masks
-from .base_distributions import BinaryLikelihood, CategoricalLikelihood, DiagonalFLowBase, GaussianBase
+from .base_distributions import BinaryLikelihood, CategoricalLikelihood, DiagonalFlowBase, GaussianBase
 from .generation_functions import ContractiveInvertibleGNN
 from .variational_distributions import (
     AdjMatrix,
@@ -99,6 +99,7 @@ class DECI(
         graph_constraint_matrix: Optional[np.ndarray] = None,
         dense_init: bool = False,
         embedding_size: Optional[int] = None,
+        log_scale_init: float = 0,
     ):
         """
         Args:
@@ -138,6 +139,7 @@ class DECI(
                             By default, only self-edges are constrained to not exist.
             dense_init: Whether we initialize the initial variational distribution to give dense adjacency matrix.
                         Default is False.
+            log_scale_init: initial log scale of Gaussian likelihood
         """
         super().__init__(model_id, variables, save_dir, device)
         self.base_distribution_type = base_distribution_type
@@ -147,6 +149,7 @@ class DECI(
         self.lambda_dag = lambda_dag
         self.lambda_sparse = lambda_sparse
         self.lambda_prior = lambda_prior
+        self.log_scale_init = log_scale_init
 
         self.cate_rff_n_features = cate_rff_n_features
         self.cate_rff_lengthscale = cate_rff_lengthscale
@@ -197,6 +200,8 @@ class DECI(
         # Adding a buffer to hold the log likelihood. This will be saved with the state dict.
         self.register_buffer("log_p_x", torch.tensor(-np.inf))
         self.log_p_x: torch.Tensor  # This is simply a scalar.
+        self.register_buffer("spline_mean_ewma", torch.tensor(0.0))
+        self.spline_mean_ewma: torch.Tensor
 
     def get_extra_state(self) -> Dict[str, Any]:
         """Return extra state for the model, including the data processor."""
@@ -375,11 +380,21 @@ class DECI(
         if continuous_range:
             dist: nn.Module
             if base_distribution_string == "fixed_gaussian":
-                dist = GaussianBase(len(continuous_range), device=self.device, train_base=False)
-            if base_distribution_string == "gaussian":
-                dist = GaussianBase(len(continuous_range), device=self.device, train_base=True)
+                dist = GaussianBase(
+                    len(continuous_range),
+                    device=self.device,
+                    train_base=False,
+                    log_scale_init=self.log_scale_init,
+                )
+            elif base_distribution_string == "gaussian":
+                dist = GaussianBase(
+                    len(continuous_range),
+                    device=self.device,
+                    train_base=True,
+                    log_scale_init=self.log_scale_init,
+                )
             elif base_distribution_string == "spline":
-                dist = DiagonalFLowBase(
+                dist = DiagonalFlowBase(
                     len(continuous_range),
                     device=self.device,
                     num_bins=self.spline_bins,
@@ -521,7 +536,11 @@ class DECI(
         return torch.mean(torch.Tensor(tracker_dag_penalty)).item()
 
     def _log_prob(
-        self, x: torch.Tensor, predict: torch.Tensor, intervention_mask: Optional[torch.Tensor] = None, **_
+        self,
+        x: torch.Tensor,
+        predict: torch.Tensor,
+        intervention_mask: Optional[torch.Tensor] = None,
+        **_,
     ) -> torch.Tensor:
         """
         Computes the log probability of the observed data given the predictions from the SEM.
@@ -574,7 +593,7 @@ class DECI(
 
     def _icgnn_cts_mse(self, x: torch.Tensor, predict: torch.Tensor) -> torch.Tensor:
         """
-        Computes the mean-squared error (MSE) of the ICGNN on the continuous variables of the model.
+        Computes the squared error (SE) of the ICGNN on the continuous variables of the model.
 
         Args:
             x: Array of size (processed_dim_all) or (batch_size, processed_dim_all), works both ways (i.e. single sample
@@ -582,12 +601,16 @@ class DECI(
             predict: tensor of the same shape as x.
 
         Returns:
-            MSE of ICGNN predictions on continuous variables. A number if x has shape (input_dim), or an array of
+            SE of ICGNN predictions on continuous variables. A number if x has shape (input_dim), or an array of
             shape (batch_size) is X has shape (batch_size, input_dim).
         """
         typed_regions = self.variables.processed_cols_by_type
         continuous_range = [i for region in typed_regions["continuous"] for i in region]
-        return (x[..., continuous_range] - predict[..., continuous_range]).pow(2).sum(-1)
+        if isinstance(self.likelihoods["continuous"], GaussianBase):
+            return (x[..., continuous_range] - predict[..., continuous_range]).pow(2).sum(-1)
+        else:
+            # Updates to `self.spline_mean_ewma` are made inside `optimize_inner_auglag`
+            return (x[..., continuous_range] - predict[..., continuous_range] - self.spline_mean_ewma).pow(2).sum(-1)
 
     def _sample_base(self, Nsamples: int) -> torch.Tensor:
         """
@@ -1177,7 +1200,9 @@ class DECI(
         log_p_A = self._log_prior_A(A_sample)  # A number
         penalty_dag = self.dagness_factor(A_sample)  # A number
         log_p_base = self._log_prob(
-            X, predict, W=A_sample if self.base_distribution_type == "conditional_spline" else None
+            X,
+            predict,
+            W=A_sample if self.base_distribution_type == "conditional_spline" else None,
         )  # (B)
         log_q_A = -self.var_dist_A.entropy()  # A number
         cts_mse = self._icgnn_cts_mse(X, predict)  # (B)
@@ -1201,6 +1226,8 @@ class DECI(
         train_config_dict: Dict[str, Any],
         alpha: float = None,
         rho: float = None,
+        adj_true: Optional[np.ndarray] = None,
+        compute_cd_fscore: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict]:
         """Computes the loss and updates trackers of different terms.
@@ -1215,6 +1242,9 @@ class DECI(
             train_config_dict: Contains training configuration.
             alpha: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
             rho: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
+            adj_true: ground truth adj matrix for tracking causal discovery performance in inner loops
+            compute_cd_fscore: whether to compute `cd_fscore` metric at each step. Warning: this may have negative
+                side-effects on speeed and GPU utilization.
 
         Returns:
             Tuple containing the loss and the tracker.
@@ -1244,6 +1274,7 @@ class DECI(
         log_p_A_term = elbo_terms["log_p_A"] / num_samples
         log_q_A_term = elbo_terms["log_q_A"] / num_samples
         cts_mse = elbo_terms["cts_mse"].mean(dim=0)
+        cts_medse, _ = torch.median(elbo_terms["cts_mse"], dim=0)
 
         penalty_dag_term = elbo_terms["penalty_dag"] * alpha / num_samples
         penalty_dag_term += elbo_terms["penalty_dag"] * elbo_terms["penalty_dag"] * rho / (2 * num_samples)
@@ -1254,6 +1285,11 @@ class DECI(
             ELBO = log_p_term + imputation_entropy + log_p_A_term - log_q_A_term - penalty_dag_term
         loss = -ELBO + avg_reconstruction_err * train_config_dict["reconstruction_loss_factor"]
 
+        if adj_true is not None and compute_cd_fscore:
+            adj_pred = self.get_adj_matrix().astype(float).round()
+            results = edge_prediction_metrics_multisample(adj_true, adj_pred, adj_matrix_mask=None)
+            tracker["cd_fscore"].append(results["adjacency_fscore"])
+
         tracker["loss"].append(loss.item())
         tracker["penalty_dag"].append(elbo_terms["penalty_dag"].item())
         tracker["penalty_dag_weighed"].append(penalty_dag_term.item())
@@ -1263,6 +1299,7 @@ class DECI(
         tracker["log_q_A"].append(log_q_A_term.item())
         tracker["reconstruction_mse"].append(avg_reconstruction_err.item())
         tracker["cts_mse_icgnn"].append(cts_mse.item())
+        tracker["cts_medse_icgnn"].append(cts_medse.item())
         return loss, tracker
 
     def print_tracker(self, inner_step: int, tracker: dict) -> None:
@@ -1430,16 +1467,66 @@ class DECI(
             # Anneal beta.
             if anneal_beta == "linear":
                 beta = base_beta * min((step + 1) / anneal_beta_max_steps, 1.0)
+            if anneal_beta == "reverse":
+                beta = base_beta * max((anneal_beta_max_steps - step) / anneal_beta_max_steps, 0.2)
             else:
                 beta = base_beta
+
+            # Logging outer progress and adjacency matrix
+            adj_true = None
+            bidirected_adj_true = None
+            if (
+                isinstance(dataset, CausalDataset)
+                and dataset.has_adjacency_data_matrix
+                and not hasattr(self, "latent_variables")
+            ):
+                adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
+                adj_true = dataset.get_adjacency_data_matrix()
+                if isinstance(dataset, TemporalDataset):
+                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
+
+                else:
+                    subgraph_mask = dataset.get_known_subgraph_mask_matrix()
+                    adj_metrics = edge_prediction_metrics_multisample(
+                        adj_true,
+                        adj_matrix,
+                        adj_matrix_mask=subgraph_mask,
+                        compute_mean=False,
+                    )
+            elif (
+                isinstance(dataset, LatentConfoundedCausalDataset)
+                and dataset.has_directed_adjacency_data_matrix
+                and dataset.has_bidirected_adjacency_data_matrix
+            ):
+                try:
+                    adj_true = dataset.get_directed_adjacency_data_matrix()
+                    bidirected_adj_true = dataset.get_bidirected_adjacency_data_matrix()
+
+                    directed_adj_pred, bidirected_adj_pred = cast(Any, self).get_admg_matrices(
+                        do_round=True, samples=100
+                    )
+                    directed_adj_metrics = edge_prediction_metrics_multisample(adj_true, directed_adj_pred)
+                    bidirected_adj_metrics = edge_prediction_metrics_multisample(
+                        bidirected_adj_true, bidirected_adj_pred
+                    )
+                    adj_metrics = {
+                        **{f"directed_{k}": v for k, v in directed_adj_metrics.items()},
+                        **{f"bidirected_{k}": v for k, v in bidirected_adj_metrics.items()},
+                    }
+                except AttributeError:
+                    adj_metrics = {}
+            else:
+                adj_metrics = {}
 
             # Inner loop
             print(f"Auglag Step: {step}")
 
+            print(f"Beta Value: {beta}")
+
             # Optimize adjacency for fixed rho and alpha
             outer_step_start_time = time.time()
             done_inner, tracker_loss_terms = self.optimize_inner_auglag(
-                rho, alpha, beta, step, num_samples, dataloader, train_config_dict
+                rho, alpha, beta, step, num_samples, dataloader, train_config_dict, adj_true, bidirected_adj_true
             )
             outer_step_time = time.time() - outer_step_start_time
             dag_penalty = np.mean(tracker_loss_terms["penalty_dag"])
@@ -1455,6 +1542,7 @@ class DECI(
                 print(directed_adjacency)
                 print("Unrounded bidirected matrix:")
                 print(bidirected_adjacency)
+
             except AttributeError:
                 matrix = self.get_adj_matrix(do_round=True, most_likely_graph=True, samples=1)
                 prob_matrix = self.get_adj_matrix(do_round=False, most_likely_graph=True, samples=1)
@@ -1489,55 +1577,11 @@ class DECI(
                 num_not_done += 1
                 print("Not done inner optimization.")
 
-            # Logging outer progress and adjacency matrix
-            if (
-                isinstance(dataset, CausalDataset)
-                and dataset.has_adjacency_data_matrix
-                and not hasattr(self, "latent_variables")
-            ):
-                adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
-                adj_true = dataset.get_adjacency_data_matrix()
-                if isinstance(dataset, TemporalDataset):
-                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
-
-                else:
-                    subgraph_mask = dataset.get_known_subgraph_mask_matrix()
-                    adj_metrics = edge_prediction_metrics_multisample(
-                        adj_true,
-                        adj_matrix,
-                        adj_matrix_mask=subgraph_mask,
-                        compute_mean=False,
-                    )
-            elif (
-                isinstance(dataset, LatentConfoundedCausalDataset)
-                and dataset.has_directed_adjacency_data_matrix
-                and dataset.has_bidirected_adjacency_data_matrix
-            ):
-                try:
-                    directed_adj_true = dataset.get_directed_adjacency_data_matrix()
-                    bidirected_adj_true = dataset.get_bidirected_adjacency_data_matrix()
-
-                    directed_adj_pred, bidirected_adj_pred = cast(Any, self).get_admg_matrices(
-                        do_round=True, samples=100
-                    )
-                    directed_adj_metrics = edge_prediction_metrics_multisample(directed_adj_true, directed_adj_pred)
-                    bidirected_adj_metrics = edge_prediction_metrics_multisample(
-                        bidirected_adj_true, bidirected_adj_pred
-                    )
-                    adj_metrics = {
-                        **{f"directed_{k}": v for k, v in directed_adj_metrics.items()},
-                        **{f"bidirected_{k}": v for k, v in bidirected_adj_metrics.items()},
-                    }
-                except AttributeError:
-                    adj_metrics = None
-            else:
-                adj_metrics = None
-
             # Calculating the log prob as the average over the terms in the tracker
             # and saving if it's better than the previous best.
             avg_tracker_log_px = np.mean(tracker_loss_terms["log_p_x"])
             self.log_p_x.fill_(avg_tracker_log_px)
-            if done_inner and avg_tracker_log_px > best_log_p_x:
+            if avg_tracker_log_px > best_log_p_x:
                 print(f"Saved new best checkpoint with {self.log_p_x} instead of {best_log_p_x}")
                 self.save(best=True)
                 best_log_p_x = avg_tracker_log_px
@@ -1561,11 +1605,31 @@ class DECI(
         num_samples: int,
         dataloader,
         train_config_dict: Optional[Dict[str, Any]] = None,
+        adj_true: Optional[np.ndarray] = None,
+        bidirected_adj_true: Optional[np.ndarray] = None,
+        n_spline_sample: int = 32,
+        spline_ewma_alpha: float = 0.05,
     ) -> Tuple[bool, Dict]:
         """
-        Optimizes for a given alpha and rho.
-        """
+        Optimize for a given alpha and rho
+        Args:
+            rho: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
+            alpha: Parameter used to scale the penalty_dag term in the prior. Defaults to None.
+            beta: KL term annealing coefficient
+            step: Auglag step
+            num_samples: Number of samples in the dataset
+            dataloader: Dataset to generate a dataloader for.
+            train_config_dict: Dictionary with training hyperparameters.
+            adj_true: ground truth adj matrix
+            bidirected_adj_true: ground truth bidirected adj matrix
+            n_spline_samples: to estimate the non-zero mean of the spline noise distributions by sampling. These are
+                aggregated using an exponentially weighted moving average.
+            alpha: exponentially weighted moving average parameter for spline means.
 
+        Returns:
+            done_opt: boolean indicating if optimization is done.
+            tracker_loss_terms: Dictionary for tracking loss terms
+        """
         if train_config_dict is None:
             train_config_dict = {}
 
@@ -1615,11 +1679,21 @@ class DECI(
                     train_config_dict,
                     alpha,
                     rho,
+                    adj_true,
+                    bidirected_adj_true=bidirected_adj_true,
                     beta=beta,
+                    compute_cd_fscore=train_config_dict.get("compute_cd_fscore", False),
                 )
                 self.opt.zero_grad()
                 loss.backward()
                 self.opt.step()
+
+                # For MSE metric, update an estimate of the spline means
+                if not isinstance(self.likelihoods["continuous"], GaussianBase):
+                    error_dist_mean = self.likelihoods["continuous"].sample(n_spline_sample).mean(0)
+                    self.spline_mean_ewma = (
+                        spline_ewma_alpha * error_dist_mean + (1 - spline_ewma_alpha) * self.spline_mean_ewma
+                    )
 
                 inner_step += 1
 
@@ -1647,12 +1721,12 @@ class DECI(
                     done_opt = True
                 if num_updates_lr_down >= lim_updates_down:
                     done_opt = True
-                    print(f"Exiting at innner step {inner_step}.")
+                    print(f"Exiting at inner step {inner_step}.")
                     # done_steps = True
                     break
             if inner_step >= best_inner_step + auglag_inner_early_stopping_lag:
                 done_opt = True
-                print(f"Exiting at innner step {inner_step}.")
+                print(f"Exiting at inner step {inner_step}.")
                 # done_steps = True
                 break
             if np.any(np.isnan(tracker_loss_terms["loss"])):
@@ -1660,7 +1734,7 @@ class DECI(
                 print("Loss is nan, I'm done.", flush=True)
                 # done_steps = True
                 break
-
+        self.print_tracker(inner_step, tracker_loss_terms)
         print(f"Best model found at innner step {best_inner_step}, with Loss {best_loss:.2f}")
         return done_opt, tracker_loss_terms
 

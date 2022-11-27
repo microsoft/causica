@@ -77,6 +77,10 @@ def get_parser() -> argparse.ArgumentParser:
         dirname_dest="data_dir",
         basename_dest="dataset_name",
     )
+    # Set the prior path
+    parser.add_argument("--prior_path", type=str, help="The full path to the prior adj matrix")
+    # Set the constraint path
+    parser.add_argument("--constraint_path", type=str, help="The full path to the constraint adj matrix")
 
     parser.add_argument(
         "--data_dir",
@@ -110,18 +114,6 @@ def get_parser() -> argparse.ArgumentParser:
             "informed_deci",
             "varlingam",
             "fold_time_deci",
-            "auto_regressive_deci",
-            "ddeci",
-            "admg_ddeci",
-            "bowfree_ddeci",
-            "admg_ddeci_gaussian",
-            "bowfree_ddeci_gaussian",
-            "admg_ddeci_spline",
-            "bowfree_ddeci_spline",
-            "fci_admg_ddeci",
-            "true_graph_admg_ddeci",
-            "fci_informed_admg_ddeci",
-            "true_graph_informed_admg_ddeci",
             "dynotears",
             "pcmci_plus",
         ],
@@ -203,18 +195,6 @@ def get_parser() -> argparse.ArgumentParser:
             informed_deci: Causal discovery using the true graph as a soft prior for DECI. Causal inference using DECI,
             varlingam: VARLiNGaM model for causal time series discovery.
             fold_time_deci: The Fold-time DECI model for causal time series discovery.
-            auto_regressive_deci: The Auto-regressive DECI model for end-to-end causal inference of time series.
-            ddeci: The D-DECI model for causal discovery whilst allowing for the presence of latent confounders.
-            admg_ddeci: The ADMG D-DECI model which uses an ADMG parameterisation for the adjacency matrix.
-            bowfree_ddeci: ADMG D-DECI with an additional bow-free constraint on observed variables.
-            admg_ddeci_gaussian: ADMG D-DECI using a Gaussian base distribution.
-            bowfree_ddeci: Bow-free D-DECI using a Gaussian base distribution.
-            admg_ddeci_spline: ADMG D-DECI using a spline base distribution.
-            bowfree_ddeci_spline: Bow-free D-DECI using a spline base distribution.
-            fci_admg_ddeci: Causal discovery using FCI. Causal inference using D-DECI.
-            true_graph_admg_ddeci: Causal inference using D-DECI when the causal graph is set to ground truth.
-            fci_informed_admg_ddeci: Causal discovery using FCI as a soft prior for ADMG D-DECI. Causal inference using ADMG D-DECI.
-            true_graph_informed_admg_ddeci: Causal inference using ADMG D-DECI when the ground truth is used as a soft prior.
             dynotears: the Dynotears baseline for cusal timeseries discovery.
             pcmci_plus: the PCMCI+ baseline for causal timeseries discovery. It supports both inst and lagged effects.
             """

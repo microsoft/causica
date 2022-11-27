@@ -88,6 +88,8 @@ class ExperimentArguments:
     run_context: RunContext
     eval_likelihood: bool = True
     conversion_type: str = "full_time"
+    prior_path: Optional[str] = None
+    constraint_path: Optional[str] = None
 
 
 def run_single_seed_experiment(args: ExperimentArguments):
@@ -146,6 +148,8 @@ def run_single_seed_experiment(args: ExperimentArguments):
             device=args.device,
             model_config=args.model_config,
             train_hypers=args.train_hypers,
+            prior_path=args.prior_path,
+            constraint_path=args.constraint_path,
         )
         running_times["train/running-time"] = (time.time() - start_time) / 60
     save_json(args.dataset_config, os.path.join(model.save_dir, "dataset_config.json"))
