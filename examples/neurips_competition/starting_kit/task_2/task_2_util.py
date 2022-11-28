@@ -19,19 +19,8 @@ def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Competition Task 2 CATE estimation", formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument(
-        "--model_dir",
-        "-md",
-        type=str,
-        help="path to the saved model directory",
-        default="runs/"
-    )
-    parser.add_argument(
-        "--model_id",
-        "-mi",
-        type=str,
-        help="The id of the saved model"
-    )
+    parser.add_argument("--model_dir", "-md", type=str, help="path to the saved model directory", default="runs/")
+    parser.add_argument("--model_id", "-mi", type=str, help="The id of the saved model")
     parser.add_argument(
         "--data_dir",
         "-dd",
@@ -45,18 +34,15 @@ def get_parser() -> argparse.ArgumentParser:
         help="the json file name for the intervention/reference/effect pairs",
     )
     parser.add_argument(
-        "--output_dir",
-        "-o",
-        type=str,
-        help="path to store the CATE estimation npy file",
-        default="outputs/"
+        "--output_dir", "-o", type=str, help="path to store the CATE estimation npy file", default="outputs/"
     )
     parser.add_argument(
         "--device", "-dv", default="cpu", help="Name (e.g. 'cpu', 'gpu') or ID (e.g. 0 or 1) of device to use."
     )
     return parser
 
-def load_FT_DECI_model(model_path: str, model_id:str, device: Union[str, int]) -> FoldTimeDECI:
+
+def load_FT_DECI_model(model_path: str, model_id: str, device: Union[str, int]) -> FoldTimeDECI:
     """
     This will load the trained FT_DECI model specified by the path.
     Args:
@@ -66,11 +52,12 @@ def load_FT_DECI_model(model_path: str, model_id:str, device: Union[str, int]) -
         Fold-time DECI model
     """
     model_path_id = os.path.join(model_path, model_id)
-    model = load_model(model_id = model_id, models_dir=model_path_id, device=device)
+    model = load_model(model_id=model_id, models_dir=model_path_id, device=device)
     assert isinstance(model, FoldTimeDECI), "The loaded model is not an instance of FoldTimeDECI model."
     return model
 
-def load_interventions(path:str, file_name:str) -> List[dict]:
+
+def load_interventions(path: str, file_name: str) -> List[dict]:
     """
     This will load the intervention files specified by path/file_name. Since each intervention json contains a list of dictionaries.
     For competition, the length of the list is 10, meaning 10 CATE queries.
@@ -86,10 +73,9 @@ def load_interventions(path:str, file_name:str) -> List[dict]:
 
     intervention_file = os.path.join(path, file_name)
     raw_intervention_list = read_json_as(intervention_file, list)
-    intervention_list = [
-                convert_dict_of_lists_to_ndarray(d) for d in raw_intervention_list
-            ]
+    intervention_list = [convert_dict_of_lists_to_ndarray(d) for d in raw_intervention_list]
     return intervention_list
+
 
 def validate_model(model: FoldTimeDECI, intervention_list: List[dict]):
     """
@@ -106,11 +92,18 @@ def validate_model(model: FoldTimeDECI, intervention_list: List[dict]):
     assert model_dim == conditioning_dim, "The model dim is not compatible with the conditioning data dimensions."
 
     # assert if the lag is loaded correctly
-    assert model_dim % (model.lag+1) == 0, f"The number of variables ({model_dim}) of the model should be divisible by the lag + 1 ({model.lag+1})."
+    assert (
+        model_dim % (model.lag + 1) == 0
+    ), f"The number of variables ({model_dim}) of the model should be divisible by the lag + 1 ({model.lag+1})."
 
-def convert_to_FT_DECI_intervention(model_lag: int, conditioning_samples: torch.Tensor,
-                                    update_intervention_idx: Optional[int]=None, update_intervention_value: Optional[torch.Tensor] = None,
-                                    update_intervention_time: Optional[int]=None) -> Tuple[torch.Tensor, torch.Tensor]:
+
+def convert_to_FT_DECI_intervention(
+    model_lag: int,
+    conditioning_samples: torch.Tensor,
+    update_intervention_idx: Optional[int] = None,
+    update_intervention_value: Optional[torch.Tensor] = None,
+    update_intervention_time: Optional[int] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     This will convert the conditioning samples to the intervention idx and values for the FT-DECI model. This is used for CATE computation.
     The additional update_intervention_idx and update_intervention_value are used to specify the extra intervention variables at update_intervention_time,
@@ -134,18 +127,28 @@ def convert_to_FT_DECI_intervention(model_lag: int, conditioning_samples: torch.
     intervention_value = torch.flatten(conditioning_samples)
     intervention_idx = torch.arange(intervention_value.shape[0])
 
-    if update_intervention_idx is not None and update_intervention_value is not None and update_intervention_time is not None:
+    if (
+        update_intervention_idx is not None
+        and update_intervention_value is not None
+        and update_intervention_time is not None
+    ):
         if update_intervention_value.dim() == 0:
             update_intervention_value = update_intervention_value[None, ...]
         update_intervention_value = update_intervention_value.type(intervention_value.dtype)
         # update the intervention with the input intervention_idx and intervention_value
-        tot_variables = (model_lag+1) * num_variables
-        update_idx = tot_variables-(abs(update_intervention_time)+1)*num_variables + update_intervention_idx
+        tot_variables = (model_lag + 1) * num_variables
+        update_idx = tot_variables - (abs(update_intervention_time) + 1) * num_variables + update_intervention_idx
 
         if update_idx in intervention_idx:
-            intervention_value[intervention_idx==update_idx] = update_intervention_value
+            intervention_value[intervention_idx == update_idx] = update_intervention_value
         else:
-            intervention_idx = torch.cat([intervention_idx, torch.as_tensor([update_idx]).to(device=intervention_idx.device, dtype=intervention_idx.dtype)], dim=0)
+            intervention_idx = torch.cat(
+                [
+                    intervention_idx,
+                    torch.as_tensor([update_idx]).to(device=intervention_idx.device, dtype=intervention_idx.dtype),
+                ],
+                dim=0,
+            )
             intervention_value = torch.cat([intervention_value, update_intervention_value], dim=0)
 
     return intervention_idx, intervention_value

@@ -27,39 +27,49 @@ def finalise(
     savedir: str,
     train_data: np.ndarray,
     test_data: np.ndarray,
+    val_data: np.ndarray,
     adjacency_matrix: np.ndarray,
     intervention_container: InterventionDataContainer,
     counterfactual_container: Optional[InterventionDataContainer],
     samples_base: dict,
+    override_dtypes: Optional[dict],
 ):
 
     np.savetxt(os.path.join(savedir, "adj_matrix.csv"), adjacency_matrix, delimiter=",", fmt="%i")
     np.savetxt(os.path.join(savedir, "train.csv"), train_data, delimiter=",")
     np.savetxt(os.path.join(savedir, "test.csv"), test_data, delimiter=",")
+    np.savetxt(os.path.join(savedir, "val.csv"), val_data, delimiter=",")
     save_json(intervention_container.to_dict(), os.path.join(savedir, "interventions.json"))
 
     if counterfactual_container is not None:
         save_json(counterfactual_container.to_dict(), os.path.join(savedir, "counterfactuals.json"))
+
+    if override_dtypes is None:
+        override_dtypes = {}
 
     variables = []
     for name, variable_data in samples_base.items():
         for i in range(np.prod(variable_data.shape[1:], initial=1, dtype=np.int32)):
             dtype = variable_data.dtype
             if np.issubdtype(dtype, np.floating):
-                type_ = "continuous"
+                inferred_type = "continuous"
             elif np.issubdtype(dtype, np.integer):
-                type_ = "categorical"
+                inferred_type = "categorical"
             elif np.issubdtype(dtype, np.character):
-                type_ = "text"
+                inferred_type = "text"
             elif np.issubdtype(dtype, bool):
-                type_ = "binary"
+                inferred_type = "binary"
             else:
                 raise ValueError(f"Not recognized dtype {dtype}")
+            # Group type overrides the inferred type
+            group_type = override_dtypes.get(name, inferred_type)
+            # Variable type overrides everything
+            variable_type = override_dtypes.get(f"{name}_{i}", group_type)
             variables.append(
                 {
                     "query": True,
                     "target": False,
-                    "type": type_,
+                    "type": variable_type,
                     "name": f"{name}_{i}",
                     "group_name": name,
                     "lower": np.min(variable_data).item(),

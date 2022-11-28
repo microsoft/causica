@@ -288,8 +288,6 @@ class DataProcessor:
                 train_segmentation=dataset.train_segmentation,
                 test_segmentation=dataset._test_segmentation,
                 val_segmentation=dataset._val_segmentation,
-                prior_adjacency_data=dataset.prior_adjacency_data,
-                prior_adjacency_mask=dataset.prior_adjacency_mask,
             )
         elif isinstance(dataset, CausalDataset):
             if dataset._intervention_data is not None:

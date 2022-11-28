@@ -37,7 +37,10 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model_dir", "-md", type=str, help="path to the saved model directory", default="runs/")
     parser.add_argument("--model_id", "-mi", type=str, help="The id of the saved model")
     parser.add_argument(
-        "--question_path", "-dd", type=str, help="the file path tp the construct questionnaire",
+        "--question_path",
+        "-dd",
+        type=str,
+        help="the file path tp the construct questionnaire",
     )
     parser.add_argument(
         "--construct_map",
@@ -46,7 +49,10 @@ def get_parser() -> argparse.ArgumentParser:
         help="the npy file for the construct map generated during processing the data",
     )
     parser.add_argument(
-        "--train_data", "-td", type=str, help="the csv file to the processed training data",
+        "--train_data",
+        "-td",
+        type=str,
+        help="the csv file to the processed training data",
     )
     parser.add_argument(
         "--output_dir", "-o", type=str, help="path to store the CATE estimation npy file", default="outputs/"

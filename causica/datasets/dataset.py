@@ -173,8 +173,6 @@ class Dataset(BaseDataset):
         train_segmentation: Optional[List[Tuple[int, int]]] = None,
         test_segmentation: Optional[List[Tuple[int, int]]] = None,
         val_segmentation: Optional[List[Tuple[int, int]]] = None,
-        prior_adjacency_data: Optional[np.ndarray] = None,
-        prior_adjacency_mask: Optional[np.ndarray] = None,
     ):
         """
         Return the dag version of this dataset.
@@ -195,8 +193,6 @@ class Dataset(BaseDataset):
             train_segmentation=train_segmentation,
             test_segmentation=test_segmentation,
             val_segmentation=val_segmentation,
-            prior_adjacency_data=prior_adjacency_data,
-            prior_adjacency_mask=prior_adjacency_mask,
         )
 
     def to_latent_confounded_causal(
@@ -378,8 +374,6 @@ class TemporalDataset(CausalDataset):
         train_segmentation: Optional[List[Tuple[int, int]]] = None,
         test_segmentation: Optional[List[Tuple[int, int]]] = None,
         val_segmentation: Optional[List[Tuple[int, int]]] = None,
-        prior_adjacency_data: Optional[np.ndarray] = None,
-        prior_adjacency_mask: Optional[np.ndarray] = None,
     ) -> None:
 
         super().__init__(
@@ -407,8 +401,6 @@ class TemporalDataset(CausalDataset):
         self.train_segmentation = train_segmentation
         self._test_segmentation = test_segmentation
         self._val_segmentation = val_segmentation
-        self.prior_adjacency_data = prior_adjacency_data
-        self.prior_adjacency_mask = prior_adjacency_mask
 
     def get_transition_matrix(self) -> np.ndarray:
         """
@@ -417,14 +409,6 @@ class TemporalDataset(CausalDataset):
         if self._transition_matrix is None:
             raise TypeError("Transition matrix is None. No transition matrix has been loaded.")
         return self._transition_matrix
-
-    def get_prior_adjacency_matrix(self) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Return the np.ndarray prior adjacency matrix with corresponding mask.
-        """
-        if self.prior_adjacency_data is None or self.prior_adjacency_mask is None:
-            raise TypeError("Prior adjacency matrix is None. No prior adjacency matrix has been loaded.")
-        return self.prior_adjacency_data, self.prior_adjacency_mask
 
 
 class LatentConfoundedCausalDataset(CausalDataset):

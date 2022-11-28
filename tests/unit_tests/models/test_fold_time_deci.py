@@ -6,7 +6,6 @@ import torch
 
 from causica.datasets.temporal_causal_csv_dataset_loader import TemporalCausalCSVDatasetLoader
 from causica.models.deci.fold_time_deci import FoldTimeDECI
-from causica.utils.nri_utils import convert_temporal_to_static_adjacency_matrix
 
 
 # pylint: disable=protected-access
@@ -138,44 +137,3 @@ def test_dataprocessor(tmpdir_factory):
     proc_data, _ = fold_time_deci.process_dataset(dataset, train_config)
     # Assert the middle columns is one-hot
     assert (proc_data[:, 1:-1] - np.eye(20)).sum() == 0
-
-
-def test_set_prior_matrix(tmpdir_factory):
-    dataset_dir = tmpdir_factory.mktemp("dataset_dir")
-    model_save_dir = tmpdir_factory.mktemp("model_dir")
-    # Dummy data
-    name_list = [2, 6, 3, 1]
-    length_list = [5, 8, 4, 3]
-    data = generate_time_series(length_list=length_list, index_name=name_list)
-    pd.DataFrame(data).to_csv(os.path.join(dataset_dir, "train.csv"), header=None, index=None)
-    pd.DataFrame(data).to_csv(os.path.join(dataset_dir, "test.csv"), header=None, index=None)
-
-    # Prior
-    prior_matrix = np.array(
-        [[[0, 1, np.nan], [0, 0, 1], [np.nan, 0, 0]], [[1, 1, 0], [np.nan, np.nan, 0], [0, np.nan, 1]]]
-    )
-    np.save(os.path.join(dataset_dir, "prior_adj_matrix.npy"), prior_matrix)
-    # Load dataset
-    dataset_loader = TemporalCausalCSVDatasetLoader(dataset_dir=dataset_dir)
-    dataset = dataset_loader.load_predefined_dataset(max_num_rows=None, timeseries_column_index=0)
-
-    # Create fold-time deci
-    fold_time_deci = FoldTimeDECI(
-        model_id="test",
-        variables=dataset._variables,
-        save_dir=model_save_dir,
-        device=torch.device("cpu"),
-        lag=1,
-        allow_instantaneous=False,
-        treat_continuous=False,
-    )
-    # Set prior
-    prior_A, prior_mask = dataset.prior_adjacency_data, dataset.prior_adjacency_mask
-    prior_lag = prior_A.shape[0] - 1
-    assert prior_lag == fold_time_deci.lag, "Prior lag is not consistent with model lag."
-    prior_A = convert_temporal_to_static_adjacency_matrix(prior_A, conversion_type="full_time").astype(np.float_)
-    prior_mask = convert_temporal_to_static_adjacency_matrix(prior_mask, fill_value=1, conversion_type="full_time")
-    fold_time_deci.set_prior_A(prior_A, prior_mask)
-
-    assert isinstance(fold_time_deci.prior_A, torch.FloatTensor)
-    assert isinstance(fold_time_deci.prior_mask, torch.FloatTensor)

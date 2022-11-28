@@ -30,6 +30,7 @@ def simulate_data(
     counterfactual_intervention_value: Optional[ArrayLike] = None,
     make_plots: bool = True,
     plot_discrete: bool = False,
+    override_dtypes: Optional[dict] = None,
 ):
     """
     Generate data from base distribution, intervened distribution, and optionally conditional distribution.
@@ -50,6 +51,10 @@ def simulate_data(
         counterfactual_value=None: if None is specified, no conditional data will be generated and dataset will not allow ITE evaluation
         make_plots: bool
         plot_discrete: bool
+        override_dtypes: Optional[dict]: data types are automatically inferred from the numpy types of variables in the Pyro trace.
+            However, sometimes the inferred type is wrong. To override a type of a variable, include it in the `override_dtypes` dict.
+            The keys can be *either* node names (e.g. "x7") or variable names (e.g. "x7_0"). The latter takes precedence over the former.
+            Values in the dict should be chosen from {"continuous", "categorical", "binary", "text"}.
     Returns:
         None
     """
@@ -98,6 +103,7 @@ def simulate_data(
     (
         samples_base,
         samples_test,
+        samples_val,
         [samples_int, samples_ref],
         [samples_int_cond, samples_ref_cond],
         [counterfactual_int, counterfactual_ref],
@@ -176,6 +182,7 @@ def simulate_data(
 
     train_data = extract_observations(samples_base)
     test_data = extract_observations(samples_test)
+    val_data = extract_observations(samples_val)
     # Create indices to first component of each variable
     event_size = [np.prod(samples_base[label].shape[1:], dtype=np.int32) for label in labels]
     columns_to_nodes = [node_idx for node_idx, node_dim in enumerate(event_size) for _ in range(node_dim)]
@@ -251,10 +258,12 @@ def simulate_data(
         foldername,
         train_data,
         test_data,
+        val_data,
         adjacency_matrix,
         intervention_data_container,
         cf_data_container,
         {label: samples_base[label] for label in labels},
+        override_dtypes=override_dtypes,
     )
 
 
@@ -677,6 +686,7 @@ def large_backdoor(n_samples: int, datadir: str, binary_treatment: bool = False,
         numpyro.sample("x8", d8.to_event(len(d8.batch_shape[1:])))
 
     name = "large_backdoor_binary_t" if binary_treatment else "large_backdoor"
+    override_dtypes = {"x7": "binary"} if binary_treatment else None
     if dim != 1:
         name += f"_{dim}"
     simulate_data(
@@ -692,6 +702,7 @@ def large_backdoor(n_samples: int, datadir: str, binary_treatment: bool = False,
         condition_idx=condition_idx,
         condition_value=condition_value,
         make_plots=dim == 1,
+        override_dtypes=override_dtypes,
     )
 
 
@@ -768,6 +779,7 @@ def weak_arrows(n_samples, datadir, binary_treatment=False):
         )
 
     name = "weak_arrows_binary_t" if binary_treatment else "weak_arrows"
+    override_dtypes = {"x7": "binary"} if binary_treatment else None
     simulate_data(
         n_samples,
         n_samples,
@@ -778,6 +790,7 @@ def weak_arrows(n_samples, datadir, binary_treatment=False):
         intervention_value,
         reference_value,
         target_idxs,
+        override_dtypes=override_dtypes,
     )
 
 
@@ -828,6 +841,7 @@ def cat_collider(num_samples_train, num_samples_per_test, datadir):
         reference_value,
         target_idxs,
         plot_discrete=True,
+        override_dtypes={"x0": "categorical", "x1": "categorical", "x2": "binary"},
     )
 
 
@@ -879,6 +893,7 @@ def cat_chain(num_samples_train, num_samples_per_test, datadir):
         reference_value,
         target_idxs,
         plot_discrete=True,
+        override_dtypes={"x0": "categorical", "x1": "categorical", "x2": "binary"},
     )
 
 
@@ -922,6 +937,7 @@ def cat_to_cts(num_samples_train, num_samples_per_test, datadir):
         intervention_value,
         reference_value,
         target_idxs,
+        override_dtypes={"x0": "categorical"},
     )
 
 
@@ -970,6 +986,7 @@ def cts_to_cat(num_samples_train, num_samples_per_test, datadir):
         reference_value,
         target_idxs,
         plot_discrete=True,
+        override_dtypes={"x1": "categorical"},
     )
 
 
@@ -1029,6 +1046,7 @@ def mixed_simpson(num_samples_train, num_samples_per_test, datadir):
         intervention_value,
         reference_value,
         target_idxs,
+        override_dtypes={"x2": "categorical", "x0": "binary"},
     )
 
 
@@ -1100,6 +1118,13 @@ def mixed_confounding(num_samples_train, num_samples_per_test, datadir):
         x11_noise = numpyro.sample("x11_noise", dist.Normal(0, 1))
         numpyro.deterministic("x11", x0 - 1.5 * nn.softplus(x1) + nn.softplus(x11_noise) - 0.4)
 
+    override_dtypes = {
+        "x0": "binary",
+        "x2": "categorical",
+        "x4": "binary",
+        "x5": "categorical",
+        "x7": "categorical",
+    }
     simulate_data(
         num_samples_train,
         num_samples_per_test,
@@ -1110,6 +1135,7 @@ def mixed_confounding(num_samples_train, num_samples_per_test, datadir):
         intervention_value,
         reference_value,
         target_idxs,
+        override_dtypes=override_dtypes,
     )
 
 

@@ -90,6 +90,8 @@ def run_experiment(
     eval_likelihood: bool = True,
     conversion_type: str = "full_time",
     delete_kwargs_files: bool = True,
+    prior_path: Optional[str] = None,
+    constraint_path: Optional[str] = None,
 ):
     if active_learning_users_to_plot is None:
         active_learning_users_to_plot = []
@@ -184,6 +186,8 @@ def run_experiment(
             run_context=run_context,
             eval_likelihood=eval_likelihood,
             conversion_type=conversion_type,
+            prior_path=prior_path,
+            constraint_path=constraint_path,
         )
 
         kwargs_file = run_context.aml_step(
@@ -275,6 +279,8 @@ def run_experiment_on_parsed_args(args: argparse.Namespace, run_context: RunCont
             logger_level=args.logger_level,
             eval_likelihood=args.eval_likelihood,
             conversion_type=args.conversion_type,
+            prior_path=args.prior_path,
+            constraint_path=args.constraint_path,
         )
 
 

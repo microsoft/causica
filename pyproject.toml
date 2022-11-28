@@ -30,19 +30,22 @@ scipy = "^1.8.1"
 seaborn = "^0.11.2"
 tensorboard = "^2.9.0"
 torch = "^1.12.0"
+pytorch-lightning = "^1.7.7"
 tqdm = "^4.64.0"
 causal-learn = "^0.1.2.8"
 causalnex = {git = "https://github.com/WenboGong/causalnex.git", branch = "develop" }
 tigramite = {git = "https://github.com/WenboGong/tigramite.git", branch = "develop"}
 dcor = "0.5.3"
+pygraphviz = { version = "^1.9", optional = true }
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
 
-[tool.poetry.group.dev.dependencies]
-mypy = "^0.981"
-pylint = "^2.15.3"
+[tool.poetry.extras]
+# Adding pygraphviz as an optional dependency for plotting in the causal suite
+# notebook. This requires graphviz to be installed.
+pygraphviz = ["pygraphviz"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
