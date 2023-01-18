@@ -521,10 +521,19 @@ def test_binary_base_posterior(base_offset, deltas):
     assert (bin_samples == bin_resamples).all()
 
 
+@pytest.mark.parametrize("variables", [five_cts_ungrouped_variables])
 @pytest.mark.parametrize(
-    "variables", [five_cts_ungrouped_variables]  # six_cts_grouped_variables, cts_and_discrete_variables
+    "conditioning_idxs",
+    [
+        torch.tensor([1, 2, 3]),  # Multiple variables
+        torch.tensor([3]),  # Single variable
+        torch.tensor([[1, 3]]),  # 2D array of multiple variables
+        torch.tensor([[1, 3], [1, 3]]),  # Batch of 2 examples
+        torch.tensor([[[1]]]),  # 3D array of a single variable
+        torch.tensor(1),  # Scalar selection of a single variable
+    ],
 )
-def test_cate(tmpdir_factory, model_config, variables):
+def test_cate(tmpdir_factory, model_config, variables, conditioning_idxs):
 
     model = DECI.create(
         model_id="model_id",
@@ -533,13 +542,10 @@ def test_cate(tmpdir_factory, model_config, variables):
         model_config_dict=model_config,
         device="cpu",
     )
-    # d = variables.num_processed_cols
 
     intervention_idxs = torch.tensor([0])
     intervention_values = torch.tensor([0.0])
-
-    conditioning_idxs = torch.tensor([1])
-    conditioning_values = torch.tensor([0.0])
+    conditioning_values = torch.zeros_like(conditioning_idxs)
 
     effect_idxs = torch.tensor([2])
 
@@ -588,15 +594,15 @@ def test_cate(tmpdir_factory, model_config, variables):
         most_likely_graph=True,
     )
 
-    assert cate0.shape == (1,)
-    assert cate0_norm.shape == (1,)
-
     # Test values for continuous only
     assert np.all((cate0 - cate1) != 0)
     assert np.all((cate0_norm - cate1_norm) != 0)
 
     assert np.all((cate_det0 - cate_det1) != 0)
     assert np.all((cate_det0_norm - cate_det1_norm) != 0)
+
+    # Test consistency across batch of duplicated values
+    np.testing.assert_allclose(cate0, cate0.item(0), atol=1e-4)
 
 
 @pytest.mark.parametrize(

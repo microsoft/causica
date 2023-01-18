@@ -1467,7 +1467,7 @@ class DECI(
             # Anneal beta.
             if anneal_beta == "linear":
                 beta = base_beta * min((step + 1) / anneal_beta_max_steps, 1.0)
-            if anneal_beta == "reverse":
+            elif anneal_beta == "reverse":
                 beta = base_beta * max((anneal_beta_max_steps - step) / anneal_beta_max_steps, 0.2)
             else:
                 beta = base_beta
@@ -1480,43 +1480,14 @@ class DECI(
                 and dataset.has_adjacency_data_matrix
                 and not hasattr(self, "latent_variables")
             ):
-                adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
                 adj_true = dataset.get_adjacency_data_matrix()
-                if isinstance(dataset, TemporalDataset):
-                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
-
-                else:
-                    subgraph_mask = dataset.get_known_subgraph_mask_matrix()
-                    adj_metrics = edge_prediction_metrics_multisample(
-                        adj_true,
-                        adj_matrix,
-                        adj_matrix_mask=subgraph_mask,
-                        compute_mean=False,
-                    )
             elif (
                 isinstance(dataset, LatentConfoundedCausalDataset)
                 and dataset.has_directed_adjacency_data_matrix
                 and dataset.has_bidirected_adjacency_data_matrix
             ):
-                try:
-                    adj_true = dataset.get_directed_adjacency_data_matrix()
-                    bidirected_adj_true = dataset.get_bidirected_adjacency_data_matrix()
-
-                    directed_adj_pred, bidirected_adj_pred = cast(Any, self).get_admg_matrices(
-                        do_round=True, samples=100
-                    )
-                    directed_adj_metrics = edge_prediction_metrics_multisample(adj_true, directed_adj_pred)
-                    bidirected_adj_metrics = edge_prediction_metrics_multisample(
-                        bidirected_adj_true, bidirected_adj_pred
-                    )
-                    adj_metrics = {
-                        **{f"directed_{k}": v for k, v in directed_adj_metrics.items()},
-                        **{f"bidirected_{k}": v for k, v in bidirected_adj_metrics.items()},
-                    }
-                except AttributeError:
-                    adj_metrics = {}
-            else:
-                adj_metrics = {}
+                adj_true = dataset.get_directed_adjacency_data_matrix()
+                bidirected_adj_true = dataset.get_bidirected_adjacency_data_matrix()
 
             # Inner loop
             print(f"Auglag Step: {step}")
@@ -1577,6 +1548,33 @@ class DECI(
                 num_not_done += 1
                 print("Not done inner optimization.")
 
+            if (
+                isinstance(dataset, LatentConfoundedCausalDataset)
+                and dataset.has_directed_adjacency_data_matrix
+                and dataset.has_bidirected_adjacency_data_matrix
+            ):
+                directed_adj_pred, bidirected_adj_pred = cast(Any, self).get_admg_matrices(do_round=True, samples=100)
+                directed_adj_metrics = edge_prediction_metrics_multisample(adj_true, directed_adj_pred)
+                bidirected_adj_metrics = edge_prediction_metrics_multisample(bidirected_adj_true, bidirected_adj_pred)
+                adj_metrics = {
+                    **{f"directed_{k}": v for k, v in directed_adj_metrics.items()},
+                    **{f"bidirected_{k}": v for k, v in bidirected_adj_metrics.items()},
+                }
+            elif isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
+                adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
+                if isinstance(dataset, TemporalDataset):
+                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
+
+                else:
+                    subgraph_mask = dataset.get_known_subgraph_mask_matrix()
+                    adj_metrics = edge_prediction_metrics_multisample(
+                        adj_true,
+                        adj_matrix,
+                        adj_matrix_mask=subgraph_mask,
+                        compute_mean=False,
+                    )
+            else:
+                adj_metrics = {}
             # Calculating the log prob as the average over the terms in the tracker
             # and saving if it's better than the previous best.
             avg_tracker_log_px = np.mean(tracker_loss_terms["log_p_x"])

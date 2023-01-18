@@ -76,10 +76,10 @@ def intervention_to_tensor(
         (intervention_idxs,) = to_tensors(intervention_idxs, device=device, dtype=torch.long)
         (intervention_values,) = to_tensors(intervention_values, device=device, dtype=torch.float)
 
-        if intervention_idxs.dim() == 0:
+        if intervention_idxs.nelement() == 0:
             intervention_idxs = None
 
-        if intervention_values.dim() == 0:
+        if intervention_values.nelement() == 0:
             intervention_values = None
 
         if is_temporal:
@@ -320,6 +320,8 @@ def get_ate_rms(
                 Ngraphs=Ngraphs,
             )
 
+        model_ate = np.atleast_1d(model_ate)
+        model_norm_ate = np.atleast_1d(model_norm_ate)
         group_rmses.append(calculate_per_group_rmse(model_ate, ate, filtered_variables))
         norm_group_rmses.append(calculate_per_group_rmse(model_norm_ate, norm_ate, filtered_variables))
 
@@ -405,8 +407,6 @@ def get_cate_from_samples(
 
     assert effect_mask.sum() == 1.0, "Only 1d outcomes are supported"
 
-    test_inputs = conditioning_values.unsqueeze(1)
-
     featuriser = MultiROFFeaturiser(rff_n_features=rff_n_features, lengthscale=rff_lengthscale)
     featuriser.fit(X=intervened_samples.new_ones((1, int(conditioning_mask.sum()))))
 
@@ -417,7 +417,7 @@ def get_cate_from_samples(
 
         featurised_intervened_train_inputs = featuriser.transform(intervened_train_inputs)
         featurised_reference_train_inputs = featuriser.transform(reference_train_inputs)
-        featurised_test_input = featuriser.transform(test_inputs)
+        featurised_conditioning_values = featuriser.transform(torch.atleast_1d(conditioning_values))
 
         intervened_train_targets = intervened_samples[graph_idx, :, effect_mask].reshape(intervened_samples.shape[1])
         reference_train_targets = baseline_samples[graph_idx, :, effect_mask].reshape(intervened_samples.shape[1])
@@ -429,8 +429,8 @@ def get_cate_from_samples(
         reference_predictive_model.fit(features=featurised_reference_train_inputs, targets=reference_train_targets)
 
         CATE_estimates.append(
-            intervened_predictive_model.predict(features=featurised_test_input)[0]
-            - reference_predictive_model.predict(features=featurised_test_input)[0]
+            intervened_predictive_model.predict(features=featurised_conditioning_values)[0]
+            - reference_predictive_model.predict(features=featurised_conditioning_values)[0]
         )
 
     return torch.stack(CATE_estimates, dim=0).mean(dim=0)

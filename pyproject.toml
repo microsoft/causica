@@ -8,7 +8,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">= 3.8, < 3.10"
-dowhy = {git = "https://github.com/py-why/dowhy.git", rev = "f523accf96d6bb1afa6f3f3f3ba13cb1272b4150"}
+dowhy = "^0.9.1"
 econml = "^0.12.0"
 gcastle = {git = "https://github.com/confoundry/trustworthyAI.git", rev = "a768c0a"}
 gitpython = "^3.1.27"
@@ -21,7 +21,7 @@ lingam = "1.5.5"
 matplotlib = "^3.5.2"
 mlflow = "^1.27.0"
 networkx = "^2.8.3"
-numpy = "^1.22.4"
+numpy = "^1.22.4,<1.24"
 numpyro = "^0.9.2"
 pandas = "^1.4.2"
 pyro-ppl = "^1.8.1"

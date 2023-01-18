@@ -48,7 +48,7 @@ class DoWhy(Model, IModelForInterventions):
         adj_matrix_samples: Optional[List[np.ndarray]] = None,
         adj_matrix_sample_weights: Optional[np.ndarray] = None,
         random_seed: int = 0,
-        parallel_n_jobs: int = -1,
+        parallel_n_jobs: int = 1,
     ):
         # TODO: implement methods for binary treatment settings
         """
@@ -71,7 +71,7 @@ class DoWhy(Model, IModelForInterventions):
             adj_matrix_samples: list of samples from adjacency matrix posterior
             adj_matrix_sample_weights: weight for samples of adjacency matrix posterior. If unspecified, uniform weighing (1/Nsamples) will be used
             random_seed: used determine convergence of non-linear models that rely on non-convex optimisation and can give different results across seeds
-            parallel_n_jobs: number of parallel jobs to use when running DoWhy. Set to 1 to disable parallelism. Default is -1, which uses as many threads as there are CPUs.
+            parallel_n_jobs: number of parallel jobs to use when running DoWhy. The default 1 disables parallelism. -1 uses as many threads as there are CPUs.
         """
         super().__init__(model_id, variables, save_dir)
 
@@ -151,9 +151,12 @@ class DoWhy(Model, IModelForInterventions):
         assert isinstance(self._train_data, np.ndarray)
         normed_data = np.subtract(self._train_data.copy(), lowers) / (uppers - lowers)
         train_df = pd.DataFrame(normed_data, columns=self.labels)
+        intervention_dtype = intervention_values.dtype
         intervention_values = np.divide(intervention_values.copy() - lowers[intervention_idxs], uppers - lowers)[
             intervention_idxs
         ]
+        # TODO: Remove forced dtype after normalization due to incompatibility with non-int intervention values.
+        intervention_values = intervention_values.astype(dtype=intervention_dtype)
         if reference_values is not None:
             reference_values = np.divide(reference_values.copy() - lowers[intervention_idxs], uppers - lowers)[
                 intervention_idxs
@@ -301,8 +304,8 @@ class DoWhy(Model, IModelForInterventions):
         return dowhy_model.estimate_effect(
             identified_estimand,
             method_name="backdoor.econml.dml.DML",
-            control_value=reference_values[0],
-            treatment_value=intervention_values[0],
+            control_value=reference_values.item(0),
+            treatment_value=intervention_values.item(0),
             confidence_intervals=False,  # False because the computation is too costly for us
             effect_modifiers=conditioning_dict,
             method_params={

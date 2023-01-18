@@ -273,7 +273,7 @@ class LinearModel:
             pred_mu: a (Npoints) tensor containing predicted values for the test points
             pred_cov: A (Npoints x Npoints) covariance matrix if compute_covariance is True, else None
         """
-        assert len(self.w) == features.shape[1]
+        assert len(self.w) == features.shape[-1]
         assert self.w is not None, "model must be fit before it can make predictions"
 
         pred_mu = features @ self.w
