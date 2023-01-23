@@ -13,9 +13,14 @@ Causica is a deep learning library for end-to-end causal inference, including bo
 This project splits the interventional decision making from observational decision making Azua repo found here [Azua](https://github.com/microsoft/project-azua).
 
 [1] Alvarez et al. [Simultaneous Missing Value Imputation and Structure Learning with Groups](https://openreview.net/pdf?id=4rm6tzBjChe), NeurIPS 2022
+
 [2] Geffner et al. [Deep End-to-end Causal Inference.](https://arxiv.org/pdf/2202.02195.pdf)
+
 [3] Gong et al.  [Rhino: Deep Causal Temporal Relationship Learning With History-dependent Noise](https://openreview.net/pdf?id=i_1rbq8yFWC), ICLR 2023
+
 [4] Ma et al. [Causal Reasoning in the Presence of Latent Confounders via Neural ADMG Learning]( https://openreview.net/pdf?id=dcN0CaXQhT), ICLR 2023
+
+
 # DECI: End to End Causal Inference
 
 ## About
