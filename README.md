@@ -3,21 +3,19 @@
 # Project Causica
 
 ## Overview
+ 
+Causal machine learning enables individuals and organizations to make better data-driven decisions. In particular, causal ML allows us to answer “what if” questions about the effect of potential actions on outcomes. 
+ 
+Causal ML is a nascent area, we aim  to enable a **scalable**, **flexible**, **real-world applicable end-to-end** causal inference framework. In perticular, we bridge between causal discovery, causal inference, and deep learning to achieve the goal.  We aim to develop technology can automate causal decision-making using existing observational data alone, output both the discovered causal relationships and estimate the effect of actions simultaneously.
+ 
+Causica is a deep learning library for end-to-end causal inference, including both causal discovery and inference.  It implements deep end-to-end inference framework [2] and different alternatives.
+ 
+This project splits the interventional decision making from observational decision making Azua repo found here [Azua](https://github.com/microsoft/project-azua).
 
-Humans make tens of thousands of decisions every day. Project Causica aims to develop machine learning solutions for efficient decision making that demonstrate human expert-level performance across all domains. We develop advanced machine learning solutions in causal discovery, causal inference, and Bayesian experimental design using modern (probabilistic) deep learning methods. Our conceptual framework is to divide decisions into two types: "best next question" and "best next action". 
-
-In daily life, one type of decision we make relates to information gathering for "get to know" decisions; for example, a medical doctor takes a medical test to decide the correct diagnosis for a patient. Humans are very efficient at gathering information and drawing the correct conclusion, while most deep learning methods require significant amounts of training data. Thus, the first part of project Causica focuses on enabling machine learning solutions to gather personalized information, allowing the machine to know the "best next question" and make a final judgment efficiently [1,2,6].
-Our technology for "best next question" decisions is driven by state-of-the-art algorithms for Bayesian experimental design and active learning.
-
-The second type of decision made in many domains is intervention, which can be summarised as selecting the "best next action ". For example, a business owner needs to decide which action will lead to greater customer satisfaction; a teacher needs to decide which exercise to give students to help them learn most effectively. Humans are very efficient at making such decisions, primarily due to our causal reasoning abilities. Thus, in project Causica, we develop end-to-end causal inference methods which use existing data to perform  causal discovery and compute causal inference quantities such as (conditional) average treatment effect [8,3]. We not only provide our deep learning-based framework, but we also connect other existing methods such as [DoWhy](https://microsoft.github.io/dowhy/) and [EconML](https://econml.azurewebsites.net/) as alternatives, allowing users to choose the most suitable methods for their applications. 
-
-With these decision-making goals, one can use our codebase in an end-to-end way for decision-making. We also provide the flexibility to use any core functionalities such as missing value prediction, best next question, causal discovery, causal inference, etc, separately depending on the users' needs.     
-
-Our technology has enabled personalized decision-making in real-world systems, combining multiple advanced research methodologies in simple APIs suitable 
-for research development in the research community, and commercial use by data scientists and developers. For commercial applications, please reach out to us at  causica-request@microsoft.com  if you are interested in using our technology as a service. 
-
-This project splits causal end to end code from the Azua repo found here [Azua](https://github.com/microsoft/project-azua).
-
+[1] Alvarez et al. [Simultaneous Missing Value Imputation and Structure Learning with Groups](https://openreview.net/pdf?id=4rm6tzBjChe), NeurIPS 2022
+[2] Geffner et al. [Deep End-to-end Causal Inference.](https://arxiv.org/pdf/2202.02195.pdf)
+[3] Gong et al.  [Rhino: Deep Causal Temporal Relationship Learning With History-dependent Noise](https://openreview.net/pdf?id=i_1rbq8yFWC), ICLR 2023
+[4] Ma et al. [Causal Reasoning in the Presence of Latent Confounders via Neural ADMG Learning]( https://openreview.net/pdf?id=dcN0CaXQhT), ICLR 2023
 # DECI: End to End Causal Inference
 
 ## About
