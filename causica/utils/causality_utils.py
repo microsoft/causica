@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import scipy
 import torch
+from sklearn import metrics
 
 from ..datasets.dataset import TemporalDataset
 from ..datasets.intervention_data import InterventionData
@@ -1149,6 +1150,7 @@ def organize_temporal_discovery_results(
     adj_metrics_all_temp: Optional[dict] = None,
     adj_metrics_inst: Optional[dict] = None,
     adj_metrics_lag: Optional[dict] = None,
+    adj_metrics_agg: Optional[dict] = None,
 ) -> dict:
     """
     This will aggregate the causal discovery results into a single result dict.
@@ -1157,6 +1159,7 @@ def organize_temporal_discovery_results(
         adj_metrics_all_temp: The results for temporal graph discovery
         adj_metrics_inst: The results for temporal graph discovery with just instantaneous effect.
         adj_metrics_lag: The results for temporal graph discovery with just lagged effect.
+        adj_metrics_agg: The results for aggregated graph discovery.
 
     Returns:
         adj_results: results dict aggregating the above metrics.
@@ -1178,10 +1181,16 @@ def organize_temporal_discovery_results(
         for key, value in adj_metrics_lag.items():
             adj_results[f"{key}_lag"] = value
 
+    if adj_metrics_agg is not None:
+        for key, value in adj_metrics_agg.items():
+            adj_results[f"{key}_agg"] = value
+
     return adj_results
 
 
-def eval_temporal_causal_discovery(dataset: TemporalDataset, model: IModelForCausalInference) -> dict:
+def eval_temporal_causal_discovery(
+    dataset: TemporalDataset, model: IModelForCausalInference, disable_diagonal_eval: bool = True
+) -> dict:
     """
     This will evaluate the temporal causal discovery performance. It includes 4 different comparisons:
     (1) full-time graph with inst and lag; (2) temporal graph with inst and lag; (3) temporal graph with just inst;
@@ -1190,6 +1199,7 @@ def eval_temporal_causal_discovery(dataset: TemporalDataset, model: IModelForCau
     Args:
         dataset: The dataset used which contains the ground truth temporal adj matrix.
         model: the trained model we want to evaluate.
+        disable_diagonal_eval: whether to disable the diagonal elements in aggregation for evaluation
 
     Returns:
         adj_metrics: dict containing the discovery results
@@ -1199,16 +1209,53 @@ def eval_temporal_causal_discovery(dataset: TemporalDataset, model: IModelForCau
     # For DECI-based model, the default is to give 100 samples of the graph posterior
     adj_pred = model.get_adj_matrix().astype(float).round()
     adj_agg_metrics = {}
-    if model.name() in ("auto_regressive_deci", "varlingam", "dynotears", "pcmci_plus"):
-        adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
-            adj_ground_truth, adj_pred, is_static=False
-        )  # [maxlag+1, num_nodes, num_nodes], [batch, maxlag+1, num_nodes, num_nodes]
-        for name_dict in ["all_full", "all_temp", "inst", "lag"]:
-            results = evaluate_temporal_causal_discovery_subtype(
-                adj_ground_truth=adj_ground_truth, adj_pred=adj_pred, subtype=name_dict
-            )
+    if model.name() in ("rhino", "varlingam", "dynotears", "pcmci_plus"):
+        if adj_ground_truth.ndim == 3:
+            # temporal adj matrix
+            adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(
+                adj_ground_truth, adj_pred, is_static=False
+            )  # [maxlag+1, num_nodes, num_nodes], [batch, maxlag+1, num_nodes, num_nodes]
+            for name_dict in ["all_full", "all_temp", "inst", "lag"]:
+                results = evaluate_temporal_causal_discovery_subtype(
+                    adj_ground_truth=adj_ground_truth, adj_pred=adj_pred, subtype=name_dict
+                )
 
-            adj_agg_metrics["adj_metrics_" + name_dict] = results
+                adj_agg_metrics["adj_metrics_" + name_dict] = results
+        elif adj_ground_truth.ndim == 2:
+            # aggregated adj matrix
+            # The true adj is aggregated
+            if adj_pred.ndim == 3:
+                adj_pred = adj_pred[np.newaxis, ...]  # [1, lag+1, num_nodes, num_nodes]
+
+            adj_matrix = (adj_pred.sum(1) > 0).astype(int)  # [batch, num_node, num_node]
+            # get bernoulli prob for auroc computation
+            if model.name() == "rhino":
+                adj_pred_prob = model.get_adj_matrix(do_round=False, samples=1, most_likely_graph=True)[0].max(
+                    0
+                )  # [num_nodes, num_nodes]
+            else:
+                adj_pred_prob = adj_matrix.mean(0)  # [num_nodes, num_nodes]
+
+            # disable diagonal
+            if disable_diagonal_eval:
+                for cur_adj_matrix in adj_matrix:
+                    np.fill_diagonal(cur_adj_matrix, 0)
+                np.fill_diagonal(adj_pred_prob, 0)
+            # evaluate the metrics
+            results = edge_prediction_metrics_multisample(
+                adj_ground_truth,
+                adj_matrix,
+                adj_matrix_mask=None,
+                compute_mean=True,
+                adj_pred_prob=adj_pred_prob,
+            )
+            # Add FPR, TPR
+            adj_matrix_true_fl = adj_ground_truth.flatten()
+            adj_pred_fl = adj_pred_prob.flatten()
+            FPR, TPR, _ = metrics.roc_curve(adj_matrix_true_fl, adj_pred_fl)
+            results["FPR"] = list(FPR)  # type: ignore
+            results["TPR"] = list(TPR)  # type: ignore
+            adj_agg_metrics["adj_metrics_agg"] = results
 
     elif model.name() == "fold_time_deci":
         adj_ground_truth, adj_pred = make_temporal_adj_matrix_compatible(

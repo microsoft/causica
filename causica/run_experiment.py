@@ -92,6 +92,7 @@ def run_experiment(
     delete_kwargs_files: bool = True,
     prior_path: Optional[str] = None,
     constraint_path: Optional[str] = None,
+    disable_diagonal_eval: bool = True,
 ):
     if active_learning_users_to_plot is None:
         active_learning_users_to_plot = []
@@ -188,6 +189,7 @@ def run_experiment(
             conversion_type=conversion_type,
             prior_path=prior_path,
             constraint_path=constraint_path,
+            disable_diagonal_eval=disable_diagonal_eval,
         )
 
         kwargs_file = run_context.aml_step(
@@ -281,6 +283,7 @@ def run_experiment_on_parsed_args(args: argparse.Namespace, run_context: RunCont
             conversion_type=args.conversion_type,
             prior_path=args.prior_path,
             constraint_path=args.constraint_path,
+            disable_diagonal_eval=args.enable_diagonal_eval,
         )
 
 

@@ -8,10 +8,14 @@ import numpy as np
 from .baselines.do_why import DoWhy
 from .baselines.dynotears import Dynotears
 from .baselines.end2end_causal.deci_dowhy import DECIDoWhy
+from .baselines.end2end_causal.fci_admg_ddeci import FCIADMGParameterisedDDECI
+from .baselines.end2end_causal.fci_informed_admg_ddeci import FCIInformedADMGParameterisedDDECI
 from .baselines.end2end_causal.informed_deci import InformedDECI
 from .baselines.end2end_causal.pc_dowhy import PCDoWhy
 from .baselines.end2end_causal.pc_informed_deci import PCInformedDECI
+from .baselines.end2end_causal.true_graph_admg_ddeci import TrueGraphADMGParameterisedDDECI
 from .baselines.end2end_causal.true_graph_dowhy import TrueGraphDoWhy
+from .baselines.end2end_causal.true_graph_informed_admg_ddeci import TrueGraphInformedADMGParameterisedDDECI
 from .baselines.grandag import GraNDAG
 from .baselines.icalingam import ICALiNGAM
 from .baselines.notears import NotearsLinear, NotearsMLP, NotearsSob
@@ -20,10 +24,14 @@ from .baselines.pcmci_plus import PCMCI_Plus
 from .baselines.varlingam import VARLiNGAM
 from .datasets.csv_dataset_loader import CSVDatasetLoader
 from .datasets.variables import Variables
+from .models.deci.ddeci import DDECI, ADMGParameterisedDDECI, BowFreeDDECI
+from .models.deci.ddeci_gaussian import ADMGParameterisedDDECIGaussian, BowFreeDDECIGaussian
+from .models.deci.ddeci_spline import ADMGParameterisedDDECISpline, BowFreeDDECISpline
 from .models.deci.deci import DECI
 from .models.deci.deci_gaussian import DECIGaussian
 from .models.deci.deci_spline import DECISpline
 from .models.deci.fold_time_deci import FoldTimeDECI
+from .models.deci.rhino import Rhino
 from .models.imodel import IModel
 from .models.point_net import PointNet, SparsePointNet
 from .models.set_encoder_base_model import SetEncoderBaseModel
@@ -36,11 +44,19 @@ MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
     model.name(): model  # type: ignore
     for model in (
         # Models
+        Rhino,
         DECI,
         VISL,
         DECIGaussian,
         DECISpline,
         FoldTimeDECI,
+        DDECI,
+        ADMGParameterisedDDECI,
+        BowFreeDDECI,
+        ADMGParameterisedDDECIGaussian,
+        BowFreeDDECIGaussian,
+        ADMGParameterisedDDECISpline,
+        BowFreeDDECISpline,
         # Baselines
         DoWhy,
         GraNDAG,
@@ -56,6 +72,10 @@ MODEL_SUBCLASSES: Dict[str, Type[IModel]] = {
         PCInformedDECI,
         TrueGraphDoWhy,
         VARLiNGAM,
+        FCIADMGParameterisedDDECI,
+        FCIInformedADMGParameterisedDDECI,
+        TrueGraphADMGParameterisedDDECI,
+        TrueGraphInformedADMGParameterisedDDECI,
         Dynotears,
         PCMCI_Plus,
     )

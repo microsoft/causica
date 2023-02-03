@@ -36,11 +36,18 @@ from ...utils.causality_utils import (
 )
 from ...utils.fast_data_loader import FastTensorDataLoader
 from ...utils.helper_functions import to_tensors
+from ...utils.io_utils import save_json
 from ...utils.linprog import col_row_constrained_lin_prog
-from ...utils.nri_utils import edge_prediction_metrics_multisample
+from ...utils.nri_utils import edge_prediction_metrics_multisample, print_AR_DECI_metrics, update_AR_DECI_metrics_dict
 from ...utils.torch_utils import generate_fully_connected
 from ...utils.training_objectives import get_input_and_scoring_masks
-from .base_distributions import BinaryLikelihood, CategoricalLikelihood, DiagonalFlowBase, GaussianBase
+from .base_distributions import (
+    BinaryLikelihood,
+    CategoricalLikelihood,
+    DiagonalFlowBase,
+    GaussianBase,
+    TemporalConditionalSplineFlow,
+)
 from .generation_functions import ContractiveInvertibleGNN
 from .variational_distributions import (
     AdjMatrix,
@@ -100,6 +107,7 @@ class DECI(
         dense_init: bool = False,
         embedding_size: Optional[int] = None,
         log_scale_init: float = 0,
+        disable_diagonal_eval: bool = True,
     ):
         """
         Args:
@@ -140,8 +148,12 @@ class DECI(
             dense_init: Whether we initialize the initial variational distribution to give dense adjacency matrix.
                         Default is False.
             log_scale_init: initial log scale of Gaussian likelihood
+            disable_diagonal_eval: for evaluating aggregated temporal adj matrix only, whether to ignore the diagonal connections after aggregation.
+
         """
         super().__init__(model_id, variables, save_dir, device)
+        self.disable_diagonal_eval = disable_diagonal_eval
+
         self.base_distribution_type = base_distribution_type
         self.dense_init = dense_init
         self.embedding_size = embedding_size
@@ -1394,6 +1406,33 @@ class DECI(
         )
         return dataloader, data.shape[0]
 
+    def _compute_val_likelihood(
+        self,
+        dataloader: DataLoader,
+        Nsamples_per_graph: int = 100,
+        most_likely_graph: bool = False,
+    ):
+        likelihood_list = [
+            self.log_prob(x, Nsamples_per_graph=Nsamples_per_graph, most_likely_graph=most_likely_graph)
+            for x, _ in dataloader
+        ]  # each has shape [batch]
+        likelihoods = np.concatenate(likelihood_list, axis=0)  # [total_size]
+        return likelihoods.mean()
+
+    def _create_val_dataset_for_deci(
+        self, dataset: Dataset, train_config_dict: Dict[str, Any]
+    ) -> Tuple[Union[DataLoader, FastTensorDataLoader], int]:
+
+        processed_dataset = self.data_processor.process_dataset(dataset)
+        val_data, val_mask = processed_dataset.val_data_and_mask
+        val_dataloader = FastTensorDataLoader(
+            *to_tensors(val_data, val_mask, device=self.device),  # type: ignore
+            batch_size=train_config_dict["batch_size"],
+            shuffle=True,
+        )
+        assert val_data is not None
+        return val_dataloader, val_data.shape[0]
+
     def run_train(
         self,
         dataset: Dataset,
@@ -1410,6 +1449,11 @@ class DECI(
         best_log_p_x = -np.inf
 
         dataloader, num_samples = self._create_dataset_for_deci(dataset, train_config_dict)
+
+        # create dataloader for validation
+        if dataset.has_val_data:
+            # get processed dataset
+            val_dataloader, _ = self._create_val_dataset_for_deci(dataset, train_config_dict)
 
         # initialise logging machinery
         train_output_dir = os.path.join(self.save_dir, "train_output")
@@ -1448,7 +1492,9 @@ class DECI(
         num_below_tol = 0
         num_max_rho = 0
         num_not_done = 0
-
+        if isinstance(dataset, TemporalDataset):
+            # Metrics dict, this is only used for AR-DECI
+            metrics_dict: dict = {}
         for step in range(train_config_dict["max_steps_auglag"]):
 
             # Stopping if DAG conditions satisfied
@@ -1481,6 +1527,7 @@ class DECI(
                 and not hasattr(self, "latent_variables")
             ):
                 adj_true = dataset.get_adjacency_data_matrix()
+                assert adj_true is not None
             elif (
                 isinstance(dataset, LatentConfoundedCausalDataset)
                 and dataset.has_directed_adjacency_data_matrix
@@ -1563,7 +1610,19 @@ class DECI(
             elif isinstance(dataset, CausalDataset) and dataset.has_adjacency_data_matrix:
                 adj_matrix = self.get_adj_matrix(do_round=True, samples=100)
                 if isinstance(dataset, TemporalDataset):
-                    adj_metrics = eval_temporal_causal_discovery(dataset, self)
+                    adj_metrics = eval_temporal_causal_discovery(
+                        dataset, self, disable_diagonal_eval=self.disable_diagonal_eval
+                    )
+                    if dataset.has_val_data:
+                        val_likelihood = self._compute_val_likelihood(
+                            val_dataloader, Nsamples_per_graph=100, most_likely_graph=False
+                        )
+                        adj_metrics["val_likelihood"] = val_likelihood
+                    assert adj_true is not None
+                    print_AR_DECI_metrics(adj_metrics, is_aggregated=(adj_true.ndim == 2))
+                    # Update metrics dict and save
+                    update_AR_DECI_metrics_dict(metrics_dict, adj_metrics, is_aggregated=(adj_true.ndim == 2))
+                    save_json(metrics_dict, path=os.path.join(self.save_dir, "metrics.json"))
 
                 else:
                     subgraph_mask = dataset.get_known_subgraph_mask_matrix()
@@ -1687,7 +1746,7 @@ class DECI(
                 self.opt.step()
 
                 # For MSE metric, update an estimate of the spline means
-                if not isinstance(self.likelihoods["continuous"], GaussianBase):
+                if not isinstance(self.likelihoods["continuous"], (GaussianBase, TemporalConditionalSplineFlow)):
                     error_dist_mean = self.likelihoods["continuous"].sample(n_spline_sample).mean(0)
                     self.spline_mean_ewma = (
                         spline_ewma_alpha * error_dist_mean + (1 - spline_ewma_alpha) * self.spline_mean_ewma

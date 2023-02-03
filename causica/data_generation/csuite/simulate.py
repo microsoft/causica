@@ -10,7 +10,7 @@ from numpy.typing import ArrayLike
 
 from ...datasets.intervention_data import InterventionData, InterventionDataContainer, InterventionMetadata
 from .pyro_utils import generate_dataset, layer, layerm, plot_conditioning_and_interventions
-from .utils import extract_observations, finalise
+from .utils import extract_observations, finalise, sample_base_to_variable_dict
 
 
 def simulate_data(
@@ -262,8 +262,10 @@ def simulate_data(
         adjacency_matrix,
         intervention_data_container,
         cf_data_container,
-        {label: samples_base[label] for label in labels},
-        override_dtypes=override_dtypes,
+        sample_base_to_variable_dict(
+            {label: samples_base[label] for label in labels},
+            override_dtypes=override_dtypes,
+        ),
     )
 
 

@@ -90,6 +90,7 @@ class ExperimentArguments:
     conversion_type: str = "full_time"
     prior_path: Optional[str] = None
     constraint_path: Optional[str] = None
+    disable_diagonal_eval: bool = True
 
 
 def run_single_seed_experiment(args: ExperimentArguments):
@@ -183,7 +184,7 @@ def run_single_seed_experiment(args: ExperimentArguments):
     elif args.causal_discovery:
         assert isinstance(model, IModelForCausalInference)
         causal_model = cast(IModelForCausalInference, model)
-        eval_causal_discovery(dataset, causal_model)
+        eval_causal_discovery(dataset, causal_model, disable_diagonal_eval=args.disable_diagonal_eval)
 
     # Treatment effect estimation
     if args.treatment_effects:

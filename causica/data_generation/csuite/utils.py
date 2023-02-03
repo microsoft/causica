@@ -31,8 +31,7 @@ def finalise(
     adjacency_matrix: np.ndarray,
     intervention_container: InterventionDataContainer,
     counterfactual_container: Optional[InterventionDataContainer],
-    samples_base: dict,
-    override_dtypes: Optional[dict],
+    variables_dict: Dict,
 ):
 
     np.savetxt(os.path.join(savedir, "adj_matrix.csv"), adjacency_matrix, delimiter=",", fmt="%i")
@@ -44,6 +43,14 @@ def finalise(
     if counterfactual_container is not None:
         save_json(counterfactual_container.to_dict(), os.path.join(savedir, "counterfactuals.json"))
 
+    save_json(variables_dict, os.path.join(savedir, "variables.json"))
+    print("Saved files to", savedir)
+
+
+def sample_base_to_variable_dict(
+    samples_base: Dict,
+    override_dtypes: Optional[Dict[str, str]],
+) -> Dict:
     if override_dtypes is None:
         override_dtypes = {}
 
@@ -78,8 +85,8 @@ def finalise(
                 }
             )
     variables_dict = {"variables": variables, "metadata_variables": []}
-    save_json(variables_dict, os.path.join(savedir, "variables.json"))
-    print("Saved files to", savedir)
+
+    return variables_dict
 
 
 def make_graph(adjacency_matrix, labels=None):

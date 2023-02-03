@@ -18,8 +18,10 @@ from causica.experiment.steps.eval_step import (
     evaluate_treatment_effect_estimation,
     run_eval_main,
 )
+from causica.models.deci.ddeci import ADMGParameterisedDDECI, BowFreeDDECI
 from causica.models.deci.deci import DECI
 from causica.models.deci.fold_time_deci import FoldTimeDECI
+from causica.models.deci.rhino import Rhino
 from causica.models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForInterventions
 from causica.utils.io_utils import read_json_as, save_json
 
@@ -402,6 +404,27 @@ def test_run_eval_causal_discovery(tmpdir_factory):
     )
     eval_causal_discovery(temporal_causal_dataset, temporal_model)
 
+    # test ar-deci model
+    temporal_model_config = {
+        "lag": 2,
+        "allow_instantaneous": True,
+        "tau_gumbel": 0.25,
+        "lambda_dag": 100.0,
+        "lambda_sparse": 5.0,
+        "base_distribution_type": "gaussian",
+        "spline_bins": 8,
+        "var_dist_A_mode": "temporal_three",
+        "random_seed": [0],
+    }
+    temporal_model = Rhino.create(
+        model_id="model_id",
+        variables=variables,
+        save_dir=tmpdir_factory.mktemp("save_dir"),
+        device="cpu",
+        model_config_dict=temporal_model_config,
+    )
+    eval_causal_discovery(temporal_causal_dataset, temporal_model)
+
 
 def test_run_eval_latent_confounded_causal_discovery(tmpdir_factory):
     variables = Variables(
@@ -444,6 +467,44 @@ def test_run_eval_latent_confounded_causal_discovery(tmpdir_factory):
         bidirected_subgraph_data=bidirected_adj_mask,
         intervention_data=None,
     )
+
+    model = ADMGParameterisedDDECI.create(
+        model_id="model_id",
+        variables=variables,
+        save_dir=tmpdir_factory.mktemp("save_dir"),
+        model_config_dict=model_config,
+        device="cpu",
+    )
+    eval_latent_confounded_causal_discovery(confounded_causal_dataset, model)
+
+    results_directed = read_json_as(os.path.join(model.save_dir, "target_results_causality_directed.json"), dict)
+    results_bidirected = read_json_as(os.path.join(model.save_dir, "target_results_causality_bidirected.json"), dict)
+
+    assert "adjacency_precision" in results_directed["test_data"]
+    assert "adjacency_fscore" in results_directed["test_data"]
+    assert "orientation_recall" in results_directed["test_data"]
+    assert "orientation_precision" in results_directed["test_data"]
+    assert "orientation_fscore" in results_directed["test_data"]
+    assert "causal_accuracy" in results_directed["test_data"]
+    assert "shd" in results_directed["test_data"]
+    assert "nnz" in results_directed["test_data"]
+    assert "adjacency_precision" in results_bidirected["test_data"]
+    assert "adjacency_fscore" in results_bidirected["test_data"]
+    assert "orientation_recall" in results_bidirected["test_data"]
+    assert "orientation_precision" in results_bidirected["test_data"]
+    assert "orientation_fscore" in results_bidirected["test_data"]
+    assert "causal_accuracy" in results_bidirected["test_data"]
+    assert "shd" in results_bidirected["test_data"]
+    assert "nnz" in results_bidirected["test_data"]
+
+    model = BowFreeDDECI.create(
+        model_id="model_id",
+        variables=variables,
+        save_dir=tmpdir_factory.mktemp("save_dir"),
+        model_config_dict=model_config,
+        device="cpu",
+    )
+    eval_latent_confounded_causal_discovery(confounded_causal_dataset, model)
 
     model = DECI.create(
         model_id="model_id",

@@ -1,0 +1,53 @@
+{
+  "model_hyperparams": {
+    "imputation": false,
+    "tau_gumbel": 0.25,
+    "lambda_dag": 10.0,
+    "lambda_sparse": 5,
+    "lambda_prior": 100000,
+    "spline_bins": 8,
+    "var_dist_A_mode": "temporal_three",
+    "base_distribution_type": "conditional_spline",
+    "norm_layers": true,
+    "res_connection": true,
+    "random_seed": [
+      0
+    ],
+    "cate_rff_n_features": 3000,
+    "cate_rff_lengthscale": [
+      0.1,
+      1
+    ],
+    "prior_A_confidence": 0.5,
+    "allow_instantaneous": true,
+    "lag": 2,
+    "init_logits": [
+      0,
+      0
+    ],
+    "conditional_spline_order": "quadratic",
+    "additional_spline_flow": 0,
+    "conditional_encoder_layer_sizes": null,
+    "conditional_decoder_layer_sizes": null
+
+  },
+  "training_hyperparams": {
+    "learning_rate": 0.01,
+    "likelihoods_learning_rate": 0.001,
+    "batch_size": 128,
+    "stardardize_data_mean": false,
+    "stardardize_data_std": false,
+    "rho": 1.0,
+    "safety_rho": 10000000000000.0,
+    "alpha": 0.0,
+    "safety_alpha": 10000000000000.0,
+    "tol_dag": -1,
+    "progress_rate": 0.65,
+    "max_steps_auglag": 70,
+    "max_auglag_inner_epochs": 6000,
+    "max_p_train_dropout": 0,
+    "reconstruction_loss_factor": 1.0,
+    "anneal_entropy": "noanneal"
+  },
+  "lambda_sparse": 1
+}
