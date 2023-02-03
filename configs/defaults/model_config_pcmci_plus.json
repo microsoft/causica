@@ -8,7 +8,7 @@
         "cond_ind_test_config": {
             "significance": "analytic"
         },
-        "mec_mode": "truth",
+        "mec_mode": "enumerate",
         "random_seed": [0]
 
     },

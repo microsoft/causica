@@ -10,7 +10,7 @@
     },
 
     "training_hyperparams": {
-        "max_iter": 1000,
+        "max_iter": 100,
         "h_tol": 1e-8,
         "w_threshold": 0
     }

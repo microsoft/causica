@@ -1,0 +1,54 @@
+{
+    "model_hyperparams": {
+        "random_seed": [
+            0,
+            1,
+            2,
+            3,
+            4
+        ],
+        "inference_config": {
+            "tau_gumbel": 0.25,
+            "lambda_dag": 100.0,
+            "lambda_sparse": 0.0,
+            "lambda_prior": 10.0,
+            "base_distribution_type": "spline",
+            "imputation": false,
+            "spline_bins": 8,
+            "var_dist_A_mode": "categorical",
+            "mode_adjacency": "learn",
+            "prior_A_confidence": 0.5,
+            "norm_layers": false,
+            "res_connection": false
+        },
+        "discovery_config": {}
+    },
+    "training_hyperparams": {
+        "inference_config": {
+            "learning_rate": 5e-3,
+            "ICGNN_learning_rate": 1e-3,
+            "inference_network_learning_rate": 1e-3,
+            "likelihoods_learning_rate": 1e-3,
+            "batch_size": 128,
+            "stardardize_data_mean": true,
+            "stardardize_data_std": true,
+            "rho": 1.0,
+            "safety_rho": 1e13,
+            "alpha": 0.0,
+            "safety_alpha": 1e13,
+            "tol_dag": 1e-5,
+            "progress_rate": 0.65,
+            "max_steps_auglag": 30,
+            "max_auglag_inner_epochs": 10000,
+            "max_p_train_dropout": 0.6,
+            "reconstruction_loss_factor": 1.0,
+            "anneal_entropy": "noanneal",
+            "anneal_beta": "linear",
+            "anneal_beta_max_steps": 5,
+            "beta": 1.0,
+            "auglag_inner_reduce_lr_lag": 1000,
+            "auglag_inner_early_stop_lag": 1000
+        },
+        "discovery_config": {}
+    }
+}

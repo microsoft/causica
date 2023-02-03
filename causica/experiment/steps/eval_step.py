@@ -23,6 +23,7 @@ from ...datasets.dataset import (
     SparseDataset,
     TemporalDataset,
 )
+from ...models.deci.ddeci import DDECI
 from ...models.deci.deci import DECI
 from ...models.imodel import IModelForCausalInference, IModelForCounterfactuals, IModelForImputation
 from ...utils.causality_utils import (
@@ -216,10 +217,7 @@ def run_eval_main(
     mlflow.log_metric("impute/running-time", (dt.datetime.utcnow() - start_time).total_seconds() / 60)
 
 
-def eval_causal_discovery(
-    dataset: CausalDataset,
-    model: IModelForCausalInference,
-):
+def eval_causal_discovery(dataset: CausalDataset, model: IModelForCausalInference, disable_diagonal_eval: bool = True):
     """
     Args:
         logger (`logging.Logger`): Instance of logger class to use.
@@ -239,8 +237,8 @@ def eval_causal_discovery(
 
     # Convert temporal adjacency matrices to static adjacency matrices, currently does not support partially observed ground truth (i.e. subgraph_idx=None).
     if isinstance(dataset, TemporalDataset):
+        results = eval_temporal_causal_discovery(dataset, model, disable_diagonal_eval=disable_diagonal_eval)
         if adj_ground_truth.ndim == 3:
-            results = eval_temporal_causal_discovery(dataset, model)
             # Log metrics
             for suffix in ["overall_full_time", "overall_temporal", "inst", "lag"]:
                 mlflow.log_metric(f"adjacency_{suffix}.recall", results.get(f"adjacency_recall_{suffix}", -1))
@@ -253,7 +251,17 @@ def eval_causal_discovery(
                 mlflow.log_metric(f"causalshd_{suffix}", results.get(f"shd_{suffix}", -1))
                 mlflow.log_metric(f"causalnnz_{suffix}", results.get(f"nnz_{suffix}", -1))
         elif adj_ground_truth.ndim == 2:
-            raise NotImplementedError("No implementation for aggregated adj matrix ")
+            mlflow.log_metric("adjacency_agg.recall", results.get("adjacency_recall_agg", -1))
+            mlflow.log_metric("adjacency_agg.precision", results.get("adjacency_precision_agg", -1))
+            mlflow.log_metric("adjacency_agg.f1", results.get("adjacency_fscore_agg", -1), True)
+            mlflow.log_metric("orientation_agg.recall", results.get("orientation_recall_agg", -1))
+            mlflow.log_metric("orientation_agg.precision", results.get("orientation_precision_agg", -1))
+            mlflow.log_metric("orientation_agg.f1", results.get("orientation_fscore_agg", -1), True)
+            mlflow.log_metric("causal_accuracy_agg", results.get("causal_accuracy_agg", -1))
+            mlflow.log_metric("causalshd_agg", results.get("shd_agg", -1))
+            mlflow.log_metric("causalnnz_agg", results.get("nnz_agg", -1))
+            mlflow.log_metric("auroc_agg", results.get("auroc_agg", -1))
+
         else:
             raise ValueError("Invalid dimension of ground truth adjacency matrix")
     else:
@@ -302,6 +310,8 @@ def eval_latent_confounded_causal_discovery(
         directed_adj, bidirected_adj = cast(Any, model).get_admg_matrices()
         directed_adj = directed_adj.astype(float).round()
         bidirected_adj = bidirected_adj.astype(float).round()
+    elif isinstance(model, DDECI):
+        return
     else:
         assert hasattr(model, "get_adj_matrix")
         directed_adj = model.get_adj_matrix().astype(float).round()

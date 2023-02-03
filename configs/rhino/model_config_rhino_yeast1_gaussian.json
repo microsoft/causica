@@ -1,0 +1,61 @@
+{
+          "model_hyperparams": {
+  "ICGNN_embedding_size": null,
+  "additional_spline_flow": 0,
+  "allow_instantaneous": false,
+  "base_distribution_type": "gaussian",
+  "cate_rff_lengthscale": [
+    0.1,
+    1
+  ],
+  "cate_rff_n_features": 3000,
+  "conditional_decoder_layer_sizes": [
+    10
+  ],
+  "conditional_embedding_size": null,
+  "conditional_encoder_layer_sizes": [
+    10
+  ],
+  "conditional_spline_order": "linear",
+  "decoder_layer_sizes": [
+    10
+  ],
+  "encoder_layer_sizes": [
+    10
+  ],
+  "imputation": false,
+  "init_logits": [
+    -3,
+    -3
+  ],
+  "lag": 2,
+  "lambda_dag": 10,
+  "lambda_prior": 100000,
+  "lambda_sparse": 15,
+  "norm_layers": true,
+  "prior_A_confidence": 0.5,
+  "random_seed": 0,
+  "res_connection": true,
+  "spline_bins": 8,
+  "tau_gumbel": 0.25,
+  "var_dist_A_mode": "temporal_three"
+},
+    "training_hyperparams": {
+    "learning_rate": 0.001,
+    "likelihoods_learning_rate": 0.001,
+    "batch_size": 64,
+    "stardardize_data_mean": false,
+    "stardardize_data_std": false,
+    "rho": 1.0,
+    "safety_rho": 10000000000000.0,
+    "alpha": 0.0,
+    "safety_alpha": 10000000000000.0,
+    "tol_dag": -1,
+    "progress_rate": 0.65,
+    "max_steps_auglag": 150,
+    "max_auglag_inner_epochs": 2000,
+    "max_p_train_dropout": 0,
+    "reconstruction_loss_factor": 1.0,
+    "anneal_entropy": "noanneal"
+  }
+}

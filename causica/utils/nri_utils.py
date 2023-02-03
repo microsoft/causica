@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Type, Union
 import numpy as np
 import torch
 import torch.distributions as td
+from sklearn import metrics
 
 from ..datasets.dataset import CausalDataset
 
@@ -50,12 +51,15 @@ def is_there_edge(adj_matrix):
     return adj_matrix[mask].astype(bool)
 
 
-def edge_prediction_metrics(adj_matrix_true, adj_matrix_predicted, adj_matrix_mask=None):
+def edge_prediction_metrics(
+    adj_matrix_true, adj_matrix_predicted, adj_matrix_mask=None, adj_matrix_predicted_prob: Optional[np.ndarray] = None
+):
     """
     Computes the edge predicition metrics when the ground truth DAG (or CPDAG) is adj_matrix_true and the predicted one
     is adj_matrix_predicted. Both are numpy arrays.
     adj_matrix_mask is the mask matrix for adj_matrices, that indicates which subgraph is partially known in the ground
     truth. 0 indicates the edge is unknwon, and 1 indicates that the edge is known.
+    If adj_matrix_predicted_prob is provided and it is generated from aggregated temporal matrix, then AUROC is computed.
     """
     if adj_matrix_mask is None:
         adj_matrix_mask = np.ones_like(adj_matrix_true)
@@ -102,6 +106,15 @@ def edge_prediction_metrics(adj_matrix_true, adj_matrix_predicted, adj_matrix_ma
     # Compute SHD and number of nonzero edges
     results["shd"] = _shd(adj_matrix_true, adj_matrix_predicted)
     results["nnz"] = adj_matrix_predicted.sum()
+
+    # Compute AUROC
+    if adj_matrix_predicted_prob is not None:
+        assert adj_matrix_predicted_prob.ndim == 2, "AUROC metric only supports 2D matrix"
+        # get rid of the diagonal
+        adj_matrix_true_fl = adj_matrix_true.flatten()
+        adj_pred_fl = adj_matrix_predicted_prob.flatten()
+        auroc = metrics.roc_auc_score(adj_matrix_true_fl, adj_pred_fl)
+        results["auroc"] = auroc
     return results
 
 
@@ -135,17 +148,27 @@ def _shd(adj_true, adj_pred):
 
 
 def edge_prediction_metrics_multisample(
-    adj_matrix_true, adj_matrices_predicted, adj_matrix_mask=None, compute_mean=True
+    adj_matrix_true,
+    adj_matrices_predicted,
+    adj_matrix_mask=None,
+    compute_mean=True,
+    adj_pred_prob: Optional[np.ndarray] = None,
 ):
     """
     Computes the edge predicition metrics when the ground truth DAG (or CPDAG) is adj_matrix_true and many predicted
     adjacencies are sampled from the distribution. Both are numpy arrays, adj_matrix_true has shape (n, n) and
-    adj_matrices_predicted has shape (M, n, n), where M is the number of matrices sampled.
+    adj_matrices_predicted has shape (M, n, n), where M is the number of matrices sampled. adj_pred_prob has shape [n,n]
+    and contains the bernoulli prob, which is used to compute auroc.
     """
-    results = {}
+    results: dict = {}
     for i in range(adj_matrices_predicted.shape[0]):
         adj_matrix_predicted = adj_matrices_predicted[i, :, :]  # (n, n)
-        results_local = edge_prediction_metrics(adj_matrix_true, adj_matrix_predicted, adj_matrix_mask=adj_matrix_mask)
+        results_local = edge_prediction_metrics(
+            adj_matrix_true,
+            adj_matrix_predicted,
+            adj_matrix_mask=adj_matrix_mask,
+            adj_matrix_predicted_prob=adj_pred_prob,
+        )
         for k, result in results_local.items():
             if k not in results:
                 results[k] = []
@@ -439,3 +462,60 @@ def evaluate_true_posterior(
         return td.kl.kl_divergence(true_posterior, approximate_posterior)
     else:
         raise NotImplementedError
+
+
+def print_AR_DECI_metrics(adj_metrics: dict, is_aggregated: bool = False) -> None:
+    """
+    This is to print the metrics for AR-DECI.
+    Args:
+        adj_metrics: the adj_metrics dict
+        is_aggregated: Is this evaluated with aggregated adj matrix
+    """
+    if is_aggregated:
+        adj_fscore = np.array(adj_metrics.get("adjacency_fscore_agg", -1))
+        ori_fscore = np.array(adj_metrics.get("orientation_fscore_agg", -1))
+        shd = np.array(adj_metrics.get("shd_agg", -1))
+        auroc = np.array(adj_metrics.get("auroc_agg", -1))
+        val_likelihood = adj_metrics.get("val_likelihood", -1)
+        print(
+            f"adj_fscore: {adj_fscore} ori_fscore: {ori_fscore} shd: {shd} auroc: {auroc} val_likelihood: {val_likelihood}"
+        )
+    else:
+        ori_fscore_overall = np.array(adj_metrics.get("orientation_fscore_overall_temporal", -1))
+        shd_overall = np.array(adj_metrics.get("shd_overall_temporal", -1))
+        ori_fscore_lag = np.array(adj_metrics.get("orientation_fscore_lag", -1))
+        ori_fscore_inst = np.array(adj_metrics.get("orientation_fscore_inst", -1))
+        shd_lag = np.array(adj_metrics.get("shd_lag", -1))
+        shd_inst = np.array(adj_metrics.get("shd_inst", -1))
+        val_likelihood = adj_metrics.get("val_likelihood", -1)
+        print(f"ori_fscore_overall: {ori_fscore_overall} shd_overall: {shd_overall} ori_fscore_lag: {ori_fscore_lag}")
+        print(
+            f"ori_fscore_inst: {ori_fscore_inst} shd_lag: {shd_lag} shd_inst: {shd_inst} val_likelihood: {val_likelihood}"
+        )
+
+
+def update_AR_DECI_metrics_dict(metrics_dict: dict, adj_metrics: dict, is_aggregated: bool = False):
+    if is_aggregated:
+        key_list = [
+            "adjacency_fscore_agg",
+            "orientation_fscore_agg",
+            "shd_agg",
+            "auroc_agg",
+            "val_likelihood",
+            "FPR_agg",
+            "TPR_agg",
+        ]
+    else:
+        key_list = [
+            "adjacency_fscore_overall_temporal",
+            "orientation_fscore_overall_temporal",
+            "shd_overall_temporal",
+            "val_likelihood",
+        ]
+
+    for key in key_list:
+        if key not in metrics_dict.keys():
+            metrics_dict[key] = []
+        cur_metric = adj_metrics.get(key, None)
+        metrics_dict[key].append(cur_metric)
+    return metrics_dict

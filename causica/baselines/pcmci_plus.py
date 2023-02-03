@@ -190,7 +190,7 @@ class PCMCI_Plus(Model, IModelForCausalInference):
                 adj_matrix, conversion_type="auto_regressive"
             )  # shape[(lag+1) *nodes, (lag+1)*nodes]
             all_static_temp_dags = cpdag2dags(
-                static_temporal_graph
+                static_temporal_graph, samples=3000
             )  # [all_possible_dags, (lag+1)*num_nodes, (lag+1)*num_nodes]
             # convert back to temporal adj matrix.
             temp_adj_list = np.split(
@@ -203,6 +203,9 @@ class PCMCI_Plus(Model, IModelForCausalInference):
             # we must have dataset and corresponding true adj to assign to bi-directed edges.
             assert isinstance(self.dataset, TemporalDataset)
             assert self.dataset.has_adjacency_data_matrix, "dataset does not have ground truth adj matrix"
+            assert (
+                self.dataset.get_adjacency_data_matrix().ndim == 2
+            ), "truth mec_mode does not support aggregated adj matrix"
             proc_adj_matrix = deepcopy(adj_matrix)
             ground_truth = self.dataset.get_adjacency_data_matrix()
             proc_adj_matrix[0, ...] = self._assign_true_edges(

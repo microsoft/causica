@@ -410,6 +410,14 @@ class TemporalDataset(CausalDataset):
             raise TypeError("Transition matrix is None. No transition matrix has been loaded.")
         return self._transition_matrix
 
+    def get_val_segmentation(self) -> List[Tuple[int, int]]:
+        """
+        Return the list of tuples (start, end) for the validation data.
+        """
+        if self._val_segmentation is None:
+            raise TypeError("Validation segmentation is None. No validation segmentation has been loaded.")
+        return self._val_segmentation
+
 
 class LatentConfoundedCausalDataset(CausalDataset):
     """Child class of CausalDataset that represents a causal dataset with latent confounding. This consists of both a
