@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "causica"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 readme = "README.md"
 authors = []
@@ -20,7 +20,7 @@ tensorboard = "^2.9.0"
 pytorch-lightning = {version = "^1.7.7", extras= ["extra"]}
 dataclasses-json = "^0.5.7"
 types-PyYAML = "^6.0.12.2"
-tensordict = "^0.0.2a0"
+tensordict = ">= 0.0.2a0, < 0.1.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
