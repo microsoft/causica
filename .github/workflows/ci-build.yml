@@ -43,7 +43,7 @@ jobs:
       shell: bash -l {0}
       run: |
         cd repo
-        poetry run python -m pytest ./tests/unit_tests
+        poetry run python -m pytest ./test
 
     - name: Create build artifact
       shell: bash -l {0}

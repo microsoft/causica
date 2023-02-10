@@ -1,8 +1,0 @@
-{
-    "model_hyperparams": {
-    },
-    "training_hyperparams": {
-	    "use_dag_loss": true,
-	    "two_steps": true
-    }
-}
