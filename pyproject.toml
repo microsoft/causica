@@ -4,48 +4,27 @@ version = "0.1.0"
 description = ""
 readme = "README.md"
 authors = []
+packages = [
+    { include = "causica", from = "src" },
+    { include = "examples", from = "." },
+]
 license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">= 3.8, < 3.10"
-dowhy = "^0.9.1"
-econml = "^0.12.0"
-gcastle = {git = "https://github.com/confoundry/trustworthyAI.git", rev = "a768c0a"}
-gitpython = "^3.1.27"
-graphviz = "^0.17"
-igraph = "^0.9.10"
-jaxlib = "^0.4.1"
-jupyter = "^1.0.0"
-jupytext = "^1.13.8"
-lingam = "1.5.5"
-matplotlib = "^3.5.2"
-mlflow = "^1.27.0"
-networkx = "^2.8.3"
-numpy = "^1.22.4,<1.24"
-numpyro = "^0.9.2"
+azureml-mlflow = "^1.46.0"
+mlflow = "^2.0.0"
+numpy = "^1.22.4"
 pandas = "^1.4.2"
-pyro-ppl = "^1.8.1"
-scikit-learn = "^1.0.2"
-scipy = "^1.8.1"
-seaborn = "^0.11.2"
 tensorboard = "^2.9.0"
-torch = "^1.12.0"
-pytorch-lightning = "^1.7.7"
-tqdm = "^4.64.0"
-causal-learn = "^0.1.2.8"
-causalnex = {git = "https://github.com/WenboGong/causalnex.git", branch = "develop" }
-tigramite = {git = "https://github.com/WenboGong/tigramite.git", branch = "develop"}
-dcor = "0.5.3"
-pygraphviz = { version = "^1.9", optional = true }
+pytorch-lightning = {version = "^1.7.7", extras= ["extra"]}
+dataclasses-json = "^0.5.7"
+types-PyYAML = "^6.0.12.2"
+tensordict = "^0.0.2a0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
-
-[tool.poetry.extras]
-# Adding pygraphviz as an optional dependency for plotting in the causal suite
-# notebook. This requires graphviz to be installed.
-pygraphviz = ["pygraphviz"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

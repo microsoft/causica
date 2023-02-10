@@ -1,0 +1,6 @@
+{
+  "embedding_size": 32,
+  "out_dim_g": 32,
+  "norm_layer": true,
+  "res_connection": true
+}
