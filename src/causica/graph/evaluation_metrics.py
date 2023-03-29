@@ -9,9 +9,19 @@ def adjacency_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> Tu
     """Evaluate the precision and recall of edge existence for two adjacency matrices."""
     vec1 = torch.abs(_to_vector(graph1)) > 0
     vec2 = torch.abs(_to_vector(graph2)) > 0
+
     correspondence = (vec1 & vec2).sum()
-    recall = correspondence / vec1.sum() if vec1.sum() != 0 else torch.tensor(0.0)
-    precision = correspondence / vec2.sum() if vec2.sum() != 0 else torch.tensor(0.0)
+
+    if (vec1_sum := vec1.sum()) != 0:
+        recall = correspondence / vec1_sum
+    else:
+        recall = torch.tensor(0.0, device=graph1.device)
+
+    if (vec2_sum := vec2.sum()) != 0:
+        precision = correspondence / vec2_sum
+    else:
+        precision = torch.tensor(0.0, device=graph1.device)
+
     return precision, recall
 
 
@@ -26,12 +36,17 @@ def orientation_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> 
     vec2 = _to_vector(graph2)
     non_zero_vec1 = vec1 != 0
     non_zero_vec2 = vec2 != 0
-    recall = (
-        ((vec1 == vec2) & non_zero_vec1).sum() / non_zero_vec1.sum() if non_zero_vec1.sum() != 0 else torch.tensor(0.0)
-    )
-    precision = (
-        ((vec1 == vec2) & non_zero_vec2).sum() / non_zero_vec2.sum() if non_zero_vec2.sum() != 0 else torch.tensor(0.0)
-    )
+
+    if (non_zero_vec1_sum := non_zero_vec1.sum()) != 0:
+        recall = ((vec1 == vec2) & non_zero_vec1).sum() / non_zero_vec1_sum
+    else:
+        recall = torch.tensor(0.0, device=graph1.device)
+
+    if (non_zero_vec2_sum := non_zero_vec2.sum()) != 0:
+        precision = ((vec1 == vec2) & non_zero_vec2).sum() / non_zero_vec2_sum
+    else:
+        precision = torch.tensor(0.0, device=graph1.device)
+
     return precision, recall
 
 
@@ -43,7 +58,7 @@ def orientation_f1(graph1: torch.Tensor, graph2: torch.Tensor) -> torch.Tensor:
 def f1_score(precision: torch.Tensor, recall: torch.Tensor) -> torch.Tensor:
     """Calculate f1 score from precision and recall."""
     if torch.abs(denominator := precision + recall) < 1e-8:
-        return torch.tensor(0.0)
+        return torch.tensor(0.0, device=precision.device)
     return 2.0 * precision * recall / denominator
 
 

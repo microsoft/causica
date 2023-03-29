@@ -1,21 +1,23 @@
+import os
+
 import pytest
 
-from causica.datasets.csuite_data import CSUITE_DATASETS_PATH, DataEnum, load_data
+from causica.datasets.causica_dataset_format import CSUITE_DATASETS_PATH, DataEnum, load_data
 from causica.datasets.tensordict_utils import tensordict_shapes
 
 
 @pytest.mark.parametrize("dataset", ["csuite_weak_arrows", "csuite_linexp_2"])
 def test_load_csuite(dataset):
     """Test that we can load a csuite dataset"""
+    root_path = os.path.join(CSUITE_DATASETS_PATH, dataset)
 
-    variables_metadata = load_data(CSUITE_DATASETS_PATH, dataset, DataEnum.VARIABLES_JSON)
-    train_data = load_data(CSUITE_DATASETS_PATH, dataset, DataEnum.TRAIN, variables_metadata)
-    test_data = load_data(CSUITE_DATASETS_PATH, dataset, DataEnum.TEST, variables_metadata)
+    variables_metadata = load_data(root_path, DataEnum.VARIABLES_JSON)
+    train_data = load_data(root_path, DataEnum.TRAIN, variables_metadata)
+    test_data = load_data(root_path, DataEnum.TEST, variables_metadata)
+
     assert tensordict_shapes(train_data) == tensordict_shapes(test_data)
     groups = set(train_data.keys())
-    for (intervention_a, intervention_b, _) in load_data(
-        CSUITE_DATASETS_PATH, dataset, DataEnum.INTERVENTIONS, variables_metadata
-    ):
+    for (intervention_a, intervention_b, _) in load_data(root_path, DataEnum.INTERVENTIONS, variables_metadata):
         int_groups_a = set(intervention_a.intervention_values.keys()) | intervention_a.sampled_nodes
         int_groups_b = set(intervention_b.intervention_values.keys()) | intervention_b.sampled_nodes
         assert groups == int_groups_a
@@ -24,15 +26,16 @@ def test_load_csuite(dataset):
             intervention_b.intervention_data
         )
 
-    adj_mat = load_data(CSUITE_DATASETS_PATH, dataset, DataEnum.TRUE_ADJACENCY)
+    adj_mat = load_data(root_path, DataEnum.TRUE_ADJACENCY)
     num_nodes = len(train_data.keys())
     assert adj_mat.shape == (num_nodes, num_nodes)
 
 
 def test_load_counterfactuals():
     dataset = "csuite_linexp_2"
+    root_path = os.path.join(CSUITE_DATASETS_PATH, dataset)
     # not all counterfactuals exist
-    data_list = load_data(CSUITE_DATASETS_PATH, dataset, DataEnum.COUNTERFACTUALS)
+    data_list = load_data(root_path, DataEnum.COUNTERFACTUALS)
     for (intervention_a, intervention_b, _) in data_list:
         int_groups_a = set(intervention_a.intervention_values.keys()) | intervention_a.sampled_nodes
         int_groups_b = set(intervention_b.intervention_values.keys()) | intervention_b.sampled_nodes

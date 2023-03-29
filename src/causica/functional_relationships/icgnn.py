@@ -1,4 +1,4 @@
-from typing import List, Optional, OrderedDict, Type
+from typing import Dict, List, Optional, Type
 
 import torch
 from tensordict import TensorDict
@@ -12,9 +12,17 @@ from causica.functional_relationships.functional_relationships import (
 
 
 class ICGNN(FunctionalRelationships):
+    """
+    This is a `FunctionalRelationsips` that implements the ICGNN.
+
+    Details can be found here: https://openreview.net/forum?id=S2pNPZM-w-f
+
+    This wraps the `FGNNI` in a `TensorDict` interface.
+    """
+
     def __init__(
         self,
-        variables: OrderedDict[str, torch.Size],
+        variables: Dict[str, torch.Size],
         embedding_size: Optional[int] = None,
         out_dim_g: Optional[int] = None,
         norm_layer: Optional[Type[nn.LayerNorm]] = None,

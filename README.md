@@ -14,15 +14,15 @@ This project splits the interventional decision making from observational decisi
 
 This codebase has been heavily refactored, you can find the previous version of the code [here](https://github.com/microsoft/causica/releases/tag/v0.0.0).
 
-[1] Alvarez et al. [Simultaneous Missing Value Imputation and Structure Learning with Groups](https://openreview.net/pdf?id=4rm6tzBjChe), NeurIPS 2022
-
-[2] Geffner et al. [Deep End-to-end Causal Inference.](https://arxiv.org/pdf/2202.02195.pdf)
-
-[3] Gong et al.  [Rhino: Deep Causal Temporal Relationship Learning With History-dependent Noise](https://openreview.net/pdf?id=i_1rbq8yFWC), ICLR 2023
-
-[4] Ma et al. [Causal Reasoning in the Presence of Latent Confounders via Neural ADMG Learning]( https://openreview.net/pdf?id=dcN0CaXQhT), ICLR 2023
-
 # DECI: End to End Causal Inference
+
+## Installation
+
+The Causica repo is on PyPI so you can be pip installed:
+
+```
+pip install causica
+```
 
 ## About
 
@@ -41,31 +41,22 @@ DECI estimates causal quantities (ATE) by applying the relevant interventions to
 
 ## How to run
 
-The command to train this model the csuite_weak_arrows dataset and evaluate causal discovery and ATE estimation performance is:
+See the notebook `examples/csuite_example.ipynb`, for how to train a DECI model and check the causal discovery.
 
-```
-python train_csuite_example.py --dataset csuite_weak_arrows
-```
+This will download the data from the CSuite Azure blob storage and train DECI on it. See [here](https://github.com/microsoft/csuite) for more info about CSuite datasets. The notebook will work on any of the available CSuite datasets.
 
-from within `examples/csuite_example`.
-
-This will download the data from the CSuite Azure blob storage and train DECI on it. See [here](https://github.com/microsoft/csuite) for more info about CSuite datasets. The script will work on any of the available CSuite datasets.
-
-To evaluate the model run:
-
-```
-python eval_csuite_example.py
-```
-
-This should print various causal discovery and causal inference metrics.
 
 **Specifying a noise model**
 
-The noise exogenous model can be modified by changing the `noise_dist` field within `training_default.json`, either 'gaussian' or 'spline' are allowed.
+The noise exogenous model can be modified by changing the `noise_dist` field within `TrainingConfig`, either Gaussian or Spline are allowed.
 
 The Gaussian model has Gaussian exogenous noise distribution with mean set to 0 while its variance is learnt.
 
 The Spline model uses a flexible spline flow that is learnt from the data. This model provides most gains in heavy-tailed noise settings, where the Gaussian model is at risk of overfitting to outliers, but can take longer to train.
+
+**Using a known Causal graph**
+
+To use DECI to learn the functional relationships, remove the variational distribution terms from the loss and replace the sample with the known graph.
 
 ## Further extensions 
 

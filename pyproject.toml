@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "causica"
-version = "0.1.1"
+version = "0.2.0"
 description = ""
 readme = "README.md"
 authors = []
@@ -11,7 +11,7 @@ packages = [
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = ">= 3.8, < 3.10"
+python = "~3.9"
 azureml-mlflow = "^1.46.0"
 mlflow = "^2.0.0"
 numpy = "^1.22.4"
@@ -20,7 +20,8 @@ tensorboard = "^2.9.0"
 pytorch-lightning = {version = "^1.7.7", extras= ["extra"]}
 dataclasses-json = "^0.5.7"
 types-PyYAML = "^6.0.12.2"
-tensordict = ">= 0.0.2a0, < 0.1.0"
+tensordict = "^0.1.0"
+torch = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

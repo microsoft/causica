@@ -1,5 +1,5 @@
 import abc
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import torch
 import torch.distributions as dist
@@ -12,7 +12,7 @@ class SEM(dist.Distribution, abc.ABC):
     def __init__(
         self,
         graph: torch.Tensor,
-        node_names: List[str],
+        node_names: Sequence[str],
         event_shape: torch.Size = torch.Size(),
         batch_shape: torch.Size = torch.Size(),
     ) -> None:
@@ -72,9 +72,12 @@ class SEM(dist.Distribution, abc.ABC):
         """
         pass
 
+    @torch.no_grad()
     def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:
         """
         Sample from the SEM
+
+        Grads shall not pass through this method (see `Distribution.sample` vs `Distribution.rsample`).
 
         Args:
             sample_shape: shape of the returned samples
@@ -85,9 +88,12 @@ class SEM(dist.Distribution, abc.ABC):
         return self.noise_to_sample(noise=noise_dict)
 
     @abc.abstractmethod
+    @torch.no_grad()
     def sample_noise(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:
         """
         Sample the noise vector for the distribution.
+
+        Grads shall not pass through implementations of this method.
 
         Args:
             sample_shape: shape of the returned noise samples

@@ -5,6 +5,7 @@ import torch
 import torch.distributions as td
 
 from causica.distributions.adjacency.adjacency_distributions import AdjacencyDistribution
+from causica.distributions.distribution_module import DistributionModule
 
 
 class ConstrainedAdjacencyDistribution(AdjacencyDistribution):
@@ -127,28 +128,28 @@ def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> Tuple[torch.T
     assert graph_constraint_matrix.shape[0] == graph_constraint_matrix.shape[1], "Constraint matrix must be square."
     # Mask self-edges
     mask = ~torch.eye(graph_constraint_matrix.shape[0], dtype=torch.bool, device=graph_constraint_matrix.device)
-    positive_constraints = mask * torch.nan_to_num(graph_constraint_matrix, nan=1).to(dtype=torch.bool)
-    negative_constraints = torch.nan_to_num(graph_constraint_matrix, nan=0).to(dtype=torch.bool)
+
+    positive_constraints = mask * torch.nan_to_num(graph_constraint_matrix, nan=0).to(dtype=torch.bool)
+    negative_constraints = torch.nan_to_num(graph_constraint_matrix, nan=1).to(dtype=torch.bool)
     return positive_constraints, negative_constraints
 
 
 def _create_distribution(
-    dist_class: Type[AdjacencyDistribution],
-    positive_constraints: torch.Tensor,
-    negative_constraints: torch.Tensor,
-    *args,
-    **kwargs
+    dist_class: Type[AdjacencyDistribution], *args, graph_constraint_matrix: torch.Tensor, **kwargs
 ) -> ConstrainedAdjacencyDistribution:
     """Utility function for generating a constrained adjacency distribution with a base distribution.
 
     Args:
         dist_class (Type[AdjacencyDistribution]): Type of the base adjacency distribution.
-        positive_constraints (torch.Tensor): Positive constraint matrix.
-        negative_constraints (torch.Tensor): Negative constraint matrix.
+        graph_constraint_matrix: Graph constraints: 0 = no edge, 1 = edge, nan: no constraint. Must match the event
+                                 shape of the distribution.
 
     Returns:
         ConstrainedAdjacencyDistribution: Constrained adjacency distribution.
     """
+
+    positive_constraints, negative_constraints = get_graph_constraint(graph_constraint_matrix)
+
     dist = dist_class(*args, **kwargs)
     return ConstrainedAdjacencyDistribution(
         dist, positive_constraints=positive_constraints, negative_constraints=negative_constraints
@@ -157,7 +158,6 @@ def _create_distribution(
 
 def constrained_adjacency(
     dist_class: Type[AdjacencyDistribution],
-    graph_constraint_matrix: torch.Tensor,
 ) -> Callable[..., ConstrainedAdjacencyDistribution]:
     """Utility function that returns a function constructing a constrained adjacency distribution.
 
@@ -169,11 +169,35 @@ def constrained_adjacency(
     Returns:
         Callable[..., ConstrainedAdjacencyDistribution]: Utility function creating a ConstrainedAdjacencyDistribution.
     """
-    positive_constraints, negative_constraints = get_graph_constraint(graph_constraint_matrix)
 
     return partial(
         _create_distribution,
         dist_class=dist_class,
-        positive_constraints=positive_constraints,
-        negative_constraints=negative_constraints,
     )
+
+
+class ConstrainedAdjacency(DistributionModule[AdjacencyDistribution]):
+    """A constrained adjacency distribution module where certain parts edges of in the adjacency matrix are locked."""
+
+    def __init__(
+        self, adjacency_distribution: DistributionModule[AdjacencyDistribution], graph_constraint_matrix: torch.Tensor
+    ):
+        """
+        Args:
+            adjacency_distribution: Underlying adjacency distribution module.
+            graph_constraint_matrix: Constraint matrix with edges defined according to `get_graph_constraint`.
+        """
+        super().__init__()
+        self.adjacency_distribution = adjacency_distribution
+        positive_constraints, negative_constraints = get_graph_constraint(graph_constraint_matrix)
+        self.positive_constraints: torch.Tensor
+        self.negative_constraints: torch.Tensor
+        self.register_buffer("positive_constraints", positive_constraints)
+        self.register_buffer("negative_constraints", negative_constraints)
+
+    def forward(self) -> ConstrainedAdjacencyDistribution:
+        return ConstrainedAdjacencyDistribution(
+            self.adjacency_distribution(),
+            positive_constraints=self.positive_constraints,
+            negative_constraints=self.negative_constraints,
+        )

@@ -3,8 +3,9 @@ import pandas as pd
 import torch
 from tensordict import TensorDict
 
-from causica.datasets.csuite_data import tensordict_from_variables_metadata
+from causica.datasets.causica_dataset_format import tensordict_from_variables_metadata
 from causica.datasets.tensordict_utils import convert_one_hot, tensordict_from_pandas
+from causica.datasets.variable_types import VariableTypeEnum
 
 
 def test_dataset_without_groups():
@@ -14,7 +15,7 @@ def test_dataset_without_groups():
     dataframe = pd.DataFrame(data, columns=columns)
     dataset_from_df = tensordict_from_pandas(df=dataframe)
     dataset_from_np = tensordict_from_variables_metadata(
-        data, variables_list=[{"group_name": col, "type": "continuous"} for col in columns]
+        data, variables_list=[{"group_name": col, "type": VariableTypeEnum.CONTINUOUS} for col in columns]
     )
 
     assert all(column in dataset_from_df[5].keys() for column in columns)
@@ -47,7 +48,10 @@ def test_dataset_with_groups():
     dataset_from_df = tensordict_from_pandas(df=dataframe)
 
     dataset_from_np = tensordict_from_variables_metadata(
-        data, variables_list=[{"group_name": group_name, "type": "continuous"} for group_name, _ in col_name_list]
+        data,
+        variables_list=[
+            {"group_name": group_name, "type": VariableTypeEnum.CONTINUOUS} for group_name, _ in col_name_list
+        ],
     )
 
     for key, val in dataset_from_df.items():

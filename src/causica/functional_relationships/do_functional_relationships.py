@@ -1,4 +1,4 @@
-from typing import OrderedDict, Tuple
+from typing import Tuple
 
 import torch
 from tensordict import TensorDict
@@ -20,7 +20,7 @@ class DoFunctionalRelationships(FunctionalRelationships):
         """
         assert all(val.ndim == 1 for val in do.values()), "Intervention is only supported for 1 vector per variable"
 
-        new_variables = OrderedDict([item for item in func.variables.items() if item[0] not in do.keys()])
+        new_variables = {key: value for key, value in func.variables.items() if key not in do.keys()}
         super().__init__(new_variables)
 
         self.func = func

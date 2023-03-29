@@ -3,7 +3,9 @@ import torch
 import torch.distributions as td
 from tensordict import TensorDict
 
-from causica.distributions import NoiseAccessibleBernoulli, NoiseAccessibleIndependent
+from causica.datasets.variable_types import VariableTypeEnum
+from causica.distributions import JointNoiseModule, create_noise_modules
+from causica.distributions.noise.joint import ContinuousNoiseDist
 from causica.functional_relationships import LinearFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 
@@ -74,13 +76,13 @@ def test_linear_sem_3d_graph_do_2_nodes(three_variable_dict):
 def test_do_linear_sem_bernoulli(graph, two_variable_dict):
     coef_matrix = torch.rand((3, 3))
     func = LinearFunctionalRelationships(two_variable_dict, initial_linear_coefficient_matrix=coef_matrix)
-    noise_dist = {
-        key: lambda x, val=val: NoiseAccessibleIndependent(
-            NoiseAccessibleBernoulli(delta_logits=x, base_logits=torch.zeros(val)), 1
-        )
-        for key, val in two_variable_dict.items()
-    }
-    sem = DistributionParametersSEM(graph=graph, node_names=two_variable_dict.keys(), noise_dist=noise_dist, func=func)
+    noise_modules = create_noise_modules(
+        shapes=two_variable_dict,
+        types=dict.fromkeys(two_variable_dict, VariableTypeEnum.BINARY),
+        continuous_noise_dist=ContinuousNoiseDist.GAUSSIAN,
+    )
+    noise_dist = JointNoiseModule(noise_modules)
+    sem = DistributionParametersSEM(graph=graph, noise_dist=noise_dist, func=func)
     intervention_value = torch.tensor([1.42, 0.42])
     do_sem = sem.do(TensorDict({"x2": intervention_value}, batch_size=tuple()))
     array = torch.bernoulli(0.5 * torch.ones(100, 1))
@@ -105,15 +107,13 @@ def test_linear_sem_3d_graph_do_1_node_bernoulli(three_variable_dict):
     graph = torch.zeros(3, 3)
     graph[0, 1] = graph[0, 2] = 1
     func = LinearFunctionalRelationships(three_variable_dict, coef_matrix)
-    noise_dist = {
-        key: lambda x, val=val: NoiseAccessibleIndependent(
-            NoiseAccessibleBernoulli(delta_logits=x, base_logits=torch.zeros(val)), 1
-        )
-        for key, val in three_variable_dict.items()
-    }
-    sem = DistributionParametersSEM(
-        graph=graph, node_names=three_variable_dict.keys(), noise_dist=noise_dist, func=func
+    noise_modules = create_noise_modules(
+        shapes=three_variable_dict,
+        types=dict.fromkeys(three_variable_dict, VariableTypeEnum.BINARY),
+        continuous_noise_dist=ContinuousNoiseDist.GAUSSIAN,
     )
+    noise_dist = JointNoiseModule(noise_modules)
+    sem = DistributionParametersSEM(graph=graph, noise_dist=noise_dist, func=func)
     intervention_value = torch.tensor([1.42, 0.42])
     do_sem = sem.do(TensorDict({"x1": intervention_value}, batch_size=tuple()))
     array = torch.bernoulli(0.5 * torch.ones(100, 3))
@@ -127,15 +127,13 @@ def test_linear_sem_3d_graph_do_2_nodes_bernoulli(three_variable_dict):
     coef_matrix = torch.rand((5, 5))
     graph = torch.triu(torch.ones(3, 3), diagonal=1)
     func = LinearFunctionalRelationships(three_variable_dict, coef_matrix)
-    noise_dist = {
-        key: lambda x, val=val: NoiseAccessibleIndependent(
-            NoiseAccessibleBernoulli(delta_logits=x, base_logits=torch.zeros(val)), 1
-        )
-        for key, val in three_variable_dict.items()
-    }
-    sem = DistributionParametersSEM(
-        graph=graph, node_names=three_variable_dict.keys(), noise_dist=noise_dist, func=func
+    noise_modules = create_noise_modules(
+        shapes=three_variable_dict,
+        types=dict.fromkeys(three_variable_dict, VariableTypeEnum.BINARY),
+        continuous_noise_dist=ContinuousNoiseDist.GAUSSIAN,
     )
+    noise_dist = JointNoiseModule(noise_modules)
+    sem = DistributionParametersSEM(graph=graph, noise_dist=noise_dist, func=func)
     int_data = TensorDict({"x1": torch.tensor([1.42, 0.42]), "x2": torch.tensor([-0.42, 0.402])}, batch_size=tuple())
     do_sem = sem.do(int_data)
     array = torch.bernoulli(0.5 * torch.ones(100, 1))

@@ -3,9 +3,11 @@ from typing import Optional
 import torch
 import torch.distributions as td
 import torch.nn.functional as F
+from torch import nn
 from torch.distributions.utils import logits_to_probs
 
 from causica.distributions.adjacency.adjacency_distributions import AdjacencyDistribution
+from causica.distributions.distribution_module import DistributionModule
 from causica.distributions.gumbel_binary import gumbel_softmax_binary
 from causica.triangular_transformations import fill_triangular
 
@@ -160,3 +162,15 @@ class ENCOAdjacencyDistribution(AdjacencyDistribution):
             torch.diagonal(value, dim1=-2, dim2=-1)
         )
         return full_log_prob - diag_log_prob
+
+
+class ENCOAdjacencyDistributionModule(DistributionModule[ENCOAdjacencyDistribution]):
+    """Represents an `ENCOAdjacencyDistributionModule` distribution with learnable logits."""
+
+    def __init__(self, num_nodes: int) -> None:
+        super().__init__()
+        self.logits_exist = nn.Parameter(torch.zeros(num_nodes, num_nodes), requires_grad=True)
+        self.logits_orient = nn.Parameter(torch.zeros(int(num_nodes * (num_nodes - 1) / 2)), requires_grad=True)
+
+    def forward(self) -> ENCOAdjacencyDistribution:
+        return ENCOAdjacencyDistribution(logits_exist=self.logits_exist, logits_orient=self.logits_orient)

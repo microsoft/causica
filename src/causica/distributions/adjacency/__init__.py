@@ -1,5 +1,8 @@
-from .adjacency_distributions import AdjacencyDistribution
-from .constrained_adjacency_distributions import ConstrainedAdjacencyDistribution, constrained_adjacency
-from .enco import ENCOAdjacencyDistribution
-from .gibbs_dag_prior import ExpertGraphContainer, GibbsDAGPrior
-from .three_way import ThreeWayAdjacencyDistribution
+from causica.distributions.adjacency.adjacency_distributions import AdjacencyDistribution
+from causica.distributions.adjacency.constrained_adjacency_distributions import (
+    ConstrainedAdjacency,
+    ConstrainedAdjacencyDistribution,
+)
+from causica.distributions.adjacency.enco import ENCOAdjacencyDistribution, ENCOAdjacencyDistributionModule
+from causica.distributions.adjacency.gibbs_dag_prior import ExpertGraphContainer, GibbsDAGPrior
+from causica.distributions.adjacency.three_way import ThreeWayAdjacencyDistribution

@@ -1,13 +1,13 @@
 import mlflow
+import numpy as np
 import pytest
 import pytorch_lightning as pl
 import torch
-from examples.csuite_example.eval_csuite_example import eval_csuite
 
-from causica.datasets.csuite_data import DataEnum, get_csuite_path, load_data
 from causica.distributions import ExpertGraphContainer
+from causica.distributions.noise.joint import ContinuousNoiseDist
 from causica.lightning.data_modules import CSuiteDataModule
-from causica.lightning.modules import DECIModule
+from causica.lightning.deci_module import DECIModule
 
 
 def _module_to_parameter(module: DECIModule):
@@ -15,28 +15,36 @@ def _module_to_parameter(module: DECIModule):
     return module.optimizers().optimizer.param_groups[0]["params"][1]
 
 
-@pytest.mark.parametrize("dataset", ["csuite_mixed_simpson"])
-def test_pytorch_lightning_deterministic(dataset):
+@pytest.mark.parametrize(
+    "dataset, noise_dist",
+    [
+        ("csuite_linexp_2", ContinuousNoiseDist.GAUSSIAN),
+        ("csuite_cat_to_cts", ContinuousNoiseDist.SPLINE),
+        ("csuite_large_backdoor_binary_t", ContinuousNoiseDist.GAUSSIAN),
+        ("csuite_mixed_simpson", ContinuousNoiseDist.GAUSSIAN),
+    ],
+)
+def test_pytorch_lightning_deterministic(dataset, noise_dist):
     """An integration test to test that PyTorch Lightning runs deterministically on datasets."""
     active_run = mlflow.active_run()
     if active_run is not None:
         mlflow.end_run()
 
     trainer = pl.Trainer(fast_dev_run=True)
-    module = DECIModule()
+    module = DECIModule(noise_dist=noise_dist)
     data_module = CSuiteDataModule(dataset_name=dataset)
     trainer.fit(module, data_module)
 
     module2 = DECIModule()
     trainer.fit(module2, data_module)
-    # check that some parameter in the model is equal after training, indictating determinism
+    # check that some parameter in the model is equal after training, hence deterministic
     torch.testing.assert_close(_module_to_parameter(module), _module_to_parameter(module2))
 
-    eval_csuite(module.container, ite=False)
+    trainer.test(module, data_module)
 
 
 @pytest.mark.parametrize("dataset", ["csuite_mixed_simpson"])
-def test_pytorch_lightning_expert_input(dataset):
+def test_pytorch_lightning_expert_input(tmp_path, dataset):
     """Test that the additional expert graph and constraints can be used."""
     active_run = mlflow.active_run()
     if active_run is not None:
@@ -44,13 +52,21 @@ def test_pytorch_lightning_expert_input(dataset):
 
     trainer = pl.Trainer(fast_dev_run=True)
     data_module = CSuiteDataModule(dataset_name=dataset)
-    adj_path = get_csuite_path(CSuiteDataModule.DEFAULT_CSUITE_PATH, dataset, DataEnum.TRUE_ADJACENCY)
-    adj_matrix = torch.tensor(load_data(CSuiteDataModule.DEFAULT_CSUITE_PATH, dataset, DataEnum.TRUE_ADJACENCY))
+
+    data_module.prepare_data()
+    adj_matrix = data_module.true_adj
     expert_graph_container = ExpertGraphContainer(
         dag=adj_matrix, mask=torch.ones_like(adj_matrix), confidence=0.9, scale=1.0
     )
-    module = DECIModule(constraint_matrix_path=adj_path, expert_graph_container=expert_graph_container)
+
+    constraint_matrix_path = tmp_path / "constraint_graph.npy"
+    with constraint_matrix_path.open("wb") as f:
+        np.save(f, adj_matrix.numpy())
+
+    module = DECIModule(
+        constraint_matrix_path=str(constraint_matrix_path), expert_graph_container=expert_graph_container
+    )
     trainer.fit(module, data_module)
 
-    learned_graph = module.container.vardist().sample(torch.Size([]))
-    torch.testing.assert_close(learned_graph, expert_graph_container.dag.to(dtype=torch.float32))
+    learned_sem, *_ = module.sem_module().sample(torch.Size([]))
+    torch.testing.assert_close(learned_sem.graph, expert_graph_container.dag.to(dtype=torch.float32))

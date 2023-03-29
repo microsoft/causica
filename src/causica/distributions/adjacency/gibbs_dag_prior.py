@@ -1,25 +1,25 @@
-from dataclasses import dataclass
 from typing import Dict, Optional
 
 import torch
 import torch.distributions as td
 
 
-@dataclass
-class ExpertGraphContainer:
-    """Dataclass encoding an "experts" prior belief about the underlying causal DAG.
+class ExpertGraphContainer(torch.nn.Module):
+    def __init__(self, dag: torch.Tensor, mask: torch.Tensor, confidence: float, scale: float) -> None:
+        """Container holding an "experts" prior belief about the underlying causal DAG.
 
-    Attributes:
-        dag: The binary adjacency matrix representing domain knowledge in the form of a DAG. Corresponds to `mask`.
-        mask: A binary mask indicating whether or not the corresponding edge of the `dag` has information.
-        confidence: A value in the interval (0, 1] indicating the confidence of the existence of the edge
-        scale: Scaling factor for expert graph loss
-    """
+        Arguments:
+            dag: The binary adjacency matrix representing domain knowledge in the form of a DAG. Corresponds to `mask`.
+            mask: A binary mask indicating whether or not the corresponding edge of the `dag` has information.
+            confidence: A value in the interval (0, 1] indicating the confidence of the existence of the edge
+            scale: Scaling factor for expert graph loss
+        """
+        super().__init__()
 
-    dag: torch.Tensor
-    mask: torch.Tensor
-    confidence: float
-    scale: float
+        self.dag = torch.nn.Parameter(dag, requires_grad=False)
+        self.mask = torch.nn.Parameter(mask, requires_grad=False)
+        self.confidence = confidence
+        self.scale = scale
 
 
 class GibbsDAGPrior(td.Distribution):
