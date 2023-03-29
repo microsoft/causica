@@ -10,9 +10,6 @@ class LightningCLIWithDefaults(LightningCLI):
         "init_args": {"run_id": os.environ.get("AZUREML_RUN_ID", None)},
     }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def add_arguments_to_parser(self, parser):
         parser.add_lightning_class_args(ModelCheckpoint, "best_checkpoint_callback")
         parser.add_lightning_class_args(ModelCheckpoint, "last_checkpoint_callback")

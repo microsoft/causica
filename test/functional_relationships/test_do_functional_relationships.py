@@ -1,5 +1,3 @@
-from typing import OrderedDict
-
 import pytest
 import torch
 from tensordict import TensorDict
@@ -9,7 +7,7 @@ from causica.functional_relationships import LinearFunctionalRelationships, crea
 
 @pytest.fixture(name="two_variable_dict")
 def fixture_two_variable_dict():
-    return OrderedDict([("x1", torch.Size([1])), ("x2", torch.Size([2]))])
+    return {"x1": torch.Size([1]), "x2": torch.Size([2])}
 
 
 @pytest.fixture(name="three_variable_dict")

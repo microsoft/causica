@@ -1,0 +1,47 @@
+seed_everything: 234
+model:
+  class_path: causica.lightning.deci_module.DECIModule
+  init_args:
+    noise_dist: "GAUSSIAN"
+    embedding_size: 32
+    out_dim_g: 32
+    norm_layer: true
+    res_connection: true
+    init_alpha: 0.0
+    init_rho: 1.0
+    prior_sparsity_lambda: 5.0
+    gumbel_temp: 0.25
+    auglag_config:
+      class_path: causica.training.auglag.AugLagLRConfig
+      init_args:
+        lr_update_lag: 500
+        lr_update_lag_best: 250
+        lr_init_dict:
+          vardist: 0.01
+          icgnn: 0.01
+          noise_dist: 5e-3
+        aggregation_period: 20
+        lr_factor: 0.1
+        penalty_progress_rate: 0.65
+        safety_rho: 1e13
+        safety_alpha: 1e13
+        max_lr_down: 3
+        inner_early_stopping_patience: 500
+        max_outer_steps: 100
+        patience_penalty_reached: 5
+        patience_max_rho: 3
+        penalty_tolerance: 1e-5
+        max_inner_steps: 6000
+trainer:
+  max_epochs: 2000
+best_checkpoint_callback:
+  dirpath: "./outputs"
+  filename: "best_model"
+  save_top_k: 1
+  mode: "max"
+  monitor: "average_batch_log_prob"
+  every_n_train_steps: 1
+last_checkpoint_callback:
+  save_last: true
+  filename: "last_model"
+  save_top_k: 0  # only the last checkpoint is saved

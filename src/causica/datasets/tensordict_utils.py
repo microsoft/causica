@@ -1,16 +1,13 @@
-from typing import Dict, Hashable, Optional, Union
+from typing import Dict, Optional
 
-import numpy as np
 import pandas as pd
 import torch
 from tensordict import TensorDict
 
-DictOfTensors = Union[Dict[Hashable, torch.Tensor], Dict[Hashable, np.ndarray]]
-
 
 def convert_one_hot(
     data: TensorDict,
-    one_hot_sizes: Optional[Dict[Hashable, int]] = None,
+    one_hot_sizes: Optional[Dict[str, int]] = None,
 ):
     """
     Args:
@@ -29,7 +26,7 @@ def convert_one_hot(
     return new_data
 
 
-def tensordict_shapes(tds: TensorDict) -> Dict[Hashable, torch.Size]:
+def tensordict_shapes(tds: TensorDict) -> Dict[str, torch.Size]:
     """Return the shapes within the TensorDict without batch dimensions."""
     return {key: val.shape[len(tds.batch_size) :] for key, val in tds.items()}
 
@@ -49,3 +46,13 @@ def tensordict_from_pandas(df: pd.DataFrame) -> TensorDict:
         data = {key: df[key].to_numpy()[:, None] for key in df.columns}
 
     return TensorDict(data, batch_size=torch.Size([len(df)]))
+
+
+def identity(x):
+    """
+    An identity function.
+
+    This is needed to override the default collate function for the dataloaders,
+    which limit the datatypes you can return and we have `TensorDict` etc.
+    """
+    return x

@@ -1,4 +1,4 @@
-from typing import OrderedDict
+from typing import Dict
 
 import torch
 from tensordict import TensorDict
@@ -17,13 +17,13 @@ class LinearFunctionalRelationships(FunctionalRelationships):
 
     def __init__(
         self,
-        variables: OrderedDict[str, torch.Size],
+        variables: Dict[str, torch.Size],
         initial_linear_coefficient_matrix: torch.Tensor,
         trainable: bool = False,
     ) -> None:
         """
         Args:
-            variables (OrderedDict[str, int]): Dict of node shapes (how many dimensions a variable has)
+            variables: Dict of node shapes (how many dimensions a variable has)
                 Order corresponds to the order in graph(s).
             initial_linear_coefficient_matrix: the linear coefficients [output_shape, output_shape]
             trainable: whether the coefficient matrix should be learnable

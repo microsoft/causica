@@ -1,0 +1,108 @@
+from typing import Dict, List
+
+import torch
+import torch.distributions as td
+from torch.distributions.constraints import Constraint
+
+from causica.distributions.adjacency import AdjacencyDistribution
+from causica.distributions.distribution_module import DistributionModule
+from causica.distributions.noise.joint import JointNoiseModule
+from causica.functional_relationships.functional_relationships import FunctionalRelationships
+from causica.sem.distribution_parameters_sem import DistributionParametersSEM
+
+
+class SEMDistribution(td.Distribution):
+    """A distribution over structural equation models.
+
+    Samples are instances of DistributionParametersSEM.
+
+    The distribution is essentially the same as the given adjacency distribution but with samples converted to SEMs.
+    Therefore, all distribution properties such as entropy, mean and mode are given by the equivalent properties for the
+    adjacency distribution.
+    """
+
+    arg_constraints: Dict[str, Constraint] = {}
+
+    def __init__(
+        self,
+        adjacency_dist: AdjacencyDistribution,
+        noise_module: JointNoiseModule,
+        functional_relationships: FunctionalRelationships,
+    ):
+        """
+        Args:
+            adjacency_dist: Distribution from which adjacency matrices are sampled to construct SEMs.
+            noise_module: The noise module for any SEM of this distribution.
+            functional_relationships: The functional relationship for any SEM of this distribution.
+        """
+        super().__init__()
+        self._adjacency_dist = adjacency_dist
+        self._noise_module = noise_module
+        self._functional_relationships = functional_relationships
+
+    def _create_sems(self, graphs: torch.Tensor) -> List[DistributionParametersSEM]:
+        graphs = graphs.reshape(-1, *graphs.shape[-2:])
+        return [
+            DistributionParametersSEM(
+                graph=graph,
+                noise_dist=self._noise_module,
+                func=self._functional_relationships,
+            )
+            for graph in graphs.unbind(dim=0)
+        ]
+
+    def sample(self, sample_shape: torch.Size = torch.Size()):
+        graphs = self._adjacency_dist.sample(sample_shape)
+        if not sample_shape:
+            graphs = graphs[None, ...]
+        return self._create_sems(graphs)
+
+    def relaxed_sample(
+        self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0
+    ) -> List[DistributionParametersSEM]:
+        graphs = self._adjacency_dist.relaxed_sample(sample_shape=sample_shape, temperature=temperature)
+        return self._create_sems(graphs)
+
+    def entropy(self) -> torch.Tensor:
+        return self._adjacency_dist.entropy()
+
+    @property
+    def mean(self) -> DistributionParametersSEM:
+        return DistributionParametersSEM(
+            graph=self._adjacency_dist.mean,
+            noise_dist=self._noise_module,
+            func=self._functional_relationships,
+        )
+
+    @property
+    def mode(self) -> DistributionParametersSEM:
+        return DistributionParametersSEM(
+            graph=self._adjacency_dist.mode,
+            noise_dist=self._noise_module,
+            func=self._functional_relationships,
+        )
+
+    def log_prob(self, value: DistributionParametersSEM) -> torch.Tensor:
+        return self._adjacency_dist.log_prob(value.graph)
+
+
+class SEMDistributionModule(DistributionModule[SEMDistribution]):
+    """Represents a SEMDistribution with learnable parameters."""
+
+    def __init__(
+        self,
+        adjacency_module: DistributionModule[AdjacencyDistribution],
+        functional_relationships: FunctionalRelationships,
+        noise_module: JointNoiseModule,
+    ):
+        super().__init__()
+        self.adjacency_module = adjacency_module
+        self.functional_relationships = functional_relationships
+        self.noise_module = noise_module
+
+    def forward(self) -> SEMDistribution:
+        return SEMDistribution(
+            adjacency_dist=self.adjacency_module(),
+            noise_module=self.noise_module,
+            functional_relationships=self.functional_relationships,
+        )
