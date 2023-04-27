@@ -15,7 +15,7 @@ class VariableSpecModule(pl.LightningModule, abc.ABC):
     dispatches to the separate test steps for each dataloader.
     """
 
-    def test_step(self, *args, **kwargs):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         """
         Dispatch to the appropriate test step based on the dataloader index.
 
@@ -30,15 +30,14 @@ class VariableSpecModule(pl.LightningModule, abc.ABC):
 
         See the superclass for *args and **kwargs conventions.
         """
-        dataloader_idx = args[2]
         if dataloader_idx == 0:
-            return self.test_step_observational(*args, **kwargs)
+            return self.test_step_observational(batch, batch_idx)
         elif dataloader_idx == 1:
-            return self.test_step_graph(*args, **kwargs)
+            return self.test_step_graph(batch, batch_idx)
         elif dataloader_idx == 2:
-            return self.test_step_interventions(*args, **kwargs)
+            return self.test_step_interventions(batch, batch_idx)
         elif dataloader_idx == 3:
-            return self.test_step_counterfactuals(*args, **kwargs)
+            return self.test_step_counterfactuals(batch, batch_idx)
 
     @abc.abstractmethod
     def test_step_observational(self, batch: TensorDict, *args, **kwargs):

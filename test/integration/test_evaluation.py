@@ -1,5 +1,4 @@
 import os
-from typing import Dict
 
 import pytest
 import torch
@@ -12,6 +11,7 @@ from causica.distributions import ContinuousNoiseDist, JointNoiseModule, create_
 from causica.functional_relationships.linear_functional_relationships import LinearFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 from causica.training.evaluation import eval_ate_rmse, eval_intervention_likelihoods, eval_ite_rmse
+from causica.training.per_variable_metrics import eval_counterfactual_outcome_per_variable_rmse
 
 
 def sem(data_dir: str) -> DistributionParametersSEM:
@@ -21,7 +21,7 @@ def sem(data_dir: str) -> DistributionParametersSEM:
     train_data = load_data(data_dir, DataEnum.TRAIN, variables_metadata)
     assert isinstance(train_data, TensorDict)
 
-    shapes: Dict = tensordict_shapes(train_data)
+    shapes: dict = tensordict_shapes(train_data)
     total_dim = sum(size[-1] for size in shapes.values())
 
     coef_matrix = torch.rand((total_dim, total_dim))
@@ -58,3 +58,18 @@ def test_evaluation_ite(dataset):
     root = os.path.join(CSUITE_DATASETS_PATH, dataset)
     ite = eval_ite_rmse([sem(root)], load_data(root, DataEnum.COUNTERFACTUALS)[0])
     assert ite.shape == tuple()
+
+
+@pytest.mark.parametrize("dataset", ["csuite_linexp_2"])
+def test_eval_counterfactual_outcome_per_variable_rmse(dataset):
+    root = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    data = load_data(root, DataEnum.COUNTERFACTUALS)
+    cf = eval_counterfactual_outcome_per_variable_rmse([sem(root)], data[0])
+    grouped_variable_names = {"x0": ["x0_0", "x0_1"], "x1": ["x1_0", "x1_1"]}
+    cf_per_var = eval_counterfactual_outcome_per_variable_rmse(
+        [sem(root)], data[0], grouped_variable_names=grouped_variable_names
+    )
+    assert cf.shape == tuple()
+    assert cf_per_var.shape == tuple()
+    assert len(cf.keys()) == 1
+    assert len(cf_per_var.keys()) == 2

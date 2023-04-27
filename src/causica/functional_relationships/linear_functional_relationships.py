@@ -1,5 +1,3 @@
-from typing import Dict
-
 import torch
 from tensordict import TensorDict
 
@@ -17,7 +15,7 @@ class LinearFunctionalRelationships(FunctionalRelationships):
 
     def __init__(
         self,
-        variables: Dict[str, torch.Size],
+        variables: dict[str, torch.Size],
         initial_linear_coefficient_matrix: torch.Tensor,
         trainable: bool = False,
     ) -> None:

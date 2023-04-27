@@ -41,7 +41,9 @@ DECI estimates causal quantities (ATE) by applying the relevant interventions to
 
 ## How to run
 
-See the notebook `examples/csuite_example.ipynb`, for how to train a DECI model and check the causal discovery.
+The best place to start is the `examples/multi_investment_sales_attribution.ipynb` notebook. This explains how to fit a model using PyTorch Lightning and test ATE and ITE results.
+
+For a more detailed introduction to the components and how they fit together, see the notebook `examples/csuite_example.ipynb`, for how to train a DECI model and check the causal discovery.
 
 This will download the data from the CSuite Azure blob storage and train DECI on it. See [here](https://github.com/microsoft/csuite) for more info about CSuite datasets. The notebook will work on any of the available CSuite datasets.
 
@@ -73,10 +75,6 @@ If you have used the models in our code base, please consider to cite the corres
 [3], **(DDECI)** Matthew Ashman, Chao Ma, Agrin Hilmkil, Joel Jennings, Cheng Zhang. Causal Reasoning in the Presence of Latent Confounders via Neural ADMG Learning. [ICLR](https://openreview.net/forum?id=dcN0CaXQhT) (2023)
 
 [4], **(Rhino)** Wenbo Gong, Joel Jennings, Cheng Zhang, Nick Pawlowski. Rhino: Deep Causal Temporal Relationship Learning with History-dependent Noise. [ICLR](https://openreview.net/forum?id=i_1rbq8yFWC) (2023)
-
-Other references:
-- Louizos, Christos, et al. "Causal effect inference with deep latent-variable models." Advances in neural information processing systems 30 (2017).
-- Hill, Jennifer L. "Bayesian nonparametric modeling for causal inference." Journal of Computational and Graphical Statistics 20.1 (2011): 217-240.
 
 
 # Development

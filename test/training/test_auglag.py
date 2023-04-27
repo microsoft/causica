@@ -1,5 +1,4 @@
 import random
-from typing import Dict
 
 import torch
 from torch.nn import Parameter
@@ -8,7 +7,7 @@ from torch.optim import Adam
 from causica.training.auglag import AugLagLossCalculator, AugLagLR, AugLagLRConfig
 
 
-def _get_auglag_config(lr_init_dict: Dict[str, float]):
+def _get_auglag_config(lr_init_dict: dict[str, float]):
     return AugLagLRConfig(
         lr_update_lag=1,
         lr_update_lag_best=100,

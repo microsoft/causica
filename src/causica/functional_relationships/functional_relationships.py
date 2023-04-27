@@ -1,12 +1,12 @@
 import abc
-from typing import Any, Dict
+from typing import Any
 
 import torch
 from tensordict import TensorDict
 
 
 class FunctionalRelationships(abc.ABC, torch.nn.Module):
-    def __init__(self, variables: Dict[str, torch.Size]) -> None:
+    def __init__(self, variables: dict[str, torch.Size]) -> None:
         """_summary_
 
         Args:
@@ -27,12 +27,12 @@ class FunctionalRelationships(abc.ABC, torch.nn.Module):
             self.variable_masks[name] = mask
             last_idx += shape.numel()
 
-    def set_extra_state(self, state: Dict[str, Any]):
+    def set_extra_state(self, state: dict[str, Any]):
         self.num_nodes = state.pop("num_nodes")
         self.variables = state.pop("variables")
         self.output_shape = state.pop("output_shape")
 
-    def get_extra_state(self) -> Dict[str, Any]:
+    def get_extra_state(self) -> dict[str, Any]:
         return {
             "num_nodes": self.num_nodes,
             "variables": self.variables,
@@ -50,15 +50,14 @@ class FunctionalRelationships(abc.ABC, torch.nn.Module):
         Returns:
             Dictionary of torch.Tensors of shape sample_shape + batch_shape + [node shape]
         """
-        pass
 
 
-def sample_dict_to_tensor(sample_dict: TensorDict, variable_masks: Dict[str, torch.Tensor]) -> torch.Tensor:
+def sample_dict_to_tensor(sample_dict: TensorDict, variable_masks: dict[str, torch.Tensor]) -> torch.Tensor:
     """Converts a sample dictionary to a tensor."""
     return torch.cat([sample_dict[name] for name in variable_masks.keys()], dim=-1)
 
 
-def tensor_to_sample_dict(sample_tensor: torch.Tensor, variable_masks: Dict[str, torch.Tensor]) -> TensorDict:
+def tensor_to_sample_dict(sample_tensor: torch.Tensor, variable_masks: dict[str, torch.Tensor]) -> TensorDict:
     """Converts a tensor to a sample dictionary."""
     return TensorDict(
         {name: sample_tensor[..., mask] for name, mask in variable_masks.items()}, batch_size=sample_tensor.shape[:-1]

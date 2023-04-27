@@ -1,5 +1,5 @@
 import abc
-from typing import Dict, List, Optional, Sequence
+from typing import Optional, Sequence
 
 import torch
 import torch.distributions as dist
@@ -7,7 +7,7 @@ from tensordict import TensorDict
 
 
 class SEM(dist.Distribution, abc.ABC):
-    arg_constraints: Dict = {}
+    arg_constraints: dict = {}
 
     def __init__(
         self,
@@ -46,7 +46,6 @@ class SEM(dist.Distribution, abc.ABC):
     @abc.abstractmethod
     def do(self, interventions: TensorDict) -> "SEM":
         """Return the SEM associated with the interventions"""
-        pass
 
     @abc.abstractmethod
     def noise_to_sample(self, noise: TensorDict) -> TensorDict:
@@ -58,7 +57,6 @@ class SEM(dist.Distribution, abc.ABC):
         Return:
             Dictionary of samples from the sem corresponding to the noise, shape sample_shape + batch_shape + event_shape
         """
-        pass
 
     @abc.abstractmethod
     def sample_to_noise(self, sample: TensorDict) -> TensorDict:
@@ -70,7 +68,6 @@ class SEM(dist.Distribution, abc.ABC):
         Return:
             Dictionary of tensors representing the noise shape sample_shape + batch_shape + noise_shape
         """
-        pass
 
     @torch.no_grad()
     def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:
@@ -100,7 +97,6 @@ class SEM(dist.Distribution, abc.ABC):
         Return:
             Dictionary of samples from the noise distribution for each node, shape sample_shape + batch_shape + event_shape
         """
-        pass
 
 
 def ite(
@@ -108,15 +104,15 @@ def ite(
     factual_data: TensorDict,
     intervention_a: TensorDict,
     intervention_b: TensorDict,
-    effects: Optional[List[str]] = None,
+    effects: Optional[list[str]] = None,
 ) -> TensorDict:
     """Calculate ITE of intervention A and B on some factual data for a list of effects.
 
     Args:
-        factual_data (Dict[str, torch.Tensor]): Factual data to abduct the noise from.
-        intervention_a (Dict[str, torch.Tensor]): Specification of intervention A.
-        intervention_b (Dict[str, torch.Tensor]): Specification of intervention B.
-        effects (Optional[List[str]], optional): List of effect variables. Defaults to None.
+        factual_data: Factual data to abduct the noise from.
+        intervention_a: Specification of intervention A.
+        intervention_b: Specification of intervention B.
+        effects: List of effect variables. Defaults to None.
 
     Returns:
        TensorDict: Dictionary holding the ITEs for the effect variables for all samples.
@@ -135,8 +131,8 @@ def counterfactual(sem: SEM, factual_data: TensorDict, intervention: TensorDict)
     """Calculate Counterfactual of an intervention on some factual data.
 
     Args:
-        factual_data (Dict[str, torch.Tensor]): Factual data to abduct the noise from.
-        intervention (Dict[str, torch.Tensor]): Specification of intervention.
+        factual_data: Factual data to abduct the noise from.
+        intervention: Specification of intervention.
 
     Returns:
        TensorDict: Dictionary holding the counterfactual values for all samples.
@@ -150,16 +146,16 @@ def ate(
     sem: SEM,
     intervention_a: TensorDict,
     intervention_b: TensorDict,
-    effects: Optional[List[str]] = None,
+    effects: Optional[list[str]] = None,
     num_samples: int = 1000,
 ) -> TensorDict:
     """Calculate the ATE of intervention A and B for a list of effects.
 
     Args:
-        intervention_a (Dict[str, torch.Tensor]): Specification of intervention A.
-        intervention_b (Dict[str, torch.Tensor]): Specification of intervention B.
-        effects (Optional[List[str]], optional): List of effect variables. Defaults to None.
-        num_samples (int, optional): Number of Monte-Carlo samples to estimate the ATE. Defaults to 1000.
+        intervention_a: Specification of intervention A.
+        intervention_b: Specification of intervention B.
+        effects: List of effect variables. Defaults to None.
+        num_samples: Number of Monte-Carlo samples to estimate the ATE. Defaults to 1000.
 
     Returns:
        TensorDict: Dictionary holding the ATEs for the effect variables.

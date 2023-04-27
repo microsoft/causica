@@ -1,9 +1,9 @@
-from typing import Any, Dict
+from typing import Any
 
 import fsspec
 
 
-def get_storage_options_for_path(path: str) -> Dict[str, Any]:
+def get_storage_options_for_path(path: str) -> dict[str, Any]:
     """Get storage options for a given path.
 
     This checks whether a path uses the abfs protocol and if so returns storage options for the Azure Blob Storage.

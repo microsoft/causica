@@ -1,5 +1,3 @@
-from typing import Dict, Tuple
-
 import pytest
 import torch
 
@@ -14,10 +12,10 @@ from causica.functional_relationships.functional_relationships import Functional
 
 
 def create_sem_params(
-    shapes: Dict[str, torch.Size]
-) -> Tuple[AdjacencyDistribution, JointNoiseModule, FunctionalRelationships]:
+    shapes: dict[str, torch.Size]
+) -> tuple[AdjacencyDistribution, JointNoiseModule, FunctionalRelationships]:
     num_nodes = len(shapes)
-    independent_noise_modules: Dict[str, NoiseModule[Noise[torch.Tensor]]] = {
+    independent_noise_modules: dict[str, NoiseModule[Noise[torch.Tensor]]] = {
         name: UnivariateNormalNoiseModule(shape[-1]) for name, shape in shapes.items()
     }
     noise_dist = JointNoiseModule(independent_noise_modules)

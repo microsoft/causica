@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Type
+from typing import Optional, Type
 
 import torch
 from tensordict import TensorDict
@@ -22,7 +22,7 @@ class ICGNN(FunctionalRelationships):
 
     def __init__(
         self,
-        variables: Dict[str, torch.Size],
+        variables: dict[str, torch.Size],
         embedding_size: Optional[int] = None,
         out_dim_g: Optional[int] = None,
         norm_layer: Optional[Type[nn.LayerNorm]] = None,
@@ -153,7 +153,7 @@ class FGNNI(nn.Module):
 def generate_fully_connected(
     input_dim: int,
     output_dim: int,
-    hidden_dims: List[int],
+    hidden_dims: list[int],
     non_linearity: Optional[Type[nn.Module]],
     activation: Optional[Type[nn.Module]],
     device: torch.device,
@@ -179,12 +179,12 @@ def generate_fully_connected(
     Returns:
         Sequential object containing the desired network.
     """
-    layers: List[nn.Module] = []
+    layers: list[nn.Module] = []
 
     prev_dim = input_dim
     for idx, hidden_dim in enumerate(hidden_dims):
 
-        block: List[nn.Module] = []
+        block: list[nn.Module] = []
 
         if normalization is not None and idx > 0:
             block.append(normalization(prev_dim).to(device))

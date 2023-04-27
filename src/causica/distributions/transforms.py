@@ -1,7 +1,6 @@
 """
 Wrapper around torch.distributions.transforms to allow for joint transforms on TensorDicts.
 """
-from typing import Dict
 
 import torch
 import torch.distributions as td
@@ -15,7 +14,7 @@ class JointTransform(td.Transform):
     See https://pytorch.org/docs/stable/distributions.html#torch.distributions.transforms.StackTransform
     """
 
-    def __init__(self, transformations: Dict[str, td.Transform], cache_size: int = 0):
+    def __init__(self, transformations: dict[str, td.Transform], cache_size: int = 0):
         """
         Args:
             transformations: A dictionary of transforms, where the keys are the keys in the TensorDict

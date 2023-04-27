@@ -2,10 +2,11 @@
 A module to load data from the standard directory structure (i.e. the one followed by csuite)
 """
 import json
+import logging
 import os
 from enum import Enum
 from functools import partial
-from typing import Any, Counter, Dict, List, Optional, Set, Tuple
+from typing import Any, Counter, Optional
 
 import fsspec
 import numpy as np
@@ -19,8 +20,10 @@ from causica.datasets.variable_types import DTYPE_MAP, VariableTypeEnum
 CSUITE_DATASETS_PATH = "https://azuastoragepublic.blob.core.windows.net/datasets"
 
 
-InterventionWithEffects = Tuple[InterventionData, InterventionData, Set[str]]
-CounterfactualWithEffects = Tuple[CounterfactualData, CounterfactualData, Set[str]]
+InterventionWithEffects = tuple[InterventionData, InterventionData, set[str]]
+CounterfactualWithEffects = tuple[CounterfactualData, Optional[CounterfactualData], set[str]]
+
+logger = logging.getLogger(__name__)
 
 
 class DataEnum(Enum):
@@ -32,7 +35,7 @@ class DataEnum(Enum):
     VARIABLES_JSON = "variables.json"
 
 
-def convert_variable_types_to_enum(variable_metadata: Dict[str, Any]):
+def convert_variable_types_to_enum(variable_metadata: dict[str, Any]):
     # Convert the types to the enum
     for variable in variable_metadata["variables"]:
         variable["type"] = VariableTypeEnum(variable["type"])
@@ -40,11 +43,19 @@ def convert_variable_types_to_enum(variable_metadata: Dict[str, Any]):
     return variable_metadata
 
 
+def convert_enum_to_variable_types(variable_metadata: dict[str, Any]):
+    # Convert enum to types
+    for variable in variable_metadata["variables"]:
+        variable["type"] = VariableTypeEnum(variable["type"]).value
+
+    return variable_metadata
+
+
 def load_data(
     root_path: str,
     data_enum: DataEnum,
-    variables_metadata: Optional[Dict[str, Any]] = None,
-    **storage_options: Dict[str, Any],
+    variables_metadata: Optional[dict[str, Any]] = None,
+    **storage_options: dict[str, Any],
 ):
     """
     Load the Data from the location, dataset name and type of data.
@@ -62,6 +73,8 @@ def load_data(
 
     fsspec_open = partial(fsspec.open, mode="r", encoding="utf-8", **storage_options)
 
+    logger.debug(f"Loading {data_enum} from {path_name} with storage options {storage_options}")
+
     if data_enum == DataEnum.TRUE_ADJACENCY:
         with fsspec_open(path_name) as f:
             return torch.tensor(np.loadtxt(f, dtype=int, delimiter=","))
@@ -69,7 +82,7 @@ def load_data(
     if data_enum == DataEnum.VARIABLES_JSON:
         if variables_metadata is not None:
             raise ValueError("Variables metadata was supplied and requested")
-        with fsspec_open(path_name, **storage_options) as f:
+        with fsspec_open(path_name) as f:
             return convert_variable_types_to_enum(json.load(f))
 
     if variables_metadata is None:
@@ -91,7 +104,7 @@ def load_data(
             raise RuntimeError("Unrecognized data type")
 
 
-def _load_interventions(json_object: Dict[str, Any], metadata: Dict[str, Any]) -> List[InterventionWithEffects]:
+def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -> list[InterventionWithEffects]:
     """
     Load the Interventional Datasets as a list of interventions/counterfactuals.
 
@@ -104,7 +117,7 @@ def _load_interventions(json_object: Dict[str, Any], metadata: Dict[str, Any]) -
     """
     variables_list = metadata["variables"]
 
-    intervened_column_to_group_name: Dict[int, str] = dict(
+    intervened_column_to_group_name: dict[int, str] = dict(
         zip(
             json_object["metadata"]["columns_to_nodes"],
             list(item["group_name"] for item in variables_list),
@@ -146,7 +159,7 @@ def _load_interventions(json_object: Dict[str, Any], metadata: Dict[str, Any]) -
     return interventions_list
 
 
-def _load_counterfactuals(json_object: Dict[str, Any], metadata: Dict[str, Any]) -> List[CounterfactualWithEffects]:
+def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any]) -> list[CounterfactualWithEffects]:
     """
     Load the Interventional Datasets as a list of counterfactuals.
 
@@ -159,7 +172,7 @@ def _load_counterfactuals(json_object: Dict[str, Any], metadata: Dict[str, Any])
     """
     variables_list = metadata["variables"]
 
-    intervened_column_to_group_name: Dict[int, str] = dict(
+    intervened_column_to_group_name: dict[int, str] = dict(
         zip(
             json_object["metadata"]["columns_to_nodes"],
             list(item["group_name"] for item in variables_list),
@@ -178,10 +191,14 @@ def _load_counterfactuals(json_object: Dict[str, Any], metadata: Dict[str, Any])
         )
         # if the json has reference data create another intervention dataclass
         if (reference_data := environment["reference_data"]) is None:
-            raise RuntimeError()
-        reference = _to_counterfactual(
-            np.array(reference_data), factual_data, intervention_nodes=intervention_nodes, variables_list=variables_list
-        )
+            reference = None
+        else:
+            reference = _to_counterfactual(
+                np.array(reference_data),
+                factual_data,
+                intervention_nodes=intervention_nodes,
+                variables_list=variables_list,
+            )
 
         # store the nodes we're interested in observing
         effect_nodes = set(intervened_column_to_group_name[idx] for idx in environment["effect_idxs"])
@@ -193,7 +210,7 @@ def _load_counterfactuals(json_object: Dict[str, Any], metadata: Dict[str, Any])
 
 
 def _to_intervention(
-    data: np.ndarray, intervention_nodes: List[str], condition_nodes: List[str], variables_list: List[Dict[str, Any]]
+    data: np.ndarray, intervention_nodes: list[str], condition_nodes: list[str], variables_list: list[dict[str, Any]]
 ) -> InterventionData:
     """Create an `InterventionData` object from the data within the json file."""
     interv_data = tensordict_from_variables_metadata(data, variables_list=variables_list)
@@ -221,7 +238,7 @@ def _to_intervention(
 
 
 def _to_counterfactual(
-    data: np.ndarray, base_data: np.ndarray, intervention_nodes: List[str], variables_list: List[Dict[str, Any]]
+    data: np.ndarray, base_data: np.ndarray, intervention_nodes: list[str], variables_list: list[dict[str, Any]]
 ) -> CounterfactualData:
     """Create an `CounterfactualData` object from the data within the json file."""
     interv_data = tensordict_from_variables_metadata(data, variables_list=variables_list)
@@ -244,7 +261,7 @@ def _to_counterfactual(
     )
 
 
-def _get_categorical_sizes(variables_list: List[Dict[str, Any]]) -> Dict[str, int]:
+def _get_categorical_sizes(variables_list: list[dict[str, Any]]) -> dict[str, int]:
     categorical_sizes = {}
     for item in variables_list:
         if item["type"] == VariableTypeEnum.CATEGORICAL:
@@ -258,10 +275,8 @@ def _get_categorical_sizes(variables_list: List[Dict[str, Any]]) -> Dict[str, in
     return categorical_sizes
 
 
-def tensordict_from_variables_metadata(data: np.ndarray, variables_list: List[Dict[str, Any]]) -> TensorDict:
-    """
-    Convert a 2D numpy array and variables information into a `TensorDict`.
-    """
+def tensordict_from_variables_metadata(data: np.ndarray, variables_list: list[dict[str, Any]]) -> TensorDict:
+    """Returns a tensor created by concatenating all values along the last dim."""
     assert data.ndim == 2, "Numpy loading only supported for 2d data"
     batch_size = data.shape[0]
 
@@ -282,6 +297,13 @@ def tensordict_from_variables_metadata(data: np.ndarray, variables_list: List[Di
     return d
 
 
-def _intersect_dicts_left(dict_1: Dict, dict_2: Dict) -> Dict:
+def tensordict_to_tensor(tensor_dict: TensorDict) -> torch.Tensor:
+    """
+    Convert a `TensorDict` into a 2D `torch.Tensor`.
+    """
+    return torch.cat(tuple(tensor_dict.values()), dim=-1)
+
+
+def _intersect_dicts_left(dict_1: dict, dict_2: dict) -> dict:
     """Select the keys that are in both dictionaries, with values from the first."""
     return {key: dict_1[key] for key in dict_1.keys() & dict_2.keys()}

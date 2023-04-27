@@ -1,6 +1,6 @@
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -23,28 +23,28 @@ class AugLagLRConfig:
     """
     Configuration parameters for the AuglagLR scheduler.
 
-    lr_update_lag (int): Number of iterations to wait before updating the learning rate.
-    lr_update_lag_best (int): Number of iterations to wait after the best model before updating the learning rate.
-    lr_init_dict (Dict[str, float]): Dictionary of intitialization parameters for every new inner optimization step.
+    lr_update_lag: Number of iterations to wait before updating the learning rate.
+    lr_update_lag_best: Number of iterations to wait after the best model before updating the learning rate.
+    lr_init_dict: Dictionary of intitialization parameters for every new inner optimization step.
         This must contain all parameter_groups for all optimizers
-    aggregation_period (int): Aggregation period to compare the mean of the loss terms across this period.
-    lr_factor (float): Learning rate update schedule factor (exponential decay).
-    penalty_progress_rate (float): Number of iterations to wait before updating rho based on the dag penalty.
-    safety_rho (float): Maximum rho that could be updated to.
-    safety_alpha (float): Maximum alpha that could be udated to.
-    max_lr_down (int): Maximum number of lr update times to decide inner loop termination.
-    inner_early_stopping_patience (int): Maximum number of iterations to run after the best inner loss to terminate inner loop.
-    max_outer_steps (int): Maximum number of outer update steps.
-    patience_penalty_reached (int): Maximum number of outer iterations to run after the dag penalty has reached a good value.
-    patience_max_rho (int): Maximum number of iterations to run once rho threshold is reached.
-    penalty_tolerance (float): Tolerance of the dag penalty
-    max_inner_steps (int): Maximum number of inner loop steps to run.
+    aggregation_period: Aggregation period to compare the mean of the loss terms across this period.
+    lr_factor: Learning rate update schedule factor (exponential decay).
+    penalty_progress_rate: Number of iterations to wait before updating rho based on the dag penalty.
+    safety_rho: Maximum rho that could be updated to.
+    safety_alpha: Maximum alpha that could be udated to.
+    max_lr_down: Maximum number of lr update times to decide inner loop termination.
+    inner_early_stopping_patience: Maximum number of iterations to run after the best inner loss to terminate inner loop.
+    max_outer_steps: Maximum number of outer update steps.
+    patience_penalty_reached: Maximum number of outer iterations to run after the dag penalty has reached a good value.
+    patience_max_rho: Maximum number of iterations to run once rho threshold is reached.
+    penalty_tolerance: Tolerance of the dag penalty
+    max_inner_steps: Maximum number of inner loop steps to run.
 
     """
 
     lr_update_lag: int = 500
     lr_update_lag_best: int = 250
-    lr_init_dict: Dict[str, float] = field(
+    lr_init_dict: dict[str, float] = field(
         default_factory=lambda: {"vardist": 0.1, "icgnn": 0.0003, "noise_dist": 0.003}
     )
     aggregation_period: int = 20
@@ -139,11 +139,11 @@ class AugLagLR:
         """
         return self.last_best_step + self.config.lr_update_lag_best <= self.step_counter
 
-    def _update_lr(self, optimizer: Union[Optimizer, List[Optimizer]]):
+    def _update_lr(self, optimizer: Union[Optimizer, list[Optimizer]]):
         """Update the learning rate of the optimizer(s) based on the lr multiplicative factor.
 
         Args:
-            optimizer (Union[Optimizer, List[Optimizer]]): Optimizers of auglag to be updated.
+            optimizer: Optimizers of auglag to be updated.
         """
         self.last_lr_update_step = self.step_counter
         self.num_lr_updates += 1
@@ -156,11 +156,11 @@ class AugLagLR:
             for param_group in optimizer.param_groups:
                 param_group["lr"] *= self.config.lr_factor
 
-    def _reset_lr(self, optimizer: Union[Optimizer, List[Optimizer]]):
+    def _reset_lr(self, optimizer: Union[Optimizer, list[Optimizer]]):
         """Reset the learning rate of individual param groups from lr init dictionary.
 
         Args:
-            optimizer (Union[Optimizer, List[Optimizer]]): Optimizer(s) corresponding to all param groups.
+            optimizer: Optimizer(s) corresponding to all param groups.
         """
         self.last_lr_update_step = self.step_counter
 
@@ -177,7 +177,7 @@ class AugLagLR:
         """Update the lagrangian parameters (of the auglag routine) based on the dag constraint values observed.
 
         Args:
-            loss (AugLagLoss): loss with lagrangian attributes rho and alpha to be updated.
+            loss: loss with lagrangian attributes rho and alpha to be updated.
         """
         if self._cur_dag_penalty < self.config.penalty_tolerance:
             self.outer_below_penalty_tol += 1
@@ -202,13 +202,13 @@ class AugLagLR:
         loss.rho = min([loss.rho, self.config.safety_rho])
         loss.alpha = min([loss.alpha, self.config.safety_alpha])
 
-    def _is_auglag_converged(self, optimizer: Union[Optimizer, List[Optimizer]], loss: AugLagLossCalculator) -> bool:
+    def _is_auglag_converged(self, optimizer: Union[Optimizer, list[Optimizer]], loss: AugLagLossCalculator) -> bool:
         """Checks if the inner and outer loops have converged. If inner loop is converged,
         it initilaizes the optimisation parameters for a new inner loop. If both are converged, it returns True.
 
         Args:
-            optimizer (Union[Optimizer, List[Optimizer]]): Optimizer(s) corresponding to different parameter groups on which auglag is being performed.
-            loss (AugLagLoss): Auglag loss.
+            optimizer: Optimizer(s) corresponding to different parameter groups on which auglag is being performed.
+            loss: Auglag loss.
 
         Returns:
             bool: Returns True if both inner and outer have converged, else False
@@ -236,7 +236,7 @@ class AugLagLR:
 
     def step(
         self,
-        optimizer: Union[Optimizer, List[Optimizer]],
+        optimizer: Union[Optimizer, list[Optimizer]],
         loss: AugLagLossCalculator,
         loss_value: float,
         lagrangian_penalty: float,
@@ -244,10 +244,10 @@ class AugLagLR:
         """The main update method to take one auglag inner step.
 
         Args:
-            optimizer (Union[Optimizer, List[Optimizer]]): Optimizer(s) corresponding to different param groups.
-            loss (AugLagLoss): auglag loss with lagrangian parameters
-            loss_value (float): the actual value of the elbo for the current update step.
-            lagrangian_penalty (float): Dag penalty for the current update step.
+            optimizer: Optimizer(s) corresponding to different param groups.
+            loss: auglag loss with lagrangian parameters
+            loss_value: the actual value of the elbo for the current update step.
+            lagrangian_penalty: Dag penalty for the current update step.
 
         Returns:
             bool: if the auglag has converged (False) or not (True)

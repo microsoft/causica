@@ -1,11 +1,9 @@
-from typing import Tuple
-
 import torch
 
 from causica.triangular_transformations import unfill_triangular
 
 
-def adjacency_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def adjacency_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Evaluate the precision and recall of edge existence for two adjacency matrices."""
     vec1 = torch.abs(_to_vector(graph1)) > 0
     vec2 = torch.abs(_to_vector(graph2)) > 0
@@ -30,7 +28,7 @@ def adjacency_f1(graph1: torch.Tensor, graph2: torch.Tensor) -> torch.Tensor:
     return f1_score(*adjacency_precision_recall(graph1, graph2))
 
 
-def orientation_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def orientation_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Evaluate the precision and recall of edge orientation for two adjacency matrices."""
     vec1 = _to_vector(graph1)
     vec2 = _to_vector(graph2)

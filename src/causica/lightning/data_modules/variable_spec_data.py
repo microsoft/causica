@@ -2,9 +2,8 @@
 import os
 from collections import defaultdict
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
-import pytorch_lightning as pl
 import torch
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
@@ -13,9 +12,10 @@ from causica.datasets.causica_dataset_format import DataEnum, load_data
 from causica.datasets.standardizer import JointStandardizer, fit_standardizer
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
+from causica.lightning.data_modules.deci_data_module import DECIDataModule
 
 
-class VariableSpecDataModule(pl.LightningDataModule):
+class VariableSpecDataModule(DECIDataModule):
     """
     Loads training and test data from fully specified paths for `variables.json` formatted data.
 
@@ -36,7 +36,7 @@ class VariableSpecDataModule(pl.LightningDataModule):
         dataset_name: str = "anonymous_dataset",
         normalize: bool = False,
         load_counterfactual: bool = False,
-        **storage_options: Dict[str, Any],
+        **storage_options: dict[str, Any],
     ):
         """
         Args:
@@ -49,7 +49,7 @@ class VariableSpecDataModule(pl.LightningDataModule):
         """
         super().__init__()
         self.batch_size = batch_size
-        self.dataset_name = dataset_name
+        self._dataset_name = dataset_name
         self.root_path = root_path
         self.batch_size = batch_size
         self.storage_options = storage_options
@@ -58,32 +58,37 @@ class VariableSpecDataModule(pl.LightningDataModule):
 
         self.normalizer: Optional[JointStandardizer] = None
 
-        # add type hints
-        self.dataset_train: TensorDict
-        self.dataset_test: TensorDict
+    @property
+    def variable_shapes(self) -> dict[str, torch.Size]:
+        return _check_exists(self, "_variable_shapes")
 
-    def get_variable_shapes(self) -> Dict[str, torch.Size]:
-        if self._variable_shapes is None:
-            raise ValueError("Tried to get variable group shapes before data was downloaded.")
-        return self._variable_shapes
+    @property
+    def variable_types(self) -> dict[str, VariableTypeEnum]:
+        return _check_exists(self, "_variable_types")
 
-    def get_variable_types(self) -> Dict[str, VariableTypeEnum]:
-        if self._variable_types is None:
-            raise ValueError("Tried to get variable group types before data was downloaded.")
-        return self._variable_types
+    @property
+    def column_names(self) -> dict[str, list[str]]:
+        return _check_exists(self, "_column_names")
 
-    def get_variable_names(self) -> Dict[str, str]:
-        if self._variable_names is None:
-            raise ValueError("Tried to get variable group shapes before data was downloaded.")
-        return self._variable_names
+    @property
+    def dataset_train(self) -> TensorDict:
+        return _check_exists(self, "_dataset_train")
 
-    def _load_all_data(self, variables_metadata: Dict):
+    @property
+    def dataset_test(self) -> TensorDict:
+        return _check_exists(self, "_dataset_test")
+
+    @property
+    def dataset_name(self) -> str:
+        return self._dataset_name
+
+    def _load_all_data(self, variables_metadata: dict):
         _load_data = partial(
             load_data, root_path=self.root_path, variables_metadata=variables_metadata, **self.storage_options
         )
 
-        self.dataset_train = _load_data(data_enum=DataEnum.TRAIN)
-        self.dataset_test = _load_data(data_enum=DataEnum.TEST)
+        self._dataset_train = _load_data(data_enum=DataEnum.TRAIN)
+        self._dataset_test = _load_data(data_enum=DataEnum.TEST)
         self.true_adj = _load_data(data_enum=DataEnum.TRUE_ADJACENCY)
         self.interventions = _load_data(data_enum=DataEnum.INTERVENTIONS)
 
@@ -92,28 +97,43 @@ class VariableSpecDataModule(pl.LightningDataModule):
             self.counterfactuals = _load_data(data_enum=DataEnum.COUNTERFACTUALS)
 
     def prepare_data(self):
-        variables_metadata = load_data(self.root_path, DataEnum.VARIABLES_JSON, **self.storage_options)
+        # WARNING: Do not remove partial here. For some reason, if `load_data` is called directly from inside this data
+        # module without being wrapped in partial, it's first optional `variables_metadata` argument is added to the
+        # config values of this class. Upon init through the CLI, this argument then becomes interpreted as a value in
+        # `storage_options`, whereby other calls to `load_data` will fail due to having two keyword arguments named
+        # `variables_metadata`.
+        #
+        # I.e. if `load_data` is called directly from here, the lightning command line with this class as a data module
+        # and `--print_config` produces:
+        # ...
+        # data:
+        #  class_path: causica.lightning.data_modules.VariableSpecDataModule
+        #  init_args:
+        #    ...
+        #    variables_metadata: null
+        _load_data = partial(load_data, root_path=self.root_path, **self.storage_options)
+        variables_metadata = _load_data(data_enum=DataEnum.VARIABLES_JSON)
 
         self._load_all_data(variables_metadata)
 
-        train_keys = set(self.dataset_train.keys())
-        test_keys = set(self.dataset_test.keys())
+        train_keys = set(self._dataset_train.keys())
+        test_keys = set(self._dataset_test.keys())
         assert (
             train_keys == test_keys
-        ), f"The node_names for the training and test data must match. Diff: {train_keys.symmetric_difference(test_keys)}"
-        self._variable_shapes = tensordict_shapes(self.dataset_train)
+        ), f"node_names for the training and test data must match. Diff: {train_keys.symmetric_difference(test_keys)}"
+        self._variable_shapes = tensordict_shapes(self._dataset_train)
         self._variable_types = {var["group_name"]: var["type"] for var in variables_metadata["variables"]}
-        self._variable_names = defaultdict(list)
-        for v in variables_metadata["variables"]:
-            self._variable_names["group_name"].append(v["name"])
+        self._column_names = defaultdict(list)
+        for variable in variables_metadata["variables"]:
+            self._column_names[variable["group_name"]].append(variable["name"])
 
         if self.normalize:
             continuous_keys = [k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS]
-            self.normalizer = fit_standardizer(self.dataset_train.select(*continuous_keys))
+            self.normalizer = fit_standardizer(self._dataset_train.select(*continuous_keys))
 
             transform = self.normalizer()
-            self.dataset_train = transform(self.dataset_train)
-            self.dataset_test = transform(self.dataset_test)
+            self._dataset_train = transform(self._dataset_train)
+            self._dataset_test = transform(self._dataset_test)
 
     def train_dataloader(self):
         return DataLoader(
@@ -163,3 +183,12 @@ class CSuiteDataModule(VariableSpecDataModule):
             dataset_name=dataset_name,
             load_counterfactual=load_counterfactual,
         )
+
+
+def _check_exists(obj: Any, attribute_name: str):
+    """Check if an attribute exists otherwise print a message."""
+    try:
+        return getattr(obj, attribute_name)
+    except AttributeError as exc:
+        display_string = attribute_name.replace("_", " ").strip()
+        raise ValueError(f"Tried to get {display_string} before data was downloaded.") from exc

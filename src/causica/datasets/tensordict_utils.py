@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Optional
 
 import pandas as pd
 import torch
@@ -7,7 +7,7 @@ from tensordict import TensorDict
 
 def convert_one_hot(
     data: TensorDict,
-    one_hot_sizes: Optional[Dict[str, int]] = None,
+    one_hot_sizes: Optional[dict[str, int]] = None,
 ):
     """
     Args:
@@ -26,7 +26,7 @@ def convert_one_hot(
     return new_data
 
 
-def tensordict_shapes(tds: TensorDict) -> Dict[str, torch.Size]:
+def tensordict_shapes(tds: TensorDict) -> dict[str, torch.Size]:
     """Return the shapes within the TensorDict without batch dimensions."""
     return {key: val.shape[len(tds.batch_size) :] for key, val in tds.items()}
 

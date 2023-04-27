@@ -26,7 +26,6 @@ class Noise(Generic[SampleType], abc.ABC, td.Distribution):
         Returns:
             The generated samples with shape sample_shape + batch_shape + event_shape
         """
-        pass
 
     @abc.abstractmethod
     def noise_to_sample(self, noise: SampleType) -> SampleType:
@@ -38,7 +37,6 @@ class Noise(Generic[SampleType], abc.ABC, td.Distribution):
         Returns:
             The generated samples with shape sample_shape + batch_shape + event_shape
         """
-        pass
 
 
 BaseNoiseType_co = TypeVar("BaseNoiseType_co", bound=Noise, covariant=True)
