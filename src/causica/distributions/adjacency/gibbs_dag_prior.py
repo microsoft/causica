@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.distributions as td
@@ -33,7 +33,7 @@ class GibbsDAGPrior(td.Distribution):
     Each term has an associated parameter (lambda)
     """
 
-    arg_constraints: Dict = {}
+    arg_constraints: dict = {}
 
     def __init__(
         self,

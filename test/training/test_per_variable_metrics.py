@@ -1,6 +1,6 @@
 import torch
 
-from causica.training.evaluation import binary_accuracy, categorical_accuracy, rmse
+from causica.training.per_variable_metrics import binary_accuracy, categorical_accuracy, rmse
 
 
 def test_binary_accuracy():

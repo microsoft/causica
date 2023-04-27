@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 from tensordict import TensorDict
 
@@ -84,7 +82,7 @@ def assign_submatrix(A: torch.Tensor, B: torch.Tensor, x_mask: torch.Tensor, y_m
 
 def create_do_functional_relationship(
     interventions: TensorDict, func: FunctionalRelationships, graph: torch.Tensor
-) -> Tuple[DoFunctionalRelationships, torch.Tensor]:
+) -> tuple[DoFunctionalRelationships, torch.Tensor]:
     """
     Given a set of interventions, `FunctionalRelationships` and a graph, create a `DoFunctionalRelationships` and an intervened graph.
 

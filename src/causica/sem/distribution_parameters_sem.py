@@ -1,5 +1,3 @@
-from typing import Dict
-
 import torch
 from tensordict import TensorDict
 
@@ -15,7 +13,7 @@ class DistributionParametersSEM(SEM):
     This is more general than the simple additive case.
     """
 
-    arg_constraints: Dict = {}
+    arg_constraints: dict = {}
 
     def __init__(
         self,

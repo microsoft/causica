@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Union
 
 import torch
 import torch.distributions as td
@@ -8,7 +8,7 @@ from causica.distributions.noise.noise import IndependentNoise, Noise, NoiseModu
 from causica.distributions.noise.spline.rational_quadratic_transform import PiecewiseRationalQuadraticTransform
 
 # Ordered inputs to `_create_composite_layer`
-SplineParams = Tuple[torch.Tensor, ...]
+SplineParams = tuple[torch.Tensor, ...]
 
 
 class SplineNoise(td.TransformedDistribution, Noise):
@@ -21,7 +21,7 @@ class SplineNoise(td.TransformedDistribution, Noise):
         self,
         base_loc: torch.Tensor,
         base_scale: torch.Tensor,
-        spline_transforms: List[Union[td.AffineTransform, td.ComposeTransform]],
+        spline_transforms: list[Union[td.AffineTransform, td.ComposeTransform]],
     ):
         """
         Args:
@@ -74,7 +74,7 @@ def create_spline_dist_params(
     flow_steps: int,
     knot_locations_scale: float,
     derivatives_scale: float,
-) -> List[SplineParams]:
+) -> list[SplineParams]:
     """Create initial values for a spline distribution.
 
     Args:
@@ -87,7 +87,7 @@ def create_spline_dist_params(
     Returns:
         A list of parameters for `CompositeSplineLayer`s.
     """
-    param_list: List[SplineParams] = []
+    param_list: list[SplineParams] = []
     for i in range(flow_steps + 1):
         log_scale = torch.zeros(dim)  # this will be exponentiated when passed to the spline distribution
         loc = torch.zeros(dim)

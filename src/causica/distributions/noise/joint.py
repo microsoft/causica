@@ -1,5 +1,6 @@
+from collections import defaultdict
 from enum import Enum
-from typing import Any, Callable, DefaultDict, Dict, Iterable, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Iterable, Optional, TypeVar
 
 import torch
 from tensordict import TensorDict
@@ -21,8 +22,8 @@ class JointNoise(Noise[TensorDict]):
     Samples are TensorDicts containining independent variables.
     """
 
-    def __init__(self, independent_noise_dists: Dict[str, Noise[torch.Tensor]]):
-        shapes = DefaultDict[torch.Size, List[str]](list)
+    def __init__(self, independent_noise_dists: dict[str, Noise[torch.Tensor]]):
+        shapes = defaultdict[torch.Size, list[str]](list)
         for name, noise_dist in independent_noise_dists.items():
             shapes[noise_dist.batch_shape].append(name)
         if len(shapes) > 1:
@@ -70,7 +71,7 @@ class JointNoise(Noise[TensorDict]):
         return torch.sum(torch.stack(log_probs, dim=0), dim=0)
 
     @property
-    def support(self) -> Dict[str, Optional[Any]]:
+    def support(self) -> dict[str, Optional[Any]]:
         return {name: noise_dist.support for name, noise_dist in self._independent_noise_dists.items()}
 
     @property
@@ -98,10 +99,10 @@ class ContinuousNoiseDist(Enum):
 
 
 def create_noise_modules(
-    shapes: Dict[str, torch.Size],
-    types: Dict[str, VariableTypeEnum],
+    shapes: dict[str, torch.Size],
+    types: dict[str, VariableTypeEnum],
     continuous_noise_dist: ContinuousNoiseDist,
-) -> Dict[str, NoiseModule[Noise[torch.Tensor]]]:
+) -> dict[str, NoiseModule[Noise[torch.Tensor]]]:
     """Create noise modules for each item of shapes and types.
 
     Args:
@@ -115,7 +116,7 @@ def create_noise_modules(
     Returns
         Dict of independent noise modules following the shape and type specifications.
     """
-    noise_modules: Dict[str, NoiseModule] = {}
+    noise_modules: dict[str, NoiseModule] = {}
     for key, shape in shapes.items():
         size = shape[-1]
         var_type = types[key]
@@ -143,7 +144,7 @@ class JointNoiseModule(NoiseModule[JointNoise]):
     Each noise module is used independently on their corresponding key of sample TensorDicts.
     """
 
-    def __init__(self, independent_noise_modules: Dict[str, NoiseModule[Noise[torch.Tensor]]]):
+    def __init__(self, independent_noise_modules: dict[str, NoiseModule[Noise[torch.Tensor]]]):
         """
         Args:
             independent_noise_modules: Noise modules to be applied keywise to input TensorDicts. Could e.g. be created
@@ -165,6 +166,6 @@ class JointNoiseModule(NoiseModule[JointNoise]):
         # ModuleDict doesn't allow tracking value types, so ignore the type here.
         return JointNoiseModule(selected_independent_noise_modules)  # type: ignore
 
-    def keys(self) -> Tuple[str, ...]:
+    def keys(self) -> tuple[str, ...]:
         """The keys for the different noise modules in order."""
         return tuple(self.noise_modules)

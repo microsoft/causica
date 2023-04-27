@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Tuple, Type
+from typing import Callable, Type
 
 import torch
 import torch.distributions as td
@@ -113,7 +113,7 @@ class ConstrainedAdjacencyDistribution(AdjacencyDistribution):
         return 1.0 - (1.0 - G * self.negative_constraints) * (~self.positive_constraints)
 
 
-def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Converts graph constraint matrix into a positive and negative matrix for easier usage.
 
     Args:

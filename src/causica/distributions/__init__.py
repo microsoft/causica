@@ -4,6 +4,7 @@ from causica.distributions.adjacency import (
     ConstrainedAdjacencyDistribution,
     ENCOAdjacencyDistribution,
     ENCOAdjacencyDistributionModule,
+    ErdosRenyiDAGDistribution,
     ExpertGraphContainer,
     GibbsDAGPrior,
     ThreeWayAdjacencyDistribution,

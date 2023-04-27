@@ -6,8 +6,8 @@ import torch
 
 from causica.distributions import ExpertGraphContainer
 from causica.distributions.noise.joint import ContinuousNoiseDist
-from causica.lightning.data_modules import CSuiteDataModule
-from causica.lightning.deci_module import DECIModule
+from causica.lightning.data_modules.variable_spec_data import CSuiteDataModule
+from causica.lightning.modules.deci_module import DECIModule
 
 
 def _module_to_parameter(module: DECIModule):

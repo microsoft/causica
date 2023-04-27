@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Optional, Sequence, Union
 
 import fsspec
 import numpy as np
@@ -27,8 +27,8 @@ from causica.functional_relationships import ICGNN
 from causica.graph.dag_constraint import calculate_dagness
 from causica.graph.evaluation_metrics import adjacency_f1, orientation_f1
 from causica.lightning.callbacks import AuglagLRCallback
-from causica.lightning.data_modules import VariableSpecDataModule
-from causica.lightning.variable_spec_module import VariableSpecModule
+from causica.lightning.data_modules.deci_data_module import DECIDataModule
+from causica.lightning.modules.variable_spec_module import VariableSpecModule
 from causica.sem.structural_equation_model import SEM
 from causica.training.auglag import AugLagLossCalculator, AugLagLR, AugLagLRConfig
 from causica.training.evaluation import (
@@ -113,7 +113,7 @@ class DECIModule(VariableSpecModule):
         ]
         if any(member is None for member in dataset_defined_members):
             datamodule = getattr(self.trainer, "datamodule", None)
-            if not isinstance(datamodule, VariableSpecDataModule):
+            if not isinstance(datamodule, DECIDataModule):
                 raise TypeError(
                     f"Incompatible data module {datamodule}, requires a DECIDataModule but is "
                     f"{type(datamodule).mro()}"
@@ -123,11 +123,11 @@ class DECIModule(VariableSpecModule):
             if self.num_samples is None:
                 self.num_samples = len(datamodule.dataset_train)
             if self.variable_group_shapes is None:
-                self.variable_group_shapes = datamodule.get_variable_shapes()
+                self.variable_group_shapes = datamodule.variable_shapes
             if self.variable_types is None:
-                self.variable_types = datamodule.get_variable_types()
+                self.variable_types = datamodule.variable_types
             if self.variable_names is None:
-                self.variable_names = datamodule.get_variable_names()
+                self.variable_names = datamodule.column_names
 
     def setup(self, stage: Optional[str] = None):
         if self.is_setup:
@@ -249,7 +249,7 @@ class DECIModule(VariableSpecModule):
     def test_step_interventions(self, interventions: InterventionWithEffects, *args, **kwargs):
         """Evaluate the ATE and Interventional log prob performance of the model"""
         _, _ = args, kwargs
-        sems_list: List[SEM] = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
+        sems_list: list[SEM] = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         interventional_log_prob = eval_intervention_likelihoods(sems_list, interventions)
         self.log("eval/Interventional_LL", torch.mean(interventional_log_prob).item(), add_dataloader_idx=False)
 
@@ -263,5 +263,5 @@ class DECIModule(VariableSpecModule):
         ite_rmse = eval_ite_rmse(sems_list, counterfactuals)
         self.log("eval/ITE_RMSE", list_mean(list(ite_rmse.values())).item(), add_dataloader_idx=False)
 
-    def on_save_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         checkpoint["sem_module"] = self.sem_module

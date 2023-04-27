@@ -33,5 +33,5 @@ def test_mlflow_save_config_callback(local_mlflow_run: ActiveRun):
         callback.setup(Trainer(), LightningModule(), stage=TrainerFn.FITTING)
 
     base_artifact_uri = local_mlflow_run.info.artifact_uri
-    config_artifact_uri = os.path.join(base_artifact_uri, "fit_" + callback.config_filename)
+    config_artifact_uri = os.path.join(base_artifact_uri, callback.config_filename)
     assert yaml.safe_load(mlflow.artifacts.load_text(config_artifact_uri)) == namespace.as_dict()

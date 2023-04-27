@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Set
 
 import torch
 from tensordict import TensorDict
@@ -23,7 +22,7 @@ class InterventionData:
     intervention_data: TensorDict
     intervention_values: TensorDict
     condition_values: TensorDict
-    sampled_nodes: Set[str] = field(init=False)  # the nodes that are neither conditioned nor sampled
+    sampled_nodes: set[str] = field(init=False)  # the nodes that are neither conditioned nor sampled
 
     def __post_init__(self):
         assert self.intervention_values.batch_size == torch.Size()
@@ -57,7 +56,7 @@ class CounterfactualData:
     counterfactual_data: TensorDict
     intervention_values: TensorDict
     factual_data: TensorDict
-    sampled_nodes: Set[str] = field(init=False)
+    sampled_nodes: set[str] = field(init=False)
 
     def __post_init__(self):
         assert list(self.counterfactual_data.keys()) == list(self.factual_data.keys())

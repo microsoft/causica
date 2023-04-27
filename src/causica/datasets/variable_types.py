@@ -12,5 +12,5 @@ class VariableTypeEnum(Enum):
 DTYPE_MAP = {
     VariableTypeEnum.CONTINUOUS: torch.float32,
     VariableTypeEnum.CATEGORICAL: torch.int32,
-    VariableTypeEnum.BINARY: torch.bool,
+    VariableTypeEnum.BINARY: torch.int32,
 }

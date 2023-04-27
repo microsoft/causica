@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 import torch
 import torch.distributions as td
 from torch.distributions.constraints import Constraint
@@ -21,7 +19,7 @@ class SEMDistribution(td.Distribution):
     adjacency distribution.
     """
 
-    arg_constraints: Dict[str, Constraint] = {}
+    arg_constraints: dict[str, Constraint] = {}
 
     def __init__(
         self,
@@ -40,7 +38,7 @@ class SEMDistribution(td.Distribution):
         self._noise_module = noise_module
         self._functional_relationships = functional_relationships
 
-    def _create_sems(self, graphs: torch.Tensor) -> List[DistributionParametersSEM]:
+    def _create_sems(self, graphs: torch.Tensor) -> list[DistributionParametersSEM]:
         graphs = graphs.reshape(-1, *graphs.shape[-2:])
         return [
             DistributionParametersSEM(
@@ -59,7 +57,7 @@ class SEMDistribution(td.Distribution):
 
     def relaxed_sample(
         self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0
-    ) -> List[DistributionParametersSEM]:
+    ) -> list[DistributionParametersSEM]:
         graphs = self._adjacency_dist.relaxed_sample(sample_shape=sample_shape, temperature=temperature)
         return self._create_sems(graphs)
 

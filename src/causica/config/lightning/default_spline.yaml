@@ -26,7 +26,7 @@ model:
         safety_rho: 1e13
         safety_alpha: 1e13
         max_lr_down: 3
-        inner_early_stopping_patience: 500
+        inner_early_stopping_patience: 1500
         max_outer_steps: 100
         patience_penalty_reached: 5
         patience_max_rho: 3

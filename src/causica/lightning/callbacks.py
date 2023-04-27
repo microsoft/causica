@@ -40,6 +40,17 @@ class AuglagLRCallback(pl.Callback):
             lagrangian_penalty=outputs["constraint"].item(),
         )
 
+        auglag_logging_attributes = [
+            "num_lr_updates",
+            "outer_opt_counter",
+            "step_counter",
+            "outer_below_penalty_tol",
+            "outer_max_rho",
+            "last_best_step",
+            "last_lr_update_step",
+        ]
+        pl_module.log_dict({f"auglag/{k}": getattr(self.scheduler, k) for k in auglag_logging_attributes}, on_step=True)
+
         # Notify trainer to stop if the auglag algorithm has converged
         if is_converged:
             trainer.should_stop = True
@@ -63,7 +74,7 @@ class MLFlowSaveConfigCallback(SaveConfigCallback):
         # Save the file on rank 0
         if trainer.is_global_zero and stage == TrainerFn.FITTING:
             with TemporaryDirectory() as tmpdir:
-                temporary_config_path = str(Path(tmpdir) / (f"{stage.value}_" + self.config_filename))
+                temporary_config_path = str(Path(tmpdir) / self.config_filename)
                 self.parser.save(
                     self.config,
                     temporary_config_path,
