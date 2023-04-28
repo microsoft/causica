@@ -59,6 +59,15 @@ class BernoulliNoise(td.Bernoulli, Noise):
         """
         return ((self.delta_logits + noise) > 0).float()
 
+    @property
+    def mode(self):
+        """
+        Override the default `mode` method to prevent it returning nan's.
+
+        We favour sparseness, so if logit == 0, set the mode to be zero.
+        """
+        return (self.logits > 0).to(self.logits)
+
 
 class BernoulliNoiseModule(NoiseModule[IndependentNoise[BernoulliNoise]]):
     """Represents a BernoulliNoise distribution with learnable logits."""
