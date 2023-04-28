@@ -144,7 +144,10 @@ class ENCOAdjacencyDistribution(AdjacencyDistribution):
             A tensor of shape batch_shape + (num_nodes, num_nodes)
         """
         logits = self._get_independent_bernoulli_logits()
-        return self.base_dist(logits).mode * (1.0 - torch.eye(self.num_nodes, device=logits.device))
+        # bernoulli mode can be nan for very small logits, favour sparseness and set to 0
+        return torch.nan_to_num(self.base_dist(logits).mode, nan=0.0) * (
+            1.0 - torch.eye(self.num_nodes, device=logits.device)
+        )
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         """

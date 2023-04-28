@@ -92,7 +92,8 @@ class ThreeWayAdjacencyDistribution(AdjacencyDistribution):
         Returns:
             A tensor of shape batch_shape + (num_nodes, num_nodes)
         """
-        return _triangular_vec_to_matrix(self.base_dist(self.logits).mode)
+        # bernoulli mode can be nan for very small logits, favour sparseness and set to 0
+        return _triangular_vec_to_matrix(torch.nan_to_num(self.base_dist(self.logits).mode, 0.0))
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         """

@@ -72,13 +72,13 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
         We return the mode corresponding to the "default" ordering.
 
         There are 2 possibilities:
-            p >= 0.5: A lower triangular matrix of ones
-            p < 0.5: A matrix of zeros
+            p > 0.5: A lower triangular matrix of ones
+            p <= 0.5: A matrix of zeros
 
         Returns:
             A tensor of shape batch_shape + (num_nodes, num_nodes)
         """
-        return fill_triangular(self.bern_dist.mode)
+        return fill_triangular(torch.nan_to_num(self.bern_dist.mode, nan=0.0))
 
     def log_prob(self, value: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
