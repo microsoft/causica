@@ -2,11 +2,14 @@ import pytest
 import torch
 from tensordict import TensorDict
 
-from causica.distributions.noise.bernoulli import BernoulliNoise
-from causica.distributions.noise.categorical import CategoricalNoise
-from causica.distributions.noise.joint import JointNoise
-from causica.distributions.noise.noise import IndependentNoise, Noise
-from causica.distributions.noise.univariate_normal import UnivariateNormalNoise
+from causica.distributions import (
+    BernoulliNoise,
+    CategoricalNoise,
+    IndependentNoise,
+    JointNoise,
+    Noise,
+    UnivariateNormalNoise,
+)
 
 NOISE_DISTRIBUTIONS = [
     IndependentNoise(BernoulliNoise(torch.randn(3), torch.randn(3)), 1),
@@ -24,9 +27,9 @@ def test_joint_noise_passthrough(noise: Noise):
     joint_noise = JointNoise({"a": noise})
 
     # Distribution properties
-    torch.testing.assert_allclose(joint_noise.entropy(), noise.entropy())
-    torch.testing.assert_allclose(joint_noise.mode.get("a"), noise.mode)
-    torch.testing.assert_allclose(joint_noise.mean.get("a"), noise.mean)
+    torch.testing.assert_close(joint_noise.entropy(), noise.entropy())
+    torch.testing.assert_close(joint_noise.mode.get("a"), noise.mode)
+    torch.testing.assert_close(joint_noise.mean.get("a"), noise.mean)
 
 
 @pytest.mark.parametrize("noise_a", NOISE_DISTRIBUTIONS)
@@ -36,11 +39,11 @@ def test_joint_noise_properties(noise_a: Noise, noise_b: Noise):
     joint_noise = JointNoise({"a": noise_a, "b": noise_b})
 
     # Distribution properties
-    torch.testing.assert_allclose(joint_noise.entropy(), noise_a.entropy() + noise_b.entropy())
-    torch.testing.assert_allclose(joint_noise.mode.get("a"), noise_a.mode)
-    torch.testing.assert_allclose(joint_noise.mode.get("b"), noise_b.mode)
-    torch.testing.assert_allclose(joint_noise.mean.get("a"), noise_a.mean)
-    torch.testing.assert_allclose(joint_noise.mean.get("b"), noise_b.mean)
+    torch.testing.assert_close(joint_noise.entropy(), noise_a.entropy() + noise_b.entropy())
+    torch.testing.assert_close(joint_noise.mode.get("a"), noise_a.mode)
+    torch.testing.assert_close(joint_noise.mode.get("b"), noise_b.mode)
+    torch.testing.assert_close(joint_noise.mean.get("a"), noise_a.mean)
+    torch.testing.assert_close(joint_noise.mean.get("b"), noise_b.mean)
 
 
 @pytest.mark.parametrize("noise_a", NOISE_DISTRIBUTIONS)
@@ -52,13 +55,13 @@ def test_joint_noise_sample_log_prob(noise_a: Noise, noise_b: Noise, sample_shap
     sample_a = noise_a.sample(sample_shape)
     sample_b = noise_b.sample(sample_shape)
     joint_sample = TensorDict({"a": sample_a, "b": sample_b}, batch_size=sample_shape)
-    torch.testing.assert_allclose(
+    torch.testing.assert_close(
         joint_noise.log_prob(joint_sample), noise_a.log_prob(sample_a) + noise_b.log_prob(sample_b)
     )
     joint_sample = joint_noise.sample()
     sample_a = joint_sample.get("a")
     sample_b = joint_sample.get("b")
-    torch.testing.assert_allclose(
+    torch.testing.assert_close(
         joint_noise.log_prob(joint_sample), noise_a.log_prob(sample_a) + noise_b.log_prob(sample_b)
     )
 
@@ -87,9 +90,9 @@ def test_joint_noise_empirical(noise_a: Noise, noise_b: Noise):
     mean, std = torch.mean, torch.std
     for key, value in samples.items():
         joint_value = joint_samples.get(key)
-        torch.testing.assert_allclose(mean(value, sample_dim), mean(joint_value, sample_dim), atol=0.01, rtol=0.01)
-        torch.testing.assert_allclose(std(value, sample_dim), std(joint_value, sample_dim), atol=0.01, rtol=0.01)
+        torch.testing.assert_close(mean(value, sample_dim), mean(joint_value, sample_dim), atol=0.01, rtol=0.01)
+        torch.testing.assert_close(std(value, sample_dim), std(joint_value, sample_dim), atol=0.01, rtol=0.01)
 
     # Similar log probs
-    torch.testing.assert_allclose(mean(log_probs), mean(joint_log_probs), atol=0.01, rtol=0.01)
-    torch.testing.assert_allclose(std(log_probs), std(joint_log_probs), atol=0.01, rtol=0.01)
+    torch.testing.assert_close(mean(log_probs), mean(joint_log_probs), atol=0.01, rtol=0.01)
+    torch.testing.assert_close(std(log_probs), std(joint_log_probs), atol=0.01, rtol=0.01)

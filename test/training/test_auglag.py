@@ -1,5 +1,3 @@
-import random
-
 import torch
 from torch.nn import Parameter
 from torch.optim import Adam
@@ -33,13 +31,14 @@ def test_on_train_batch_end():
     auglag_callback = AugLagLR(_get_auglag_config(group_lr))
     optimizer = Adam(param)
     loss = AugLagLossCalculator(init_alpha=0.0, init_rho=1.0)
-    random_generator = random.Random(0)
+    random_generator = torch.Generator()
+    random_generator.manual_seed(1337)
     for _ in range(10000):
         auglag_callback.step(
             optimizer=optimizer,
             loss=loss,
-            loss_value=random_generator.random(),
-            lagrangian_penalty=random_generator.random(),
+            loss_value=torch.rand((), generator=random_generator),
+            lagrangian_penalty=torch.rand((), generator=random_generator),
         )
 
 
@@ -49,14 +48,15 @@ def test_on_train_batch_end_list_opt():
     param = [{"params": group_param[key], "name": key, "lr": val} for key, val in group_lr.items()]
     optimizer_list = [Adam(param[:1]), Adam(param[1:])]
     loss = AugLagLossCalculator(init_alpha=0.0, init_rho=1.0)
-    random_generator = random.Random(0)
+    random_generator = torch.Generator()
+    random_generator.manual_seed(1337)
     auglag_callback = AugLagLR(_get_auglag_config(group_lr))
     for _ in range(10000):
         auglag_callback.step(
             optimizer=optimizer_list,
             loss=loss,
-            loss_value=random_generator.random(),
-            lagrangian_penalty=random_generator.random(),
+            loss_value=torch.rand((), generator=random_generator),
+            lagrangian_penalty=torch.rand((), generator=random_generator),
         )
 
 
@@ -96,20 +96,21 @@ def test_solve_auglag():
     auglag_loss = AugLagLossCalculator(init_alpha=0.0, init_rho=1.0)
     step_counter = 0
     max_iter = 10000
+    constraint = torch.inf
     for _ in range(max_iter):
         optimizer.zero_grad()
         loss = x**2
-        constraint = max(3 - x, torch.zeros(()))
+        constraint = torch.max(3 - x, torch.zeros(()))
         auglag_loss_tensor = auglag_loss(loss, constraint)
         auglag_loss_tensor.backward()
         optimizer.step()
         converged = scheduler.step(
-            optimizer=optimizer, loss=auglag_loss, loss_value=loss.item(), lagrangian_penalty=constraint.item()
+            optimizer=optimizer, loss=auglag_loss, loss_value=loss, lagrangian_penalty=constraint
         )
         if converged:
             break
 
         step_counter += 1
 
-    assert constraint.item() < 1e-3
+    assert constraint < 1e-3
     assert torch.isclose(x, torch.tensor(3.0), atol=0.1)

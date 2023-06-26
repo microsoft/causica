@@ -26,14 +26,13 @@ def _distribution_factory(
         return ConstrainedAdjacencyDistribution(
             inner_dist, positive_constraints=positive_constraints, negative_constraints=negative_constraints
         )
-
-    elif dist_class is ENCOAdjacencyDistribution:
+    if dist_class is ENCOAdjacencyDistribution:
         length = (num_nodes * (num_nodes - 1)) // 2
         return ENCOAdjacencyDistribution(
             logits_exist=torch.randn(batch_shape + (num_nodes, num_nodes)),
             logits_orient=torch.randn(batch_shape + (length,)),
         )
-    elif dist_class is ThreeWayAdjacencyDistribution:
+    if dist_class is ThreeWayAdjacencyDistribution:
         logits = torch.randn(batch_shape + ((num_nodes * (num_nodes - 1)) // 2, 3))
         return ThreeWayAdjacencyDistribution(logits=logits)
     raise ValueError("Unrecognised Class")

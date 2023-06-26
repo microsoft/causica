@@ -7,6 +7,12 @@ from tensordict import TensorDict
 
 
 class SEM(dist.Distribution, abc.ABC):
+    """A structural equation model (SEM).
+
+    An SEM defines the causal relationships amongst a given set of nodes. This class provides methods to sample data
+    from the observational and interventional distributions of the SEM.
+    """
+
     arg_constraints: dict = {}
 
     def __init__(
@@ -137,8 +143,6 @@ def counterfactual(sem: SEM, factual_data: TensorDict, intervention: TensorDict)
     Returns:
        TensorDict: Dictionary holding the counterfactual values for all samples.
     """
-    # TODO: do we want to average over multiple "sample_to_noise" values for the discrete variables
-    # where this is not a 1:1 mapping?
     return sem.do(interventions=intervention).noise_to_sample(sem.sample_to_noise(factual_data))
 
 

@@ -15,12 +15,14 @@ from causica.training.auglag import AugLagLossCalculator, AugLagLR
 class AuglagLRCallback(pl.Callback):
     """Wrapper Class to make the Auglag Learning Rate Scheduler compatible with Pytorch Lightning"""
 
-    def __init__(self, scheduler: AugLagLR):
+    def __init__(self, scheduler: AugLagLR, log_auglag: bool = False):
         """
         Args:
-            scheduler: The auglag learning rate scheduler to wrap
+            scheduler: The auglag learning rate scheduler to wrap.
+            log_auglag: Whether to log the auglag state as metrics at the end of each epoch.
         """
         self.scheduler = scheduler
+        self._log_auglag = log_auglag
 
     def on_train_batch_end(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: STEP_OUTPUT, batch: Any, batch_idx: int
@@ -36,24 +38,27 @@ class AuglagLRCallback(pl.Callback):
         is_converged = self.scheduler.step(
             optimizer=optimizer,
             loss=auglag_loss,
-            loss_value=outputs["loss"].item(),
-            lagrangian_penalty=outputs["constraint"].item(),
+            loss_value=outputs["loss"],
+            lagrangian_penalty=outputs["constraint"],
         )
-
-        auglag_logging_attributes = [
-            "num_lr_updates",
-            "outer_opt_counter",
-            "step_counter",
-            "outer_below_penalty_tol",
-            "outer_max_rho",
-            "last_best_step",
-            "last_lr_update_step",
-        ]
-        pl_module.log_dict({f"auglag/{k}": getattr(self.scheduler, k) for k in auglag_logging_attributes}, on_step=True)
 
         # Notify trainer to stop if the auglag algorithm has converged
         if is_converged:
             trainer.should_stop = True
+
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        _ = trainer
+        if self._log_auglag:
+            auglag_state = {
+                "num_lr_updates": self.scheduler.num_lr_updates,
+                "outer_opt_counter": self.scheduler.outer_opt_counter,
+                "step_counter": self.scheduler.step_counter,
+                "outer_below_penalty_tol": self.scheduler.outer_below_penalty_tol,
+                "outer_max_rho": self.scheduler.outer_max_rho,
+                "last_best_step": self.scheduler.last_best_step,
+                "last_lr_update_step": self.scheduler.last_lr_update_step,
+            }
+            pl_module.log_dict(auglag_state, on_epoch=True, rank_zero_only=True, prog_bar=False)
 
 
 class MLFlowSaveConfigCallback(SaveConfigCallback):

@@ -22,7 +22,6 @@ def fixture_three_variable_dict():
 @pytest.mark.parametrize("graph", [torch.tensor([[0, 0], [1, 0.0]]), torch.tensor([[0, 1], [0, 0.0]])])
 def test_ate_ite_cf_two_node(graph, two_variable_dict):
     coef_matrix = torch.rand((3, 3))
-    # TODO: Figure out what to do about tests requiring modified scale
     sem = create_lingauss_sem(two_variable_dict, coef_matrix, graph, log_scale=math.log(1e-8))
     intervention_values_a = TensorDict({"x2": torch.tensor([1.42, 0.42])}, batch_size=tuple())
     intervention_values_b = TensorDict({"x2": torch.tensor([0.42, 1.42])}, batch_size=tuple())

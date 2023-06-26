@@ -1,6 +1,6 @@
 seed_everything: 234
 model:
-  class_path: causica.lightning.deci_module.DECIModule
+  class_path: causica.lightning.modules.deci_module.DECIModule
   init_args:
     noise_dist: "GAUSSIAN"
     embedding_size: 32
@@ -39,8 +39,8 @@ best_checkpoint_callback:
   filename: "best_model"
   save_top_k: 1
   mode: "max"
-  monitor: "average_batch_log_prob"
-  every_n_train_steps: 1
+  monitor: "batch_log_prob"
+  every_n_epochs: 1
 last_checkpoint_callback:
   save_last: true
   filename: "last_model"
