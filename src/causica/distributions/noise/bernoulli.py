@@ -66,7 +66,7 @@ class BernoulliNoise(td.Bernoulli, Noise):
 
         We favour sparseness, so if logit == 0, set the mode to be zero.
         """
-        return (self.logits > 0).to(self.logits)
+        return (self.logits > 0).to(self.logits, non_blocking=True)
 
 
 class BernoulliNoiseModule(NoiseModule[IndependentNoise[BernoulliNoise]]):

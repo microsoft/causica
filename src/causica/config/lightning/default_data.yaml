@@ -1,4 +1,4 @@
-class_path: causica.lightning.data_modules.CSuiteDataModule
+class_path: causica.lightning.data_modules.variable_spec_data.CSuiteDataModule
 init_args:
   dataset_name: csuite_nonlingauss
   batch_size: 128

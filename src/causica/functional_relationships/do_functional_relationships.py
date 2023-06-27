@@ -18,15 +18,15 @@ class DoFunctionalRelationships(FunctionalRelationships):
         """
         assert all(val.ndim == 1 for val in do.values()), "Intervention is only supported for 1 vector per variable"
 
-        new_variables = {key: value for key, value in func.variables.items() if key not in do.keys()}
-        super().__init__(new_variables)
+        new_shapes = {key: shape for key, shape in func.shapes.items() if key not in do.keys()}
+        super().__init__(new_shapes)
 
         self.func = func
         self.do = do  # dict of key to vectors
         self.submatrix = submatrix
 
         self.do_nodes_mask = torch.tensor(
-            [(name in self.do.keys()) for name in self.func.variables.keys()], dtype=torch.bool
+            [(name in self.do.keys()) for name in self.func.shapes.keys()], dtype=torch.bool
         )
 
     def pad_intervened_graphs(self, graphs: torch.Tensor) -> torch.Tensor:
@@ -38,7 +38,8 @@ class DoFunctionalRelationships(FunctionalRelationships):
         Returns:
             A tensor of shape batch_shape_g + (func_n, func_n)
         """
-        target_shape = graphs.shape[:-2] + (self.func.num_nodes, self.func.num_nodes)
+        num_nodes = self.func.tensor_to_td.num_keys
+        target_shape = graphs.shape[:-2] + (num_nodes, num_nodes)
 
         output_graphs = torch.zeros(target_shape, dtype=graphs.dtype, device=graphs.device)
         assign_submatrix(output_graphs, graphs, ~self.do_nodes_mask, ~self.do_nodes_mask)
@@ -93,7 +94,7 @@ def create_do_functional_relationship(
     Return:
         A tuple with the intervened functional relationship and the intervened graph
     """
-    node_names = list(func.variables.keys())
+    node_names = list(func.shapes.keys())
     do_nodes_mask = torch.zeros(len(node_names), dtype=torch.bool)
     for i, name in enumerate(node_names):
         if name in interventions.keys():

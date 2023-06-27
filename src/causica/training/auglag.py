@@ -1,19 +1,21 @@
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Union
+from typing import Optional, Union
 
-import numpy as np
 import torch
 from dataclasses_json import dataclass_json
 from torch.optim import Optimizer
 
 
-class AugLagLossCalculator:
+class AugLagLossCalculator(torch.nn.Module):
     def __init__(self, init_alpha: float, init_rho: float):
-        self.alpha = init_alpha
-        self.rho = init_rho
+        super().__init__()
+        self.alpha: torch.Tensor
+        self.rho: torch.Tensor
+        self.register_buffer("alpha", torch.tensor(init_alpha, dtype=torch.float))
+        self.register_buffer("rho", torch.tensor(init_rho, dtype=torch.float))
 
-    def __call__(self, objective: torch.Tensor, constraint: torch.Tensor) -> torch.Tensor:
+    def forward(self, objective: torch.Tensor, constraint: torch.Tensor) -> torch.Tensor:
         return objective + self.alpha * constraint + self.rho * constraint * constraint / 2
 
 
@@ -75,26 +77,21 @@ class AugLagLR:
         self.outer_opt_counter = 0
         self.outer_below_penalty_tol = 0
         self.outer_max_rho = 0
-        self._prev_lagrangian_penalty = np.inf
-        self._cur_lagrangian_penalty = np.inf
+        self._prev_lagrangian_penalty = torch.tensor(torch.inf)
+        self._cur_lagrangian_penalty = torch.tensor(torch.inf)
 
-        self.best_loss = np.inf
-        self.last_lr_update_step = 0
-        self.num_lr_updates = 0
-        self.last_best_step = 0
-        self.loss_tracker: deque = deque([], maxlen=config.aggregation_period)
-        self.step_counter = 0
-        self.epoch_counter = 0
+        self.loss_tracker: deque[torch.Tensor] = deque([], maxlen=config.aggregation_period)
+        self._init_new_inner_optimisation()
 
-    def _init_new_inner_optimisation(self):
+    def _init_new_inner_optimisation(self) -> None:
         """Init the hyperparameters for a new inner loop optimization."""
-        self.best_loss = np.inf
+        self.best_loss = torch.tensor(torch.inf)
         self.last_lr_update_step = 0
         self.num_lr_updates = 0
         self.last_best_step = 0
         self.loss_tracker.clear()
+        self.loss_tracker_sum: Optional[torch.Tensor] = None
         self.step_counter = 0
-        self.epoch_counter = 0
 
     def _is_inner_converged(self) -> bool:
         """Check if the inner optimization loop has converged, based on maximum number of inner steps, number of lr updates.
@@ -156,7 +153,7 @@ class AugLagLR:
             for param_group in optimizer.param_groups:
                 param_group["lr"] *= self.config.lr_factor
 
-    def _reset_lr(self, optimizer: Union[Optimizer, list[Optimizer]]):
+    def reset_lr(self, optimizer: Union[Optimizer, list[Optimizer]]):
         """Reset the learning rate of individual param groups from lr init dictionary.
 
         Args:
@@ -179,7 +176,7 @@ class AugLagLR:
         Args:
             loss: loss with lagrangian attributes rho and alpha to be updated.
         """
-        if self._cur_dag_penalty < self.config.penalty_tolerance:
+        if self._cur_lagrangian_penalty < self.config.penalty_tolerance:
             self.outer_below_penalty_tol += 1
         else:
             self.outer_below_penalty_tol = 0
@@ -187,20 +184,21 @@ class AugLagLR:
         if loss.rho > self.config.safety_rho:
             self.outer_max_rho += 1
 
-        if self._cur_dag_penalty > self._prev_lagrangian_penalty * self.config.penalty_progress_rate:
+        if self._cur_lagrangian_penalty > self._prev_lagrangian_penalty * self.config.penalty_progress_rate:
             print(f"Updating rho, dag penalty prev: {self._prev_lagrangian_penalty: .10f}")
             loss.rho *= 10.0
         else:
-            self._prev_lagrangian_penalty = self._cur_dag_penalty
-            loss.alpha += loss.rho * self._cur_dag_penalty
-            if self._cur_dag_penalty == 0.0:
+            self._prev_lagrangian_penalty = self._cur_lagrangian_penalty
+            loss.alpha += loss.rho * self._cur_lagrangian_penalty
+            if self._cur_lagrangian_penalty == 0.0:
                 loss.alpha *= 5
             print(f"Updating alpha to: {loss.alpha}")
         if loss.rho >= self.config.safety_rho:
             loss.alpha *= 5
 
-        loss.rho = min([loss.rho, self.config.safety_rho])
-        loss.alpha = min([loss.alpha, self.config.safety_alpha])
+        # Update parameters and make sure to maintain the dtype and device
+        loss.alpha = torch.min(loss.alpha, torch.full_like(loss.alpha, self.config.safety_alpha))
+        loss.rho = torch.min(loss.rho, torch.full_like(loss.rho, self.config.safety_rho))
 
     def _is_auglag_converged(self, optimizer: Union[Optimizer, list[Optimizer]], loss: AugLagLossCalculator) -> bool:
         """Checks if the inner and outer loops have converged. If inner loop is converged,
@@ -216,20 +214,34 @@ class AugLagLR:
         if self._is_inner_converged():
             if self._is_outer_converged():
                 return True
-            else:
-                self._update_lagrangian_params(loss)
-                self.outer_opt_counter += 1
-                self._init_new_inner_optimisation()
-                self._reset_lr(optimizer)
+
+            self._update_lagrangian_params(loss)
+            self.outer_opt_counter += 1
+            self._init_new_inner_optimisation()
+            self.reset_lr(optimizer)
         elif self._enough_steps_since_last_lr_update() and self._enough_steps_since_best_model():
             self._update_lr(optimizer)
 
         return False
 
+    def _update_loss_tracker(self, loss_value: torch.Tensor):
+        """Update the loss tracker with the current loss value.
+
+        Args:
+            loss_value: The current loss value.
+        """
+        if self.loss_tracker_sum is None:
+            self.loss_tracker_sum = torch.zeros_like(loss_value)
+
+        if len(self.loss_tracker) == self.loss_tracker.maxlen:
+            self.loss_tracker_sum -= self.loss_tracker.popleft()
+        self.loss_tracker.append(loss_value)
+        self.loss_tracker_sum += loss_value
+
     def _check_best_loss(self):
         """Update the best loss based on the average loss over an aggregation period."""
-        if len(self.loss_tracker) == self.config.aggregation_period:
-            avg_loss = np.mean(self.loss_tracker)
+        if len(self.loss_tracker) == self.loss_tracker.maxlen and self.loss_tracker_sum is not None:
+            avg_loss = self.loss_tracker_sum / self.loss_tracker.maxlen
             if avg_loss < self.best_loss:
                 self.best_loss = avg_loss
                 self.last_best_step = self.step_counter
@@ -238,8 +250,8 @@ class AugLagLR:
         self,
         optimizer: Union[Optimizer, list[Optimizer]],
         loss: AugLagLossCalculator,
-        loss_value: float,
-        lagrangian_penalty: float,
+        loss_value: torch.Tensor,
+        lagrangian_penalty: torch.Tensor,
     ) -> bool:
         """The main update method to take one auglag inner step.
 
@@ -252,9 +264,9 @@ class AugLagLR:
         Returns:
             bool: if the auglag has converged (False) or not (True)
         """
-        assert lagrangian_penalty >= 0, "auglag penalty must be non-negative"
-        self.loss_tracker.append(loss_value)
-        self._cur_dag_penalty = lagrangian_penalty
+        assert torch.all(lagrangian_penalty >= 0), "auglag penalty must be non-negative"
+        self._update_loss_tracker(loss_value.detach())
+        self._cur_lagrangian_penalty = lagrangian_penalty.detach()
         self.step_counter += 1
         self._check_best_loss()
         return self._is_auglag_converged(optimizer=optimizer, loss=loss)

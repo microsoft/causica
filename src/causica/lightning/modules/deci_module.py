@@ -18,7 +18,6 @@ from causica.distributions import (
     ExpertGraphContainer,
     GibbsDAGPrior,
     JointNoiseModule,
-    SEMDistributionModule,
     create_noise_modules,
 )
 from causica.distributions.noise.joint import ContinuousNoiseDist
@@ -29,6 +28,7 @@ from causica.graph.evaluation_metrics import adjacency_f1, orientation_f1
 from causica.lightning.callbacks import AuglagLRCallback
 from causica.lightning.data_modules.deci_data_module import DECIDataModule
 from causica.lightning.modules.variable_spec_module import VariableSpecModule
+from causica.sem.sem_distribution import SEMDistributionModule
 from causica.sem.structural_equation_model import SEM
 from causica.training.auglag import AugLagLossCalculator, AugLagLR, AugLagLRConfig
 from causica.training.evaluation import (
@@ -38,7 +38,6 @@ from causica.training.evaluation import (
     list_logsumexp,
     list_mean,
 )
-from causica.training.training_callbacks import AverageMetricTracker
 
 logging.basicConfig(level=logging.INFO)
 
@@ -132,7 +131,7 @@ class DECIModule(VariableSpecModule):
     def setup(self, stage: Optional[str] = None):
         if self.is_setup:
             return  # Already setup
-        elif stage not in {TrainerFn.TESTING, TrainerFn.FITTING}:
+        if stage not in {TrainerFn.TESTING, TrainerFn.FITTING}:
             raise ValueError(f"Model can only be setup during the {TrainerFn.FITTING} and {TrainerFn.TESTING} stages.")
 
         self.infer_missing_state_from_dataset()
@@ -150,7 +149,7 @@ class DECIModule(VariableSpecModule):
             adjacency_dist = ConstrainedAdjacency(adjacency_dist, self.constraint_matrix)
 
         icgnn = ICGNN(
-            variables=self.variable_group_shapes,
+            shapes=self.variable_group_shapes,
             embedding_size=self.embedding_size,
             out_dim_g=self.out_dim_g,
             norm_layer=None if self.norm_layer is False else torch.nn.LayerNorm,
@@ -167,14 +166,12 @@ class DECIModule(VariableSpecModule):
             sparsity_lambda=self.prior_sparsity_lambda,
             expert_graph_container=self.expert_graph_container,
         )
-        # TODO: Set a more reasonable averaging period
-        self.average_batch_log_prob_tracker: AverageMetricTracker = AverageMetricTracker(averaging_period=10)
         self.is_setup = True
 
     def training_step(self, *args, **kwargs) -> STEP_OUTPUT:
         _ = kwargs
         batch, *_ = args
-        batch = batch.apply(lambda t: t.to(torch.float32))
+        batch = batch.apply(lambda t: t.to(torch.float32, non_blocking=True))
 
         sem_distribution = self.sem_module()
         sem, *_ = sem_distribution.relaxed_sample(torch.Size([]), temperature=self.gumbel_temp)  # soft sample
@@ -184,13 +181,11 @@ class DECIModule(VariableSpecModule):
         prior_term = self.prior.log_prob(sem.graph)
         objective = (-sem_distribution_entropy - prior_term) / self.num_samples - batch_log_prob
         constraint = calculate_dagness(sem.graph)
-        self.average_batch_log_prob_tracker.step(batch_log_prob.item())
         step_output = {
             "loss": self.auglag_loss(objective, constraint / self.num_samples),
             "batch_log_prob": batch_log_prob,
             "constraint": constraint,
             "num_edges": (sem.graph > 0.0).count_nonzero(),
-            "average_batch_log_prob": self.average_batch_log_prob_tracker.average,
             "vardist_entropy": sem_distribution_entropy,
             "prior_term": prior_term,
         }
@@ -218,11 +213,12 @@ class DECIModule(VariableSpecModule):
 
     def configure_callbacks(self) -> Union[Sequence[pl.Callback], pl.Callback]:
         """Create a callback for the auglag callback."""
-        return [AuglagLRCallback(AugLagLR(config=self.auglag_config))]
+        lr_scheduler = AugLagLR(config=self.auglag_config)
+        return [AuglagLRCallback(lr_scheduler, log_auglag=True)]
 
     def test_step_observational(self, batch: TensorDict, *args, **kwargs):
         """Evaluate the log prob of the model on the test set using multiple graph samples."""
-        batch = batch.apply(lambda t: t.to(torch.float32))
+        batch = batch.apply(lambda t: t.to(torch.float32, non_blocking=True))
         sems = self.sem_module().sample(torch.Size([NUM_GRAPH_SAMPLES]))
         dataset_size = self.trainer.datamodule.dataset_test.batch_size  # type: ignore
         assert len(dataset_size) == 1, "Only one batch size is supported"

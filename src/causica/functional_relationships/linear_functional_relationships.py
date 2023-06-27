@@ -1,11 +1,7 @@
 import torch
 from tensordict import TensorDict
 
-from causica.functional_relationships.functional_relationships import (
-    FunctionalRelationships,
-    sample_dict_to_tensor,
-    tensor_to_sample_dict,
-)
+from causica.functional_relationships.functional_relationships import FunctionalRelationships
 
 
 class LinearFunctionalRelationships(FunctionalRelationships):
@@ -15,24 +11,21 @@ class LinearFunctionalRelationships(FunctionalRelationships):
 
     def __init__(
         self,
-        variables: dict[str, torch.Size],
+        shapes: dict[str, torch.Size],
         initial_linear_coefficient_matrix: torch.Tensor,
         trainable: bool = False,
     ) -> None:
         """
         Args:
-            variables: Dict of node shapes (how many dimensions a variable has)
+            shapes: Dict of node shapes (how many dimensions a variable has)
                 Order corresponds to the order in graph(s).
             initial_linear_coefficient_matrix: the linear coefficients [output_shape, output_shape]
             trainable: whether the coefficient matrix should be learnable
         """
-        super().__init__(variables)
+        super().__init__(shapes=shapes)
 
-        self.stacked_variable_masks = torch.nn.Parameter(
-            torch.stack(list(self.variable_masks.values())).float(), requires_grad=False
-        )
-
-        assert initial_linear_coefficient_matrix.shape == (self.output_shape, self.output_shape)
+        shape = self.tensor_to_td.output_shape
+        assert initial_linear_coefficient_matrix.shape == (shape, shape)
         self.linear_coefficients = torch.nn.Parameter(initial_linear_coefficient_matrix, requires_grad=trainable)
 
     def forward(self, samples: TensorDict, graphs: torch.Tensor) -> TensorDict:
@@ -43,9 +36,7 @@ class LinearFunctionalRelationships(FunctionalRelationships):
         Returns:
             A Dict of tensors of shape batch_shape_x + batch_shape_g + (processed_dim_all)
         """
-        return tensor_to_sample_dict(
-            self.linear_map(sample_dict_to_tensor(samples, self.variable_masks), graphs), self.variable_masks
-        )
+        return self.tensor_to_td(self.linear_map(self.tensor_to_td.inv(samples), graphs))
 
     def linear_map(self, samples: torch.Tensor, graph: torch.Tensor) -> torch.Tensor:
         """
@@ -60,9 +51,7 @@ class LinearFunctionalRelationships(FunctionalRelationships):
         batch_shape_x = samples.shape[:-1]
         batch_shape_g = graph.shape[:-2]
 
-        masked_graph = torch.einsum(
-            "ji,...jk,kl->...il", self.stacked_variable_masks, graph, self.stacked_variable_masks
-        )
+        masked_graph = torch.einsum("ji,...jk,kl->...il", self.stacked_key_masks, graph, self.stacked_key_masks)
 
         graph_broad = masked_graph.expand(*(batch_shape_x + tuple([-1] * len(graph.shape))))
         target_shape = batch_shape_x + batch_shape_g + samples.shape[-1:]

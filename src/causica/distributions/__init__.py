@@ -28,4 +28,3 @@ from causica.distributions.noise import (
     create_noise_modules,
     create_spline_dist_params,
 )
-from causica.distributions.sem_distribution import SEMDistribution, SEMDistributionModule

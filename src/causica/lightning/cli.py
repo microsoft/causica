@@ -6,8 +6,8 @@ from pytorch_lightning.cli import LightningCLI
 
 class LightningCLIWithDefaults(LightningCLI):
     default_logger = {
-        "class_path": "pytorch_lightning.loggers.MLFlowLogger",
-        "init_args": {"run_id": os.environ.get("AZUREML_RUN_ID", None)},
+        "class_path": "causica.lightning.loggers.BufferingMlFlowLogger",
+        "init_args": {"run_id": os.environ.get("AZUREML_RUN_ID", None), "buffer_size": 2000},
     }
 
     def add_arguments_to_parser(self, parser):

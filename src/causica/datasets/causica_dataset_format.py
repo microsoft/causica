@@ -73,7 +73,7 @@ def load_data(
 
     fsspec_open = partial(fsspec.open, mode="r", encoding="utf-8", **storage_options)
 
-    logger.debug(f"Loading {data_enum} from {path_name} with storage options {storage_options}")
+    logger.debug("Loading %s from %s with storage options %s", data_enum, path_name, storage_options)
 
     if data_enum == DataEnum.TRUE_ADJACENCY:
         with fsspec_open(path_name) as f:
@@ -89,19 +89,20 @@ def load_data(
         variables_metadata = load_data(root_path, data_enum=DataEnum.VARIABLES_JSON)
 
     with fsspec_open(path_name) as f:
-        if data_enum in {DataEnum.TRAIN, DataEnum.TEST}:
-            arr = np.loadtxt(f, delimiter=",")
-            categorical_sizes = _get_categorical_sizes(variables_list=variables_metadata["variables"])
-            return convert_one_hot(
-                tensordict_from_variables_metadata(arr, variables_metadata["variables"]),
-                one_hot_sizes=categorical_sizes,
-            )
-        elif data_enum == DataEnum.INTERVENTIONS:
-            return _load_interventions(json_object=json.load(f), metadata=variables_metadata)
-        elif data_enum == DataEnum.COUNTERFACTUALS:
-            return _load_counterfactuals(json_object=json.load(f), metadata=variables_metadata)
-        else:
-            raise RuntimeError("Unrecognized data type")
+        match data_enum:
+            case (DataEnum.TRAIN | DataEnum.TEST):
+                arr = np.loadtxt(f, delimiter=",")
+                categorical_sizes = _get_categorical_sizes(variables_list=variables_metadata["variables"])
+                return convert_one_hot(
+                    tensordict_from_variables_metadata(arr, variables_metadata["variables"]),
+                    one_hot_sizes=categorical_sizes,
+                )
+            case DataEnum.INTERVENTIONS:
+                return _load_interventions(json_object=json.load(f), metadata=variables_metadata)
+            case DataEnum.COUNTERFACTUALS:
+                return _load_counterfactuals(json_object=json.load(f), metadata=variables_metadata)
+
+        raise RuntimeError("Unrecognized data type")
 
 
 def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -> list[InterventionWithEffects]:
@@ -307,3 +308,22 @@ def tensordict_to_tensor(tensor_dict: TensorDict) -> torch.Tensor:
 def _intersect_dicts_left(dict_1: dict, dict_2: dict) -> dict:
     """Select the keys that are in both dictionaries, with values from the first."""
     return {key: dict_1[key] for key in dict_1.keys() & dict_2.keys()}
+
+
+def get_group_names(variables_dict: dict[str, Any]) -> list[str]:
+    """Get the names of the groups in the variables dict."""
+    return list(dict.fromkeys([var["group_name"] for var in variables_dict["variables"]]))
+
+
+def get_group_idxs(variables_dict: dict[str, Any]) -> list[list[int]]:
+    """Get the indices of the nodes/groups in each group."""
+    group_names = get_group_names(variables_dict)
+    return [
+        [idx for idx, var in enumerate(variables_dict["variables"]) if var["group_name"] == group_name]
+        for group_name in group_names
+    ]
+
+
+def get_name_to_idx(variables_dict: dict[str, Any]) -> dict[str, int]:
+    """Get a dictionary mapping node/group names to their index in the variables dict."""
+    return {var["name"]: idx for idx, var in enumerate(variables_dict["variables"])}

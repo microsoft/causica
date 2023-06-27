@@ -129,8 +129,10 @@ def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> tuple[torch.T
     # Mask self-edges
     mask = ~torch.eye(graph_constraint_matrix.shape[0], dtype=torch.bool, device=graph_constraint_matrix.device)
 
-    positive_constraints = mask * torch.nan_to_num(graph_constraint_matrix, nan=0).to(dtype=torch.bool)
-    negative_constraints = torch.nan_to_num(graph_constraint_matrix, nan=1).to(dtype=torch.bool)
+    positive_constraints = mask * torch.nan_to_num(graph_constraint_matrix, nan=0).to(
+        dtype=torch.bool, non_blocking=True
+    )
+    negative_constraints = torch.nan_to_num(graph_constraint_matrix, nan=1).to(dtype=torch.bool, non_blocking=True)
     return positive_constraints, negative_constraints
 
 

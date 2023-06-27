@@ -27,7 +27,7 @@ def fixture_two_variable_graphs():
 def test_ICGNN_init(two_variable_dict):
     icgnn = ICGNN(two_variable_dict)
 
-    assert icgnn.output_shape == 3
+    assert icgnn.tensor_to_td.output_shape == 3
 
 
 def test_ICGNN_forward(two_variable_dict, two_variable_graph, two_variable_sample):

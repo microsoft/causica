@@ -30,14 +30,15 @@ class VariableSpecModule(pl.LightningModule, abc.ABC):
 
         See the superclass for *args and **kwargs conventions.
         """
-        if dataloader_idx == 0:
-            return self.test_step_observational(batch, batch_idx)
-        elif dataloader_idx == 1:
-            return self.test_step_graph(batch, batch_idx)
-        elif dataloader_idx == 2:
-            return self.test_step_interventions(batch, batch_idx)
-        elif dataloader_idx == 3:
-            return self.test_step_counterfactuals(batch, batch_idx)
+        match dataloader_idx:
+            case 0:
+                return self.test_step_observational(batch, batch_idx)
+            case 1:
+                return self.test_step_graph(batch, batch_idx)
+            case 2:
+                return self.test_step_interventions(batch, batch_idx)
+            case 3:
+                return self.test_step_counterfactuals(batch, batch_idx)
 
     @abc.abstractmethod
     def test_step_observational(self, batch: TensorDict, *args, **kwargs):

@@ -18,8 +18,10 @@ class ExpertGraphContainer(torch.nn.Module):
 
         self.dag = torch.nn.Parameter(dag, requires_grad=False)
         self.mask = torch.nn.Parameter(mask, requires_grad=False)
-        self.confidence = confidence
-        self.scale = scale
+        self.confidence: torch.Tensor
+        self.scale: torch.Tensor
+        self.register_buffer("confidence", torch.tensor(confidence, dtype=torch.float))
+        self.register_buffer("scale", torch.tensor(scale, dtype=torch.float))
 
 
 class GibbsDAGPrior(td.Distribution):
