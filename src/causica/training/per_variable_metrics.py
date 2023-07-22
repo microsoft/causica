@@ -1,20 +1,21 @@
-from typing import Iterable, Optional, Union
+from typing import Callable, Iterable, Optional
 
 import torch
 from tensordict import TensorDict
 
 from causica.datasets.causica_dataset_format import CounterfactualWithEffects
+from causica.datasets.tensordict_utils import expand_tensordict_groups
 from causica.distributions.transforms import JointTransform
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 from causica.sem.structural_equation_model import SEM, counterfactual
 
 
-def eval_counterfactual_outcome_per_variable_rmse(
+def calculate_counterfactual_deci_metrics(
     sems: Iterable[SEM],
     counterfactual_data: CounterfactualWithEffects,
     grouped_variable_names: Optional[dict[str, list[str]]] = None,
     standardizer: Optional[JointTransform] = None,
-) -> TensorDict:
+) -> dict[str, TensorDict]:
     """Evaluate the counterfacual rmses of a model.
 
     Args:
@@ -26,7 +27,7 @@ def eval_counterfactual_outcome_per_variable_rmse(
             the space of the original data.
 
     Returns:
-        Dict of RMSEs for each effect variable we're interested in
+        Dict of RMSEs and MAPEs for each effect variable we're interested in
     """
     intervention, _, effects = counterfactual_data
 
@@ -43,35 +44,29 @@ def eval_counterfactual_outcome_per_variable_rmse(
         generated_cf_outcomes = standardizer.inv(generated_cf_outcomes)
         true_counterfactual_outcome = standardizer.inv(true_counterfactual_outcome)
 
-    if grouped_variable_names is None:
-        # calculate the rmse metrics, one for each group
-        rmses = TensorDict(
-            {key: rmse(generated_cf_outcomes[key], true_counterfactual_outcome[key]) for key in effects},
-            batch_size=torch.Size(),
-        )
-    else:
-        # calculate the rmse metrics, one for each column/single variable
-        rmses = TensorDict(
-            {
-                col_name: rmse(generated_cf_outcomes[key][:, idx], true_counterfactual_outcome[key][:, idx])
-                for key in effects
-                for idx, col_name in enumerate(grouped_variable_names[key])
-            },
-            batch_size=torch.Size(),
-        )
+    if grouped_variable_names:
+        generated_cf_outcomes = expand_tensordict_groups(generated_cf_outcomes, grouped_variable_names)
+        true_counterfactual_outcome = expand_tensordict_groups(true_counterfactual_outcome, grouped_variable_names)
+        effects = {
+            var for group_name, group in grouped_variable_names.items() for var in group if group_name in effects
+        }
 
-    return rmses
+    return {
+        "rmse": eval_per_variable_metric(generated_cf_outcomes, true_counterfactual_outcome, effects, rmse),
+        "mape": eval_per_variable_metric(generated_cf_outcomes, true_counterfactual_outcome, effects, mape),
+        "smape": eval_per_variable_metric(generated_cf_outcomes, true_counterfactual_outcome, effects, smape),
+    }
 
 
-def eval_observational_per_variable_rmse_and_accuracy(
-    sems: Union[list[DistributionParametersSEM], tuple[DistributionParametersSEM]],
+def calculate_observational_deci_metrics(
+    sems: Iterable[DistributionParametersSEM],
     observations: TensorDict,
     continuous_variables: list[str],  # keys to variables to be interpreted as categorical
     binary_variables: list[str],  # keys to variables to be interpreted as binary
     categorical_variables: list[str],  # keys to variables to be interpreted as categorical
     grouped_variable_names: Optional[dict[str, list[str]]] = None,
     standardizer: Optional[JointTransform] = None,
-) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+) -> dict[str, TensorDict]:
     """Calculates the RMSE and accuracy of the predictions of a model.
 
     Args:
@@ -86,7 +81,7 @@ def eval_observational_per_variable_rmse_and_accuracy(
             the space of the original data.
 
     Returns:
-        Dict holding the accuracy metrics for each node
+        Dict holding the different metrics
     """
     assert all(
         set(sem.node_names) == set(observations.keys()) for sem in sems
@@ -112,40 +107,63 @@ def eval_observational_per_variable_rmse_and_accuracy(
         mean_predictions = standardizer.inv(mean_predictions)
         observations = standardizer.inv(observations)
 
-    rmses = {}
-    accuraccies = {}
-    if grouped_variable_names is None:
-        # Calculate metrics for each group
-        for var in continuous_variables:
-            rmses[f"{var}"] = rmse(mean_predictions.get(var), observations.get(var))
+    if grouped_variable_names:
+        mean_predictions = expand_tensordict_groups(mean_predictions, grouped_variable_names)
+        observations = expand_tensordict_groups(observations, grouped_variable_names)
+        continuous_variables = [
+            var for group in grouped_variable_names.values() for var in group if var in continuous_variables
+        ]
+        binary_variables = [
+            var for group in grouped_variable_names.values() for var in group if var in binary_variables
+        ]
+        categorical_variables = [
+            var for group in grouped_variable_names.values() for var in group if var in categorical_variables
+        ]
 
-        for var in binary_variables:
-            accuraccies[f"{var}"] = binary_accuracy(mean_predictions.get(var), observations.get(var))
+    return {
+        "rmse": eval_per_variable_metric(mean_predictions, observations, continuous_variables, rmse),
+        "mape": eval_per_variable_metric(mean_predictions, observations, continuous_variables, mape),
+        "smape": eval_per_variable_metric(mean_predictions, observations, continuous_variables, smape),
+        "binary_accuracy": eval_per_variable_metric(mean_predictions, observations, binary_variables, binary_accuracy),
+        "categorical_accuracy": eval_per_variable_metric(
+            mean_predictions, observations, categorical_variables, categorical_accuracy
+        ),
+    }
 
-        for var in categorical_variables:
-            accuraccies[f"{var}"] = categorical_accuracy(mean_predictions.get(var), observations.get(var))
-    else:
-        # Calculate metrics for each variable in each group
-        for group_name in continuous_variables:
-            for i, var in enumerate(grouped_variable_names[group_name]):
-                rmses[f"{var}"] = rmse(
-                    mean_predictions.get(group_name)[:, i][:, None], observations.get(group_name)[:, i][:, None]
-                )
 
-        for group_name in binary_variables:
-            for i, var in enumerate(grouped_variable_names[group_name]):
-                accuraccies[f"{var}"] = binary_accuracy(
-                    mean_predictions.get(group_name)[:, i], observations.get(group_name)[:, i]
-                )
+def eval_per_variable_metric(
+    predictions: TensorDict,
+    observations: TensorDict,
+    variables: Iterable[str],
+    metric: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+) -> TensorDict:
+    """Calculates a metric for  and accuracy of the predictions of a model.
 
-        # Categorical variables are one-hot encoded, so we need to calculate the accuracy for each group as we do not
-        # support grouped categorical variables of shape [batch_size, num_groups, num_dims_for_node]
-        for group_name in categorical_variables:
-            accuraccies[f"{group_name}"] = categorical_accuracy(
-                mean_predictions.get(group_name), observations.get(group_name)
-            )
+    Args:
+        predictions: Predictions to evaluate
+        observations: Observational data to evaluate
+        variables: Keys of the variables to evaluate the metric for
+        metric: Metric to evaluate
+        grouped_variable_names: Optional dictionary that holds the names of the variables in each group. If given,
+            the variables are evaluated individually. Otherwise, the variables are evaluated groupwise.
+        standardizer: Standardizer that is used to invert the predictions and loaded data to convery the metrics into
+            the space of the original data.
 
-    return rmses, accuraccies
+    Returns:
+        Dict holding the metric for each node
+    """
+    assert set(variables).issubset(
+        predictions.keys()
+    ), f"predictions must contain all variables: got {predictions.keys()} but expected {variables}"
+    assert set(variables).issubset(
+        observations.keys()
+    ), f"observations must contain all variables: got {observations.keys()} but expected {variables}"
+
+    metric_results = predictions.select(*variables).apply(
+        metric, observations.select(*variables), batch_size=torch.Size([])
+    )
+
+    return metric_results
 
 
 def binary_accuracy(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -191,3 +209,39 @@ def rmse(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         RMSE of the prediction
     """
     return torch.sqrt(torch.mean(torch.sum((prediction - target) ** 2, -1)))
+
+
+def mape(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Calculate the mean absolute percentage error of a prediction. This will sum over all dimensions except the batch dimension.
+
+    Args:
+        prediction: Tensor of predictions [batch_size, num_dims_for_node]
+        target: Tensor of targets [batch_size, num_dims_for_node]
+
+    Returns:
+        MAPE of the prediction
+    """
+
+    return torch.mean(torch.nansum(torch.abs((prediction - target) / target), -1))
+
+
+def smape(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Calculate the symmetric mean absolute percentage error of a prediction. This will sum over all dimensions except the batch dimension.
+
+    Args:
+        prediction: Tensor of predictions [batch_size, num_dims_for_node]
+        target: Tensor of targets [batch_size, num_dims_for_node]
+
+    Returns:
+        sMAPE of the prediction
+    """
+    return torch.mean(
+        torch.sum(
+            torch.where(
+                torch.abs(target) + torch.abs(prediction) == 0,
+                torch.zeros_like(target),
+                torch.abs((prediction - target) / (torch.abs(target) + torch.abs(prediction))),
+            ),
+            -1,
+        )
+    )

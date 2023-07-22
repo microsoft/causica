@@ -31,7 +31,7 @@ class UnivariateNormalNoise(td.Normal, Noise[torch.Tensor]):
         return noise + self.loc
 
 
-class UnivariateNormalNoiseModule(NoiseModule[UnivariateNormalNoise]):
+class UnivariateNormalNoiseModule(NoiseModule[IndependentNoise[UnivariateNormalNoise]]):
     """Represents a UnivariateNormalNoise with learnable parameters for independent variables."""
 
     def __init__(self, dim: int, init_log_scale: float = 0.0):

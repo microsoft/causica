@@ -63,9 +63,13 @@ class JointStandardizer(nn.Module):
 
 def fit_standardizer(data: TensorDict) -> JointStandardizer:
     """Calculate the mean and standard deviation over the first dimension of each variable in the TensorDict and return a standardizer."""
-    means = data.apply(lambda x: torch.mean(x, dim=0, keepdim=True), batch_size=(1,))
-    # Filter out std == 0
-    stds = data.apply(lambda x: torch.std(x, dim=0, keepdim=True), batch_size=(1,)).apply(
-        lambda x: torch.where(x == 0, torch.ones_like(x), x)
+    means = data.apply(
+        lambda x: torch.mean(x, dim=0, keepdim=False),
+        batch_size=torch.Size(),
     )
+    # Filter out std == 0
+    stds = data.apply(
+        lambda x: torch.std(x, dim=0, keepdim=False),
+        batch_size=torch.Size(),
+    ).apply(lambda x: torch.where(x == 0, torch.ones_like(x), x))
     return JointStandardizer(means=means, stds=stds)

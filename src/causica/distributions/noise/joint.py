@@ -22,6 +22,8 @@ class JointNoise(Noise[TensorDict]):
     Samples are TensorDicts containining independent variables.
     """
 
+    arg_constraints = {}
+
     def __init__(self, independent_noise_dists: dict[str, Noise[torch.Tensor]]):
         shapes = defaultdict[torch.Size, list[str]](list)
         for name, noise_dist in independent_noise_dists.items():
@@ -121,6 +123,7 @@ def create_noise_modules(
         size = shape[-1]
         var_type = types[key]
 
+        noise_module: NoiseModule
         if var_type == VariableTypeEnum.CATEGORICAL:
             noise_module = CategoricalNoiseModule(size)
         elif var_type == VariableTypeEnum.BINARY:

@@ -2,14 +2,14 @@ import os
 
 import pytest
 
-from causica.datasets.causica_dataset_format import CSUITE_DATASETS_PATH, DataEnum, load_data
+from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, load_data
 from causica.datasets.tensordict_utils import tensordict_shapes
 
 
 @pytest.mark.parametrize("dataset", ["csuite_weak_arrows", "csuite_linexp_2"])
 def test_load_csuite(dataset):
     """Test that we can load a csuite dataset"""
-    root_path = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    root_path = os.path.join(CAUSICA_DATASETS_PATH, dataset)
 
     variables_metadata = load_data(root_path, DataEnum.VARIABLES_JSON)
     train_data = load_data(root_path, DataEnum.TRAIN, variables_metadata)
@@ -33,7 +33,7 @@ def test_load_csuite(dataset):
 
 def test_load_counterfactuals():
     dataset = "csuite_linexp_2"
-    root_path = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    root_path = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     # not all counterfactuals exist
     data_list = load_data(root_path, DataEnum.COUNTERFACTUALS)
     for (intervention_a, intervention_b, _) in data_list:

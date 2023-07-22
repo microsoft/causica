@@ -12,7 +12,10 @@ from causica.lightning.modules.deci_module import DECIModule
 
 def _module_to_parameter(module: DECIModule):
     """Get some parameter from the module"""
-    return module.optimizers().optimizer.param_groups[0]["params"][1]
+    optimizer = module.optimizers()
+    if isinstance(optimizer, torch.optim.Optimizer):
+        return optimizer.param_groups[0]["params"][1]
+    raise ValueError("Only expected one optimizer")
 
 
 @pytest.mark.parametrize(

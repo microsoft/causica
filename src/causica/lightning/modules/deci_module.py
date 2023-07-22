@@ -91,7 +91,6 @@ class DECIModule(VariableSpecModule):
     def prepare_data(self) -> None:
         """Set the constraint matrix (if necessary)."""
         if self.constraint_matrix_path:
-            # NOTE: This assumes that adlfs paths will be opened non-anonymously
             storage_options = get_storage_options_for_path(self.constraint_matrix_path)
 
             with fsspec.open(self.constraint_matrix_path, **storage_options) as f:
@@ -182,6 +181,8 @@ class DECIModule(VariableSpecModule):
         objective = (-sem_distribution_entropy - prior_term) / self.num_samples - batch_log_prob
         constraint = calculate_dagness(sem.graph)
         step_output = {
+            "alpha": self.auglag_loss.alpha,
+            "rho": self.auglag_loss.rho,
             "loss": self.auglag_loss(objective, constraint / self.num_samples),
             "batch_log_prob": batch_log_prob,
             "constraint": constraint,
@@ -189,7 +190,7 @@ class DECIModule(VariableSpecModule):
             "vardist_entropy": sem_distribution_entropy,
             "prior_term": prior_term,
         }
-        self.log_dict({"alpha": self.auglag_loss.alpha, "rho": self.auglag_loss.rho, **step_output}, prog_bar=True)
+        self.log_dict(step_output, on_epoch=True)  # Only log this on epoch end
         return step_output
 
     def configure_optimizers(self):
@@ -222,7 +223,8 @@ class DECIModule(VariableSpecModule):
         sems = self.sem_module().sample(torch.Size([NUM_GRAPH_SAMPLES]))
         dataset_size = self.trainer.datamodule.dataset_test.batch_size  # type: ignore
         assert len(dataset_size) == 1, "Only one batch size is supported"
-        # estimate log prob for each sample using graph samples and report the mean over graphs
+
+        # Estimate log prob for each sample using graph samples and report the mean over graphs
         log_prob_test = list_logsumexp([sem.log_prob(batch) for sem in sems]) - np.log(NUM_GRAPH_SAMPLES)
         self.log(
             "eval/test_LL",

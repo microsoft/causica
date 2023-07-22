@@ -1,6 +1,6 @@
 import torch
 
-from causica.training.per_variable_metrics import binary_accuracy, categorical_accuracy, rmse
+from causica.training.per_variable_metrics import binary_accuracy, categorical_accuracy, mape, rmse, smape
 
 
 def test_binary_accuracy():
@@ -33,3 +33,31 @@ def test_rmse():
     prediction = torch.tensor([[0.2, 0.3, 0.8], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
 
     assert torch.allclose(torch.tensor(0.0075) ** 0.5, rmse(prediction, target))
+
+
+def test_mape():
+    prediction = torch.tensor([[0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    target = torch.tensor([[0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    assert mape(prediction, target) == 0.0
+
+    prediction = torch.tensor([[0.2, 0.3, 0.8], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    true_mape = torch.sum(torch.ones((3,)) * 0.1 / target[0]) / 4
+
+    assert torch.allclose(true_mape, mape(prediction, target))
+
+
+def test_smape():
+    prediction = torch.tensor([[0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    target = torch.tensor([[0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    assert smape(prediction, target) == 0.0
+
+    prediction = torch.tensor([[0.2, 0.3, 0.8], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7], [0.1, 0.2, 0.7]])
+
+    true_smape = torch.sum(torch.ones((3,)) * 0.1 / (target[0] + prediction[0])) / 4
+
+    assert torch.allclose(true_smape, smape(prediction, target))
