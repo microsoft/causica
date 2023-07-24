@@ -4,6 +4,8 @@ A module to load data from the standard directory structure (i.e. the one follow
 import json
 import logging
 import os
+from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 from typing import Any, Counter, Optional
@@ -11,13 +13,14 @@ from typing import Any, Counter, Optional
 import fsspec
 import numpy as np
 import torch
+from dataclasses_json import dataclass_json
 from tensordict import TensorDict
 
 from causica.datasets.interventional_data import CounterfactualData, InterventionData
 from causica.datasets.tensordict_utils import convert_one_hot
 from causica.datasets.variable_types import DTYPE_MAP, VariableTypeEnum
 
-CSUITE_DATASETS_PATH = "https://azuastoragepublic.blob.core.windows.net/datasets"
+CAUSICA_DATASETS_PATH = "https://azuastoragepublic.z6.web.core.windows.net/"
 
 
 InterventionWithEffects = tuple[InterventionData, InterventionData, set[str]]
@@ -35,33 +38,47 @@ class DataEnum(Enum):
     VARIABLES_JSON = "variables.json"
 
 
-def convert_variable_types_to_enum(variable_metadata: dict[str, Any]):
-    # Convert the types to the enum
-    for variable in variable_metadata["variables"]:
-        variable["type"] = VariableTypeEnum(variable["type"])
+@dataclass_json
+@dataclass(frozen=True)
+class Variable:
+    """Class to represent a variable in the variables metadata json object.
 
-    return variable_metadata
+    Args:
+        group_name: The name of the group the variable belongs to.
+        name: The name of the variable.
+        type: The type of the variable.
+        lower: The lower bound of the variable (if it is continuous).
+        upper: The upper bound of the variable (if it is continuous).
+        always_observed: Whether the variable is always observed.
+    """
+
+    group_name: str
+    name: str
+    type: VariableTypeEnum = VariableTypeEnum.CONTINUOUS
+    lower: Optional[float] = None
+    upper: Optional[float] = None
+    always_observed: bool = True
 
 
-def convert_enum_to_variable_types(variable_metadata: dict[str, Any]):
-    # Convert enum to types
-    for variable in variable_metadata["variables"]:
-        variable["type"] = VariableTypeEnum(variable["type"]).value
+@dataclass_json
+@dataclass(frozen=True)
+class VariablesMetadata:
+    """Class to represent the variables metadata json object."""
 
-    return variable_metadata
+    variables: list[Variable]
 
 
 def load_data(
     root_path: str,
     data_enum: DataEnum,
-    variables_metadata: Optional[dict[str, Any]] = None,
+    variables_metadata: Optional[VariablesMetadata] = None,
     **storage_options: dict[str, Any],
 ):
     """
     Load the Data from the location, dataset name and type of data.
 
     Args:
-        root_path: The root path to the Data e.g. `CSUITE_DATASETS_PATH/csuite_linexp_2`
+        root_path: The root path to the Data e.g. `CAUSICA_DATASETS_PATH/csuite_linexp_2`
         data_enum: The type of dataset for which to return the path
         variables_metadata: Optional variables object (to save downloading it multiple times)
         **storage_options: Keyword args passed to `fsspec.open`
@@ -83,7 +100,7 @@ def load_data(
         if variables_metadata is not None:
             raise ValueError("Variables metadata was supplied and requested")
         with fsspec_open(path_name) as f:
-            return convert_variable_types_to_enum(json.load(f))
+            return VariablesMetadata.from_json(f.read())  # type: ignore
 
     if variables_metadata is None:
         variables_metadata = load_data(root_path, data_enum=DataEnum.VARIABLES_JSON)
@@ -92,9 +109,9 @@ def load_data(
         match data_enum:
             case (DataEnum.TRAIN | DataEnum.TEST):
                 arr = np.loadtxt(f, delimiter=",")
-                categorical_sizes = _get_categorical_sizes(variables_list=variables_metadata["variables"])
+                categorical_sizes = _get_categorical_sizes(variables_list=variables_metadata.variables)
                 return convert_one_hot(
-                    tensordict_from_variables_metadata(arr, variables_metadata["variables"]),
+                    tensordict_from_variables_metadata(arr, variables_metadata.variables),
                     one_hot_sizes=categorical_sizes,
                 )
             case DataEnum.INTERVENTIONS:
@@ -105,7 +122,7 @@ def load_data(
         raise RuntimeError("Unrecognized data type")
 
 
-def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -> list[InterventionWithEffects]:
+def _load_interventions(json_object: dict[str, Any], metadata: VariablesMetadata) -> list[InterventionWithEffects]:
     """
     Load the Interventional Datasets as a list of interventions/counterfactuals.
 
@@ -116,12 +133,10 @@ def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -
     Returns:
         A list of interventions and the nodes we want to observe for each
     """
-    variables_list = metadata["variables"]
-
     intervened_column_to_group_name: dict[int, str] = dict(
         zip(
             json_object["metadata"]["columns_to_nodes"],
-            list(item["group_name"] for item in variables_list),
+            list(item.group_name for item in metadata.variables),
         )
     )
 
@@ -139,7 +154,7 @@ def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -
             np.array(environment["test_data"]),
             intervention_nodes=intervention_nodes,
             condition_nodes=condition_nodes,
-            variables_list=variables_list,
+            variables_list=metadata.variables,
         )
         # if the json has reference data create another intervention dataclass
         if (reference_data := environment["reference_data"]) is None:
@@ -148,7 +163,7 @@ def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -
             np.array(reference_data),
             intervention_nodes=intervention_nodes,
             condition_nodes=condition_nodes,
-            variables_list=variables_list,
+            variables_list=metadata.variables,
         )
 
         # store the nodes we're interested in observing
@@ -160,7 +175,7 @@ def _load_interventions(json_object: dict[str, Any], metadata: dict[str, Any]) -
     return interventions_list
 
 
-def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any]) -> list[CounterfactualWithEffects]:
+def _load_counterfactuals(json_object: dict[str, Any], metadata: VariablesMetadata) -> list[CounterfactualWithEffects]:
     """
     Load the Interventional Datasets as a list of counterfactuals.
 
@@ -171,12 +186,10 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any])
     Returns:
         A list of counterfactuals and the nodes we want to observe for each
     """
-    variables_list = metadata["variables"]
-
     intervened_column_to_group_name: dict[int, str] = dict(
         zip(
             json_object["metadata"]["columns_to_nodes"],
-            list(item["group_name"] for item in variables_list),
+            list(item.group_name for item in metadata.variables),
         )
     )
 
@@ -188,7 +201,7 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any])
             np.array(environment["test_data"]),
             factual_data,
             intervention_nodes=intervention_nodes,
-            variables_list=variables_list,
+            variables_list=metadata.variables,
         )
         # if the json has reference data create another intervention dataclass
         if (reference_data := environment["reference_data"]) is None:
@@ -198,7 +211,7 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any])
                 np.array(reference_data),
                 factual_data,
                 intervention_nodes=intervention_nodes,
-                variables_list=variables_list,
+                variables_list=metadata.variables,
             )
 
         # store the nodes we're interested in observing
@@ -211,7 +224,7 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: dict[str, Any])
 
 
 def _to_intervention(
-    data: np.ndarray, intervention_nodes: list[str], condition_nodes: list[str], variables_list: list[dict[str, Any]]
+    data: np.ndarray, intervention_nodes: list[str], condition_nodes: list[str], variables_list: list[Variable]
 ) -> InterventionData:
     """Create an `InterventionData` object from the data within the json file."""
     interv_data = tensordict_from_variables_metadata(data, variables_list=variables_list)
@@ -239,7 +252,7 @@ def _to_intervention(
 
 
 def _to_counterfactual(
-    data: np.ndarray, base_data: np.ndarray, intervention_nodes: list[str], variables_list: list[dict[str, Any]]
+    data: np.ndarray, base_data: np.ndarray, intervention_nodes: list[str], variables_list: list[Variable]
 ) -> CounterfactualData:
     """Create an `CounterfactualData` object from the data within the json file."""
     interv_data = tensordict_from_variables_metadata(data, variables_list=variables_list)
@@ -262,31 +275,31 @@ def _to_counterfactual(
     )
 
 
-def _get_categorical_sizes(variables_list: list[dict[str, Any]]) -> dict[str, int]:
+def _get_categorical_sizes(variables_list: list[Variable]) -> dict[str, int]:
     categorical_sizes = {}
     for item in variables_list:
-        if item["type"] == VariableTypeEnum.CATEGORICAL:
-            upper = item.get("upper")
-            lower = item.get("lower")
+        if item.type == VariableTypeEnum.CATEGORICAL:
+            upper = item.upper
+            lower = item.lower
             if upper is not None and lower is not None:
-                categorical_sizes[item["group_name"]] = item["upper"] - item["lower"] + 1
+                categorical_sizes[item.group_name] = int(upper - lower + 1)
             else:
                 assert upper is None and lower is None, "Please specify either both limits or neither"
-                categorical_sizes[item["group_name"]] = -1
+                categorical_sizes[item.group_name] = -1
     return categorical_sizes
 
 
-def tensordict_from_variables_metadata(data: np.ndarray, variables_list: list[dict[str, Any]]) -> TensorDict:
+def tensordict_from_variables_metadata(data: np.ndarray, variables_list: list[Variable]) -> TensorDict:
     """Returns a tensor created by concatenating all values along the last dim."""
     assert data.ndim == 2, "Numpy loading only supported for 2d data"
     batch_size = data.shape[0]
 
     # guaranteed to be ordered correctly in python 3.7+ https://docs.python.org/3/library/collections.html#collections.Counter
-    sizes = Counter(d["group_name"] for d in variables_list)  # get the dimensions of each key from the variables
+    sizes = Counter(d.group_name for d in variables_list)  # get the dimensions of each key from the variables
     assert sum(sizes.values()) == data.shape[1], "Variable sizes do not match data shape"
 
     # NOTE: This assumes that variables in the same group will have the same type.
-    dtypes = {item["group_name"]: DTYPE_MAP[item["type"]] for item in variables_list}
+    dtypes = {item.group_name: DTYPE_MAP[item.type] for item in variables_list}
 
     # slice the numpy array and assign the slices to the values of keys in the dictionary
     d = TensorDict({}, batch_size=batch_size)
@@ -310,20 +323,29 @@ def _intersect_dicts_left(dict_1: dict, dict_2: dict) -> dict:
     return {key: dict_1[key] for key in dict_1.keys() & dict_2.keys()}
 
 
-def get_group_names(variables_dict: dict[str, Any]) -> list[str]:
+def get_group_names(variables_metadata: VariablesMetadata) -> list[str]:
     """Get the names of the groups in the variables dict."""
-    return list(dict.fromkeys([var["group_name"] for var in variables_dict["variables"]]))
+    return list(dict.fromkeys([var.group_name for var in variables_metadata.variables]))
 
 
-def get_group_idxs(variables_dict: dict[str, Any]) -> list[list[int]]:
+def get_group_idxs(variables_metadata: VariablesMetadata) -> list[list[int]]:
     """Get the indices of the nodes/groups in each group."""
-    group_names = get_group_names(variables_dict)
+    group_names = get_group_names(variables_metadata)
     return [
-        [idx for idx, var in enumerate(variables_dict["variables"]) if var["group_name"] == group_name]
+        [idx for idx, var in enumerate(variables_metadata.variables) if var.group_name == group_name]
         for group_name in group_names
     ]
 
 
-def get_name_to_idx(variables_dict: dict[str, Any]) -> dict[str, int]:
+def get_group_variable_names(variable_metadata: VariablesMetadata) -> dict[str, list[str]]:
+    """Get a dictionary mapping node/group names to the variables in that group."""
+    variable_groups = defaultdict(list)
+    for variable in variable_metadata.variables:
+        variable_groups[variable.group_name].append(variable.name)
+
+    return variable_groups
+
+
+def get_name_to_idx(variables_metadata: VariablesMetadata) -> dict[str, int]:
     """Get a dictionary mapping node/group names to their index in the variables dict."""
-    return {var["name"]: idx for idx, var in enumerate(variables_dict["variables"])}
+    return {var.name: idx for idx, var in enumerate(variables_metadata.variables)}

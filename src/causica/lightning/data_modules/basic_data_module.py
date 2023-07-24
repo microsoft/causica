@@ -5,7 +5,7 @@ import torch
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from causica.datasets.causica_dataset_format import convert_variable_types_to_enum, tensordict_from_variables_metadata
+from causica.datasets.causica_dataset_format import Variable, tensordict_from_variables_metadata
 from causica.datasets.standardizer import fit_standardizer
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
@@ -18,26 +18,24 @@ class BasicDECIDataModule(DECIDataModule):
     def __init__(
         self,
         dataframe: pd.DataFrame,
-        variables_spec: dict,
+        variables: list[Variable],
         batch_size: int,
         normalize: bool = False,
         dataset_name: str = "anonymous_dataset",
     ):
         super().__init__()
         self.dataset_df = dataframe
-        self.variables_metadata = convert_variable_types_to_enum(variables_spec)
+        self.variables = variables
         self._dataset_name = dataset_name
         self.normalize = normalize
         self.batch_size = batch_size
 
-        self._dataset_train = tensordict_from_variables_metadata(
-            self.dataset_df.to_numpy(), self.variables_metadata["variables"]
-        )
+        self._dataset_train = tensordict_from_variables_metadata(self.dataset_df.to_numpy(), self.variables)
         self._variable_shapes = tensordict_shapes(self._dataset_train)
-        self._variable_types = {var["group_name"]: var["type"] for var in self.variables_metadata["variables"]}
+        self._variable_types = {var.group_name: var.type for var in self.variables}
         self._column_names = defaultdict(list)
-        for variable in self.variables_metadata["variables"]:
-            self._column_names[variable["group_name"]].append(variable["name"])
+        for variable in self.variables:
+            self._column_names[variable.group_name].append(variable.name)
 
         if self.normalize:
             continuous_keys = [k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS]

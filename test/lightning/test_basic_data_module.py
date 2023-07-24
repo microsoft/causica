@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
 
+from causica.datasets.causica_dataset_format import Variable
 from causica.lightning.data_modules.basic_data_module import BasicDECIDataModule
 
 
@@ -58,53 +59,33 @@ def test_basic_data_module():
             },
         }
     )
-    variables_spec = {
-        "metadata_variables": [],
-        "variables": [
-            {
-                "always_observed": True,
-                "group_name": "x0",
-                "lower": -0.9997121691703796,
-                "name": "x0_0",
-                "query": True,
-                "target": False,
-                "type": "continuous",
-                "upper": 9.77190113067627,
-            },
-            {
-                "always_observed": True,
-                "group_name": "x0",
-                "lower": -0.9997121691703796,
-                "name": "x0_1",
-                "query": True,
-                "target": False,
-                "type": "continuous",
-                "upper": 9.77190113067627,
-            },
-            {
-                "always_observed": True,
-                "group_name": "x1",
-                "lower": -1.3532483577728271,
-                "name": "x1_0",
-                "query": True,
-                "target": False,
-                "type": "continuous",
-                "upper": 6.881451606750488,
-            },
-            {
-                "always_observed": True,
-                "group_name": "x1",
-                "lower": -1.3532483577728271,
-                "name": "x1_1",
-                "query": True,
-                "target": False,
-                "type": "continuous",
-                "upper": 6.881451606750488,
-            },
-        ],
-    }
-
-    data_module = BasicDECIDataModule(df, variables_spec, batch_size=2)
+    variables_list = [
+        Variable(
+            group_name="x0",
+            lower=-0.9997121691703796,
+            name="x0_0",
+            upper=9.77190113067627,
+        ),
+        Variable(
+            group_name="x0",
+            lower=-0.9997121691703796,
+            name="x0_1",
+            upper=9.77190113067627,
+        ),
+        Variable(
+            group_name="x1",
+            lower=-1.3532483577728271,
+            name="x1_0",
+            upper=6.881451606750488,
+        ),
+        Variable(
+            group_name="x1",
+            lower=-1.3532483577728271,
+            name="x1_1",
+            upper=6.881451606750488,
+        ),
+    ]
+    data_module = BasicDECIDataModule(df, variables_list, batch_size=2)
 
     assert list(data_module.train_dataloader())[0].batch_size == torch.Size([2])
     assert data_module.dataset_train.batch_size == torch.Size([10])

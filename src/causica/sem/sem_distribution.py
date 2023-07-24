@@ -12,7 +12,8 @@ from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 class SEMDistribution(td.Distribution):
     """A distribution over structural equation models.
 
-    Samples are instances of DistributionParametersSEM.
+    Samples are instances of DistributionParametersSEM. Note however that this was created before
+    pytorch set the expected type of samples to torch.Tensor, so this is breaking the types a bit.
 
     The distribution is essentially the same as the given adjacency distribution but with samples converted to SEMs.
     Therefore, all distribution properties such as entropy, mean and mode are given by the equivalent properties for the
@@ -65,7 +66,7 @@ class SEMDistribution(td.Distribution):
         return self._adjacency_dist.entropy()
 
     @property
-    def mean(self) -> DistributionParametersSEM:
+    def mean(self) -> DistributionParametersSEM:  # type: ignore
         return DistributionParametersSEM(
             graph=self._adjacency_dist.mean,
             noise_dist=self._noise_module,
@@ -73,14 +74,14 @@ class SEMDistribution(td.Distribution):
         )
 
     @property
-    def mode(self) -> DistributionParametersSEM:
+    def mode(self) -> DistributionParametersSEM:  # type: ignore
         return DistributionParametersSEM(
             graph=self._adjacency_dist.mode,
             noise_dist=self._noise_module,
             func=self._functional_relationships,
         )
 
-    def log_prob(self, value: DistributionParametersSEM) -> torch.Tensor:
+    def log_prob(self, value: DistributionParametersSEM) -> torch.Tensor:  # type: ignore
         return self._adjacency_dist.log_prob(value.graph)
 
 

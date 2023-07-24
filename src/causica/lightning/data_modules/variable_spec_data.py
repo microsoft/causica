@@ -2,13 +2,13 @@
 import os
 from collections import defaultdict
 from functools import partial
-from typing import Any, Optional
+from typing import Any, Iterable, Optional, Union
 
 import torch
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from causica.datasets.causica_dataset_format import DataEnum, load_data
+from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, VariablesMetadata, load_data
 from causica.datasets.standardizer import JointStandardizer, fit_standardizer
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
@@ -34,9 +34,10 @@ class VariableSpecDataModule(DECIDataModule):
         root_path: str,
         batch_size: int = 128,
         dataset_name: str = "anonymous_dataset",
-        normalize: bool = False,
+        normalize: Union[bool, Iterable[str]] = False,
+        exclude_normalization: Iterable[str] = tuple(),
         load_counterfactual: bool = False,
-        **storage_options: dict[str, Any],
+        **storage_options: Any,
     ):
         """
         Args:
@@ -45,7 +46,8 @@ class VariableSpecDataModule(DECIDataModule):
             storage_options: Storage options forwarded to `fsspec` when loading files.
             dataset_name: A name for the dataset
             load_counterfactual: Whether there is counterfactual data
-            normalize: Whether to normalize the data
+            normalize: Whether to normalize the data or list of variables to normalize
+            exclude_normalization: Which variables to exclude from normalization
         """
         super().__init__()
         self.batch_size = batch_size
@@ -54,6 +56,7 @@ class VariableSpecDataModule(DECIDataModule):
         self.batch_size = batch_size
         self.storage_options = storage_options
         self.normalize = normalize
+        self.exclude_normalization = set(exclude_normalization)
         self.load_counterfactual = load_counterfactual
 
         self.normalizer: Optional[JointStandardizer] = None
@@ -82,7 +85,7 @@ class VariableSpecDataModule(DECIDataModule):
     def dataset_name(self) -> str:
         return self._dataset_name
 
-    def _load_all_data(self, variables_metadata: dict):
+    def _load_all_data(self, variables_metadata: VariablesMetadata):
         _load_data = partial(
             load_data, root_path=self.root_path, variables_metadata=variables_metadata, **self.storage_options
         )
@@ -112,7 +115,7 @@ class VariableSpecDataModule(DECIDataModule):
         #    ...
         #    variables_metadata: null
         _load_data = partial(load_data, root_path=self.root_path, **self.storage_options)
-        variables_metadata = _load_data(data_enum=DataEnum.VARIABLES_JSON)
+        variables_metadata: VariablesMetadata = _load_data(data_enum=DataEnum.VARIABLES_JSON)
 
         self._load_all_data(variables_metadata)
 
@@ -122,14 +125,22 @@ class VariableSpecDataModule(DECIDataModule):
             train_keys == test_keys
         ), f"node_names for the training and test data must match. Diff: {train_keys.symmetric_difference(test_keys)}"
         self._variable_shapes = tensordict_shapes(self._dataset_train)
-        self._variable_types = {var["group_name"]: var["type"] for var in variables_metadata["variables"]}
+        self._variable_types = {var.group_name: var.type for var in variables_metadata.variables}
         self._column_names = defaultdict(list)
-        for variable in variables_metadata["variables"]:
-            self._column_names[variable["group_name"]].append(variable["name"])
+        for variable in variables_metadata.variables:
+            self._column_names[variable.group_name].append(variable.name)
 
         if self.normalize:
-            continuous_keys = [k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS]
-            self.normalizer = fit_standardizer(self._dataset_train.select(*continuous_keys))
+            if isinstance(self.normalize, Iterable):
+                normalization_variables = set(self.normalize) - self.exclude_normalization
+            else:
+                normalization_variables = {
+                    k
+                    for k, v in self._variable_types.items()
+                    if v == VariableTypeEnum.CONTINUOUS and k not in self.exclude_normalization
+                }
+
+            self.normalizer = fit_standardizer(self._dataset_train.select(*normalization_variables))
 
             transform = self.normalizer()
             self._dataset_train = transform(self._dataset_train)
@@ -168,13 +179,11 @@ class CSuiteDataModule(VariableSpecDataModule):
         dataset_path: Path to CSuite dataset mirror.
     """
 
-    DEFAULT_CSUITE_PATH = "https://azuastoragepublic.blob.core.windows.net/datasets"
-
     def __init__(
         self,
         dataset_name: str,
         batch_size: int = 128,
-        dataset_path: str = DEFAULT_CSUITE_PATH,
+        dataset_path: str = CAUSICA_DATASETS_PATH,
         load_counterfactual: bool = False,
     ):
         super().__init__(

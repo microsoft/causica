@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "causica"
-version = "0.3.3"
+version = "0.3.4"
 description = ""
 readme = "README.md"
 authors = []
@@ -22,7 +22,6 @@ dataclasses-json = "^0.5.7"
 types-PyYAML = "^6.0.12.2"
 tensordict = "^0.1.0"
 torch = "2.0.0"
-numba = "^0.56.0"  # needed to make the build work
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.2"

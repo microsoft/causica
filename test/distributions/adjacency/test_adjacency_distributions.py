@@ -52,7 +52,7 @@ def test_support(dist_class: Type[AdjacencyDistribution], batch_shape: torch.Siz
     mat = torch.ones((num_nodes, num_nodes))
 
     # validate sample returns None when there is no error
-    assert dist._validate_sample(mat) is None
+    dist._validate_sample(mat)
 
     # validate sample throws when the sample is invalid
     with pytest.raises(ValueError):

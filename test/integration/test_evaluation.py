@@ -4,14 +4,14 @@ import pytest
 import torch
 from tensordict import TensorDict
 
-from causica.datasets.causica_dataset_format import CSUITE_DATASETS_PATH, DataEnum, load_data
+from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, load_data
 from causica.datasets.tensordict_utils import tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
 from causica.distributions import ContinuousNoiseDist, JointNoiseModule, create_noise_modules
 from causica.functional_relationships.linear_functional_relationships import LinearFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 from causica.training.evaluation import eval_ate_rmse, eval_intervention_likelihoods, eval_ite_rmse
-from causica.training.per_variable_metrics import eval_counterfactual_outcome_per_variable_rmse
+from causica.training.per_variable_metrics import calculate_counterfactual_deci_metrics
 
 
 def sem(data_dir: str) -> DistributionParametersSEM:
@@ -39,7 +39,7 @@ def sem(data_dir: str) -> DistributionParametersSEM:
 
 @pytest.mark.parametrize("dataset", ["csuite_linexp_2", "csuite_cts_to_cat"])
 def test_evaluation_interventional_likelihood(dataset):
-    root = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     data = load_data(root, DataEnum.INTERVENTIONS)
     lik = eval_intervention_likelihoods([sem(root)], data[0])
     # this is double as there are two interventional datasets in the data
@@ -48,28 +48,28 @@ def test_evaluation_interventional_likelihood(dataset):
 
 @pytest.mark.parametrize("dataset", ["csuite_linexp_2", "csuite_cts_to_cat"])
 def test_evaluation_ate(dataset):
-    root = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     ate = eval_ate_rmse([sem(root)], load_data(root, DataEnum.INTERVENTIONS)[0])
     assert ate.shape == tuple()
 
 
 @pytest.mark.parametrize("dataset", ["csuite_linexp_2"])  # not testing csuite_cts_to_cat as cf file missing
 def test_evaluation_ite(dataset):
-    root = os.path.join(CSUITE_DATASETS_PATH, dataset)
+    root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     ite = eval_ite_rmse([sem(root)], load_data(root, DataEnum.COUNTERFACTUALS)[0])
     assert ite.shape == tuple()
 
 
 @pytest.mark.parametrize("dataset", ["csuite_linexp_2"])
-def test_eval_counterfactual_outcome_per_variable_rmse(dataset):
-    root = os.path.join(CSUITE_DATASETS_PATH, dataset)
+def test_calculate_counterfactual_deci_metrics(dataset):
+    root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     data = load_data(root, DataEnum.COUNTERFACTUALS)
-    cf = eval_counterfactual_outcome_per_variable_rmse([sem(root)], data[0])
+    cf = calculate_counterfactual_deci_metrics([sem(root)], data[0])
     grouped_variable_names = {"x0": ["x0_0", "x0_1"], "x1": ["x1_0", "x1_1"]}
-    cf_per_var = eval_counterfactual_outcome_per_variable_rmse(
+    cf_metrics = calculate_counterfactual_deci_metrics(
         [sem(root)], data[0], grouped_variable_names=grouped_variable_names
     )
-    assert cf.shape == tuple()
-    assert cf_per_var.shape == tuple()
-    assert len(cf.keys()) == 1
-    assert len(cf_per_var.keys()) == 2
+    assert cf["rmse"].shape == tuple()
+    assert cf_metrics["rmse"].shape == tuple()
+    assert len(cf["rmse"].keys()) == 1
+    assert len(cf_metrics["rmse"].keys()) == 2
