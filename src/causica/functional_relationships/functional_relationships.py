@@ -1,5 +1,4 @@
 import abc
-from typing import Any
 
 import torch
 from tensordict import TensorDict
@@ -21,13 +20,6 @@ class FunctionalRelationships(abc.ABC, torch.nn.Module):
         self.tensor_to_td = TensorToTensorDictTransform(shapes)
         # this needs to be registered to the module, and register buffer doesn't work
         self.stacked_key_masks = torch.nn.Parameter(self.tensor_to_td.stacked_key_masks(), requires_grad=False)
-
-    def set_extra_state(self, state: dict[str, Any]):
-        self.shapes = state.pop("shapes")
-        self.tensor_to_td = TensorToTensorDictTransform(self.shapes)
-
-    def get_extra_state(self) -> dict[str, Any]:
-        return {"shapes": self.shapes}
 
     @abc.abstractmethod
     def forward(self, samples: TensorDict, graphs: torch.Tensor) -> TensorDict:

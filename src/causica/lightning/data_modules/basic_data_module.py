@@ -6,7 +6,7 @@ from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
 from causica.datasets.causica_dataset_format import Variable, tensordict_from_variables_metadata
-from causica.datasets.standardizer import fit_standardizer
+from causica.datasets.normalization import fit_standardizer
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
 from causica.lightning.data_modules.deci_data_module import DECIDataModule
@@ -40,9 +40,7 @@ class BasicDECIDataModule(DECIDataModule):
         if self.normalize:
             continuous_keys = [k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS]
             self.normalizer = fit_standardizer(self._dataset_train.select(*continuous_keys))
-
-            transform = self.normalizer()
-            self._dataset_train = transform(self._dataset_train)
+            self._dataset_train = self.normalizer(self._dataset_train)
 
     @property
     def dataset_name(self) -> TensorDict:

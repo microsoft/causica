@@ -1,11 +1,10 @@
 import logging
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 import fsspec
 import numpy as np
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.trainer.states import TrainerFn
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from tensordict import TensorDict
 
@@ -22,7 +21,7 @@ from causica.distributions import (
 )
 from causica.distributions.noise.joint import ContinuousNoiseDist
 from causica.fsspec_helpers import get_storage_options_for_path
-from causica.functional_relationships import ICGNN
+from causica.functional_relationships import DECIEmbedFunctionalRelationships
 from causica.graph.dag_constraint import calculate_dagness
 from causica.graph.evaluation_metrics import adjacency_f1, orientation_f1
 from causica.lightning.callbacks import AuglagLRCallback
@@ -53,8 +52,8 @@ class DECIModule(VariableSpecModule):
         noise_dist: ContinuousNoiseDist = ContinuousNoiseDist.SPLINE,
         embedding_size: int = 32,
         out_dim_g: int = 32,
-        norm_layer: bool = True,
-        res_connection: bool = True,
+        num_layers_g: int = 2,
+        num_layers_zeta: int = 2,
         init_alpha: float = 0.0,
         init_rho: float = 1.0,
         prior_sparsity_lambda: float = 0.05,
@@ -62,31 +61,34 @@ class DECIModule(VariableSpecModule):
         auglag_config: Optional[AugLagLRConfig] = None,
         expert_graph_container: Optional[ExpertGraphContainer] = None,
         constraint_matrix_path: Optional[str] = None,
+        disable_auglag_epochs: Optional[int] = None,
     ):
         super().__init__()
         self.auglag_config = auglag_config if auglag_config is not None else AugLagLRConfig()
+        self.disable_auglag_epochs = disable_auglag_epochs
+        self.lr_scheduler = AugLagLR(config=self.auglag_config)
         self.constraint_matrix_path = constraint_matrix_path
         self.constraint_matrix: Optional[torch.Tensor] = None
 
         self.embedding_size = embedding_size
+        self.out_dim_g = out_dim_g
+        self.num_layers_g = num_layers_g
+        self.num_layers_zeta = num_layers_zeta
+
         self.expert_graph_container: Optional[ExpertGraphContainer] = expert_graph_container
 
         self.gumbel_temp = gumbel_temp
-        self.init_alpha = init_alpha
-        self.init_rho = init_rho
         self.is_setup = False
         self.noise_dist = noise_dist
-        self.norm_layer = norm_layer
-        self.out_dim_g = out_dim_g
         self.prior_sparsity_lambda = prior_sparsity_lambda
-        self.res_connection = res_connection
+
+        self.auglag_loss: AugLagLossCalculator = AugLagLossCalculator(init_alpha=init_alpha, init_rho=init_rho)
 
         # Inferred once the datamodule is available using `self.infer_missing_state_from_dataset()`
-        self.dataset_name = None
         self.num_samples = None
         self.variable_group_shapes = None
         self.variable_types = None
-        self.variable_names = None
+        self.save_hyperparameters()
 
     def prepare_data(self) -> None:
         """Set the constraint matrix (if necessary)."""
@@ -103,11 +105,9 @@ class DECIModule(VariableSpecModule):
 
     def infer_missing_state_from_dataset(self):
         dataset_defined_members = [
-            self.dataset_name,
             self.num_samples,
             self.variable_group_shapes,
             self.variable_types,
-            self.variable_names,
         ]
         if any(member is None for member in dataset_defined_members):
             datamodule = getattr(self.trainer, "datamodule", None)
@@ -116,49 +116,41 @@ class DECIModule(VariableSpecModule):
                     f"Incompatible data module {datamodule}, requires a DECIDataModule but is "
                     f"{type(datamodule).mro()}"
                 )
-            if self.dataset_name is None:
-                self.dataset_name = datamodule.dataset_name
             if self.num_samples is None:
                 self.num_samples = len(datamodule.dataset_train)
             if self.variable_group_shapes is None:
                 self.variable_group_shapes = datamodule.variable_shapes
             if self.variable_types is None:
                 self.variable_types = datamodule.variable_types
-            if self.variable_names is None:
-                self.variable_names = datamodule.column_names
 
     def setup(self, stage: Optional[str] = None):
+
+        _ = stage
         if self.is_setup:
             return  # Already setup
-        if stage not in {TrainerFn.TESTING, TrainerFn.FITTING}:
-            raise ValueError(f"Model can only be setup during the {TrainerFn.FITTING} and {TrainerFn.TESTING} stages.")
 
         self.infer_missing_state_from_dataset()
-        assert self.dataset_name is not None
         assert self.num_samples is not None
         assert self.variable_group_shapes is not None
         assert self.variable_types is not None
-        assert self.variable_names is not None
 
-        self.node_names = list(self.variable_group_shapes)
         num_nodes = len(self.variable_group_shapes)
 
         adjacency_dist: DistributionModule[AdjacencyDistribution] = ENCOAdjacencyDistributionModule(num_nodes)
         if self.constraint_matrix is not None:
             adjacency_dist = ConstrainedAdjacency(adjacency_dist, self.constraint_matrix)
 
-        icgnn = ICGNN(
+        functional_relationships = DECIEmbedFunctionalRelationships(
             shapes=self.variable_group_shapes,
             embedding_size=self.embedding_size,
             out_dim_g=self.out_dim_g,
-            norm_layer=None if self.norm_layer is False else torch.nn.LayerNorm,
-            res_connection=self.res_connection,
+            num_layers_g=self.num_layers_g,
+            num_layers_zeta=self.num_layers_zeta,
         )
         noise_submodules = create_noise_modules(self.variable_group_shapes, self.variable_types, self.noise_dist)
         noise_module = JointNoiseModule(noise_submodules)
-        self.sem_module: SEMDistributionModule = SEMDistributionModule(adjacency_dist, icgnn, noise_module)
-        self.auglag_loss: AugLagLossCalculator = AugLagLossCalculator(
-            init_alpha=self.init_alpha, init_rho=self.init_rho
+        self.sem_module: SEMDistributionModule = SEMDistributionModule(
+            adjacency_dist, functional_relationships, noise_module
         )
         self.prior: GibbsDAGPrior = GibbsDAGPrior(
             num_nodes=num_nodes,
@@ -196,12 +188,16 @@ class DECIModule(VariableSpecModule):
     def configure_optimizers(self):
         """Set the learning rates for different sets of parameters."""
         modules = {
-            "icgnn": self.sem_module.functional_relationships,
+            "functional_relationships": self.sem_module.functional_relationships,
             "vardist": self.sem_module.adjacency_module,
             "noise_dist": self.sem_module.noise_module,
         }
         parameter_list = [
-            {"params": module.parameters(), "lr": self.auglag_config.lr_init_dict[name], "name": name}
+            {
+                "params": module.parameters(),
+                "lr": self.auglag_config.lr_init_dict[name],
+                "name": name,
+            }
             for name, module in modules.items()
         ]
 
@@ -214,11 +210,12 @@ class DECIModule(VariableSpecModule):
 
     def configure_callbacks(self) -> Union[Sequence[pl.Callback], pl.Callback]:
         """Create a callback for the auglag callback."""
-        lr_scheduler = AugLagLR(config=self.auglag_config)
-        return [AuglagLRCallback(lr_scheduler, log_auglag=True)]
+        disabled_epochs = set(range(self.disable_auglag_epochs)) if self.disable_auglag_epochs else None
+        return [AuglagLRCallback(self.lr_scheduler, log_auglag=True, disabled_epochs=disabled_epochs)]
 
     def test_step_observational(self, batch: TensorDict, *args, **kwargs):
         """Evaluate the log prob of the model on the test set using multiple graph samples."""
+        _, _ = args, kwargs
         batch = batch.apply(lambda t: t.to(torch.float32, non_blocking=True))
         sems = self.sem_module().sample(torch.Size([NUM_GRAPH_SAMPLES]))
         dataset_size = self.trainer.datamodule.dataset_test.batch_size  # type: ignore
@@ -249,17 +246,48 @@ class DECIModule(VariableSpecModule):
         _, _ = args, kwargs
         sems_list: list[SEM] = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         interventional_log_prob = eval_intervention_likelihoods(sems_list, interventions)
-        self.log("eval/Interventional_LL", torch.mean(interventional_log_prob).item(), add_dataloader_idx=False)
+        self.log(
+            "eval/Interventional_LL",
+            torch.mean(interventional_log_prob).item(),
+            add_dataloader_idx=False,
+        )
 
         mean_ate_rmse = eval_ate_rmse(sems_list, interventions)
-        self.log("eval/ATE_RMSE", list_mean(list(mean_ate_rmse.values())).item(), add_dataloader_idx=False)
+        self.log(
+            "eval/ATE_RMSE",
+            list_mean(list(mean_ate_rmse.values())).item(),
+            add_dataloader_idx=False,
+        )
 
     def test_step_counterfactuals(self, counterfactuals: CounterfactualWithEffects, *args, **kwargs):
         """Evaluate the ITE performance of the model"""
         _, _ = args, kwargs
         sems_list = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         ite_rmse = eval_ite_rmse(sems_list, counterfactuals)
-        self.log("eval/ITE_RMSE", list_mean(list(ite_rmse.values())).item(), add_dataloader_idx=False)
+        self.log(
+            "eval/ITE_RMSE",
+            list_mean(list(ite_rmse.values())).item(),
+            add_dataloader_idx=False,
+        )
 
-    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
-        checkpoint["sem_module"] = self.sem_module
+    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
+        # initialise all the parameters, we can
+        super().load_state_dict(state_dict, strict=False)
+        # setup the model
+        self.setup()
+        # load the state dict again to fill in the parameters
+        return super().load_state_dict(state_dict, strict=strict)
+
+    def set_extra_state(self, state: Any):
+        self.variable_group_shapes = state["shapes"]
+        self.variable_types = state["types"]
+        self.constraint_matrix = state["constraint_matrix"]
+        self.num_samples = state["num_samples"]
+
+    def get_extra_state(self) -> Any:
+        return {
+            "shapes": self.variable_group_shapes,
+            "types": self.variable_types,
+            "constraint_matrix": self.constraint_matrix,
+            "num_samples": self.num_samples,
+        }

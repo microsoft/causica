@@ -1,6 +1,6 @@
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import torch
 from dataclasses_json import dataclass_json
@@ -10,44 +10,48 @@ from torch.optim import Optimizer
 class AugLagLossCalculator(torch.nn.Module):
     def __init__(self, init_alpha: float, init_rho: float):
         super().__init__()
+        self.init_alpha = init_alpha
+        self.init_rho = init_rho
+
         self.alpha: torch.Tensor
         self.rho: torch.Tensor
-        self.register_buffer("alpha", torch.tensor(init_alpha, dtype=torch.float))
-        self.register_buffer("rho", torch.tensor(init_rho, dtype=torch.float))
+        self.register_buffer("alpha", torch.tensor(self.init_alpha, dtype=torch.float))
+        self.register_buffer("rho", torch.tensor(self.init_rho, dtype=torch.float))
 
     def forward(self, objective: torch.Tensor, constraint: torch.Tensor) -> torch.Tensor:
         return objective + self.alpha * constraint + self.rho * constraint * constraint / 2
 
 
 @dataclass_json
-@dataclass(frozen=True)
+@dataclass
 class AugLagLRConfig:
-    """
-    Configuration parameters for the AuglagLR scheduler.
+    """Configuration parameters for the AuglagLR scheduler.
 
-    lr_update_lag: Number of iterations to wait before updating the learning rate.
-    lr_update_lag_best: Number of iterations to wait after the best model before updating the learning rate.
-    lr_init_dict: Dictionary of intitialization parameters for every new inner optimization step.
-        This must contain all parameter_groups for all optimizers
-    aggregation_period: Aggregation period to compare the mean of the loss terms across this period.
-    lr_factor: Learning rate update schedule factor (exponential decay).
-    penalty_progress_rate: Number of iterations to wait before updating rho based on the dag penalty.
-    safety_rho: Maximum rho that could be updated to.
-    safety_alpha: Maximum alpha that could be udated to.
-    max_lr_down: Maximum number of lr update times to decide inner loop termination.
-    inner_early_stopping_patience: Maximum number of iterations to run after the best inner loss to terminate inner loop.
-    max_outer_steps: Maximum number of outer update steps.
-    patience_penalty_reached: Maximum number of outer iterations to run after the dag penalty has reached a good value.
-    patience_max_rho: Maximum number of iterations to run once rho threshold is reached.
-    penalty_tolerance: Tolerance of the dag penalty
-    max_inner_steps: Maximum number of inner loop steps to run.
-
+    Attributes:
+        lr_update_lag: Number of iterations to wait before updating the learning rate.
+        lr_update_lag_best: Number of iterations to wait after the best model before updating the learning rate.
+        lr_init_dict: Dictionary of intitialization parameters for every new inner optimization step. This must contain
+            all parameter_groups for all optimizers
+        aggregation_period: Aggregation period to compare the mean of the loss terms across this period.
+        lr_factor: Learning rate update schedule factor (exponential decay).
+        penalty_progress_rate: Number of iterations to wait before updating rho based on the dag penalty.
+        safety_rho: Maximum rho that could be updated to.
+        safety_alpha: Maximum alpha that could be udated to.
+        max_lr_down: Maximum number of lr update times to decide inner loop termination.
+        inner_early_stopping_patience: Maximum number of iterations to run after the best inner loss to terminate inner
+            loop.
+        max_outer_steps: Maximum number of outer update steps.
+        patience_penalty_reached: Maximum number of outer iterations to run after the dag penalty has reached a good
+            value.
+        patience_max_rho: Maximum number of iterations to run once rho threshold is reached.
+        penalty_tolerance: Tolerance of the dag penalty
+        max_inner_steps: Maximum number of inner loop steps to run.
     """
 
     lr_update_lag: int = 500
     lr_update_lag_best: int = 250
     lr_init_dict: dict[str, float] = field(
-        default_factory=lambda: {"vardist": 0.1, "icgnn": 0.0003, "noise_dist": 0.003}
+        default_factory=lambda: {"vardist": 0.1, "functional_relationships": 0.0003, "noise_dist": 0.003}
     )
     aggregation_period: int = 20
     lr_factor: float = 0.1
@@ -64,11 +68,14 @@ class AugLagLRConfig:
 
 
 class AugLagLR:
-    def __init__(self, config: AugLagLRConfig) -> None:
-        """A Pytorch like scheduler which performs the Augmented Lagrangian optimization procedure, which consists of
-        an inner loop which optimizes the objective for a fixed set of lagrangian parameters. The lagrangian parameters are
-        annealed in the outer loop, according to a schedule as specified by the hyperparameters.
+    """A Pytorch like scheduler which performs the Augmented Lagrangian optimization procedure.
 
+    It consists of an inner loop which optimizes the objective for a fixed set of lagrangian parameters. The lagrangian
+    parameters are annealed in the outer loop, according to a schedule as specified by the hyperparameters.
+    """
+
+    def __init__(self, config: AugLagLRConfig) -> None:
+        """
         Args:
             config: An `AugLagLRConfig` object containing the configuration parameters.
         """
@@ -82,6 +89,10 @@ class AugLagLR:
 
         self.loss_tracker: deque[torch.Tensor] = deque([], maxlen=config.aggregation_period)
         self._init_new_inner_optimisation()
+
+        # Track whether auglag is disabled and the state of the loss when it was disabled
+        self._disabled = False
+        self._disabled_loss_state: Optional[dict[str, Any]] = None
 
     def _init_new_inner_optimisation(self) -> None:
         """Init the hyperparameters for a new inner loop optimization."""
@@ -119,8 +130,7 @@ class AugLagLR:
         )
 
     def _enough_steps_since_last_lr_update(self) -> bool:
-        """Check if enough steps have been taken since the previous learning rate update, based on the previous
-        update step iteration.
+        """Check if enough steps have been taken since the previous learning rate update, based on the previous one.
 
         Returns:
             bool: indicating whether sufficient steps have occurred since the last update
@@ -246,6 +256,42 @@ class AugLagLR:
                 self.best_loss = avg_loss
                 self.last_best_step = self.step_counter
 
+    @property
+    def disabled(self) -> bool:
+        return self._disabled
+
+    def enable(self, loss: AugLagLossCalculator) -> None:
+        """Enable auglag with the given loss calculator.
+
+        If auglag is disabled, this will restore the loss calculator state to the state when it was disabled and will
+        allow `step` to increment auglag iterations again.
+
+        Args:
+            loss: The loss calculator used with this scheduler
+        """
+        if not self._disabled:
+            return
+        if self._disabled_loss_state is not None:
+            loss.load_state_dict(self._disabled_loss_state)
+            self._disabled_loss_state = None
+            self._disabled = False
+
+    def disable(self, loss: AugLagLossCalculator) -> None:
+        """Disable auglag with the given loss calculator.
+
+        If auglag is enabled, this disables auglag iterations when `step` is called, stores the current state of the
+        loss so that it can be re-enabled and sets the constraint factors in the loss calculator to 0.
+
+        Args:
+            loss: The loss calculator used with this scheduler
+        """
+        if self._disabled:
+            return
+        self._disabled_loss_state = loss.state_dict()
+        loss.alpha = torch.zeros_like(loss.alpha)
+        loss.rho = torch.zeros_like(loss.rho)
+        self._disabled = True
+
     def step(
         self,
         optimizer: Union[Optimizer, list[Optimizer]],
@@ -264,6 +310,8 @@ class AugLagLR:
         Returns:
             bool: if the auglag has converged (False) or not (True)
         """
+        if self.disabled:
+            return False
         assert torch.all(lagrangian_penalty >= 0), "auglag penalty must be non-negative"
         self._update_loss_tracker(loss_value.detach())
         self._cur_lagrangian_penalty = lagrangian_penalty.detach()

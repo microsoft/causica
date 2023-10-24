@@ -296,7 +296,8 @@ def tensordict_from_variables_metadata(data: np.ndarray, variables_list: list[Va
 
     # guaranteed to be ordered correctly in python 3.7+ https://docs.python.org/3/library/collections.html#collections.Counter
     sizes = Counter(d.group_name for d in variables_list)  # get the dimensions of each key from the variables
-    assert sum(sizes.values()) == data.shape[1], "Variable sizes do not match data shape"
+    sum_sizes = sum(sizes.values())
+    assert sum_sizes == data.shape[1], f"Variable sizes do not match data shape, got {sum_sizes} and {data.shape}"
 
     # NOTE: This assumes that variables in the same group will have the same type.
     dtypes = {item.group_name: DTYPE_MAP[item.type] for item in variables_list}

@@ -1,32 +1,43 @@
+import math
+
 import torch
 from tensordict import TensorDict
 
 from causica.functional_relationships.functional_relationships import FunctionalRelationships
 
 
-class LinearFunctionalRelationships(FunctionalRelationships):
+class RFFFunctionalRelationships(FunctionalRelationships):
     """
-    A simple linear functional relationship.
+    A simple random fourier feature-based functional relationship.
+    The formula implemented here is:
+    x_i = sqrt(2/M) * sum_{i}^{M} alpha_i sin(<w_i, pa(x_i)>)
     """
 
     def __init__(
         self,
         shapes: dict[str, torch.Size],
-        initial_linear_coefficient_matrix: torch.Tensor,
+        initial_random_features: torch.Tensor,
+        initial_coefficients: torch.Tensor,
         trainable: bool = False,
     ) -> None:
         """
         Args:
             shapes: Dict of node shapes (how many dimensions a variable has)
                 Order corresponds to the order in graph(s).
-            initial_linear_coefficient_matrix: the linear coefficients [output_shape, output_shape]
+            initial_random_features: a tensor containing the random features [num_rf, output_shape]
+            initial_coefficients: a tensor containing the linear outer coefficients [num_rf,]
             trainable: whether the coefficient matrix should be learnable
         """
         super().__init__(shapes=shapes)
 
-        shape = self.tensor_to_td.output_shape
-        assert initial_linear_coefficient_matrix.shape == (shape, shape)
-        self.linear_coefficients = torch.nn.Parameter(initial_linear_coefficient_matrix, requires_grad=trainable)
+        assert initial_random_features.shape[0] == initial_coefficients.shape[0]
+        self.num_rf = initial_random_features.shape[0]
+
+        self.shape = self.tensor_to_td.output_shape
+        assert initial_random_features.shape[1] == self.shape
+
+        self.linear_coefficients_inner = torch.nn.Parameter(initial_random_features, requires_grad=trainable)
+        self.linear_coefficients_outer = torch.nn.Parameter(initial_coefficients, requires_grad=trainable)
 
     def forward(self, samples: TensorDict, graphs: torch.Tensor) -> TensorDict:
         """
@@ -36,11 +47,11 @@ class LinearFunctionalRelationships(FunctionalRelationships):
         Returns:
             A Dict of tensors of shape batch_shape_x + batch_shape_g + (concatenated_shape)
         """
-        return self.tensor_to_td(self.linear_map(self.tensor_to_td.inv(samples), graphs))
+        return self.tensor_to_td(self.non_linear_map(self.tensor_to_td.inv(samples), graphs))
 
-    def linear_map(self, samples: torch.Tensor, graph: torch.Tensor) -> torch.Tensor:
+    def non_linear_map(self, samples: torch.Tensor, graph: torch.Tensor) -> torch.Tensor:
         """
-        Applies the linear function to a concatenated tensor of samples.
+        Applies the non linear function to a concatenated tensor of samples.
 
         Args:
             samples: tensor of shape batch_shape_x + [n_cols]
@@ -59,4 +70,7 @@ class LinearFunctionalRelationships(FunctionalRelationships):
         # Shape batch_shape_x + batch_shape_g + (num_nodes, out_dim_g)
         samples_broad = samples.view(view_shape).expand(target_shape)
 
-        return torch.einsum("...i,...ij->...j", samples_broad, graph_broad * self.linear_coefficients)
+        inner_prods = torch.einsum("ij,...j,...jk->...ik", self.linear_coefficients_inner, samples_broad, graph_broad)
+        return math.sqrt(2 / self.num_rf) * torch.einsum(
+            "i,...ij->...j", self.linear_coefficients_outer, torch.sin(inner_prods)
+        )

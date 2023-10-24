@@ -1,6 +1,6 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Optional
 
 import mlflow
 import pytorch_lightning as pl
@@ -15,7 +15,7 @@ from causica.training.auglag import AugLagLossCalculator, AugLagLR
 class AuglagLRCallback(pl.Callback):
     """Wrapper Class to make the Auglag Learning Rate Scheduler compatible with Pytorch Lightning"""
 
-    def __init__(self, scheduler: AugLagLR, log_auglag: bool = False):
+    def __init__(self, scheduler: AugLagLR, log_auglag: bool = False, disabled_epochs: Optional[set[int]] = None):
         """
         Args:
             scheduler: The auglag learning rate scheduler to wrap.
@@ -23,6 +23,7 @@ class AuglagLRCallback(pl.Callback):
         """
         self.scheduler = scheduler
         self._log_auglag = log_auglag
+        self._disabled_epochs = disabled_epochs
 
     def on_train_batch_end(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule, outputs: STEP_OUTPUT, batch: Any, batch_idx: int
@@ -34,6 +35,12 @@ class AuglagLRCallback(pl.Callback):
         optimizer = pl_module.optimizers()
         assert isinstance(optimizer, torch.optim.Optimizer)
         auglag_loss: AugLagLossCalculator = pl_module.auglag_loss  # type: ignore
+
+        # Disable if we reached a disabled epoch - disable, otherwise make sure the scheduler is enabled
+        if self._disabled_epochs and trainer.current_epoch in self._disabled_epochs:
+            self.scheduler.disable(auglag_loss)
+        else:
+            self.scheduler.enable(auglag_loss)
 
         is_converged = self.scheduler.step(
             optimizer=optimizer,

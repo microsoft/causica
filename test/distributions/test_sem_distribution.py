@@ -6,7 +6,7 @@ from causica.distributions.adjacency.enco import ENCOAdjacencyDistribution
 from causica.distributions.noise.joint import JointNoiseModule
 from causica.distributions.noise.noise import Noise, NoiseModule
 from causica.distributions.noise.univariate_normal import UnivariateNormalNoiseModule
-from causica.functional_relationships import ICGNN
+from causica.functional_relationships import DECIEmbedFunctionalRelationships
 from causica.functional_relationships.functional_relationships import FunctionalRelationships
 from causica.sem.sem_distribution import SEMDistribution
 
@@ -19,7 +19,7 @@ def create_sem_params(
         name: UnivariateNormalNoiseModule(shape[-1]) for name, shape in shapes.items()
     }
     noise_dist = JointNoiseModule(independent_noise_modules)
-    func = ICGNN(shapes)
+    func = DECIEmbedFunctionalRelationships(shapes, embedding_size=32, out_dim_g=32, num_layers_g=2, num_layers_zeta=2)
     logits_exist = torch.randn((num_nodes, num_nodes))
     logits_orient = torch.randn(((num_nodes * (num_nodes - 1)) // 2,))
     adjacency_dist = ENCOAdjacencyDistribution(logits_exist=logits_exist, logits_orient=logits_orient)

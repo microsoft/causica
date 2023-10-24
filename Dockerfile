@@ -31,8 +31,7 @@ RUN curl -sSL https://install.python-poetry.org | python3 -
 WORKDIR /workspaces/causica
 COPY pyproject.toml poetry.lock ./
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    mkdir -p src/causica && touch README.md src/causica/__init__.py && \
-    poetry install --only main
+    poetry install --only main --no-root --no-directory
 
 FROM base as deploy
 COPY . /workspaces/causica
@@ -74,4 +73,4 @@ RUN <<EOT
 EOT
 
 RUN --mount=type=cache,target=/root/.cache/pypoetry,sharing=locked \
-    poetry install --with dev
+    poetry install --with dev --no-root --no-directory
