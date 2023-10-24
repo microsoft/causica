@@ -1,0 +1,67 @@
+{
+	"name": "Causica Devcontainer",
+	"build": {
+		"context": "..",
+		"dockerfile": "../Dockerfile",
+		"target": "dev"
+	},
+	"runArgs": [
+		// The default shared memory size of Docker is 64MB which can lead to memory
+		// issues when using Pytorch dataloaders with multiple workers.
+		// See https://github.com/aws/sagemaker-python-sdk/issues/937 and
+		// https://github.com/pytorch/pytorch#docker-image.
+		"--shm-size=1gb"
+	],
+	"containerEnv": {
+		"DOCKER_BUILDKIT": "1"
+	},
+	"mounts": [
+		"source=command_history,target=/root/command_history,type=volume",  // Persist command history across instances
+		"target=/root/.vscode-server,type=volume"  // Persist vscode server across instances
+	],
+	"hostRequirements": {
+		"gpu": "optional"  // Mount GPU(s) if available
+	},
+	"postCreateCommand": "pre-commit install",
+	"postStartCommand": "git config --global core.editor \"code --wait\"",
+	"shutdownAction": "none",
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/usr/bin/python",
+				"python.formatting.black": true,
+				"python.linting.pylint": true,
+				"python.testing.pytestEnabled": true,
+				"python.testing.pytestArgs": [
+					"--continue-on-collection-errors",
+					"causica/test"
+				],
+				"python.testing.unittestEnabled": false,
+				"vim.textwidth": 120,
+				"editor.rulers": [
+					120
+				],
+				"terminal.integrated.profiles.linux": {
+					"zsh": {
+						"path": "/usr/bin/zsh"
+					}
+				},
+				"terminal.integrated.defaultProfile.linux": "zsh"
+			},
+			"extensions": [
+				"bungcip.better-toml",
+				"github.copilot",
+				"github.copilot-chat",
+				"github.copilot-labs",
+				"ms-azuretools.vscode-docker",
+				"ms-python.isort",
+				"ms-python.pylint",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-toolsai.jupyter",
+				"redhat.vscode-yaml",
+				"vscodevim.vim"
+			]
+		}
+	}
+}
