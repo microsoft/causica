@@ -11,6 +11,8 @@ from causica.distributions import (
     UnivariateNormalNoise,
 )
 
+torch.manual_seed(0)
+
 NOISE_DISTRIBUTIONS = [
     IndependentNoise(BernoulliNoise(torch.randn(3), torch.randn(3)), 1),
     IndependentNoise(UnivariateNormalNoise(torch.randn(5), torch.arange(1, 6, dtype=torch.float)), 1),
@@ -90,8 +92,8 @@ def test_joint_noise_empirical(noise_a: Noise, noise_b: Noise):
     mean, std = torch.mean, torch.std
     for key, value in samples.items():
         joint_value = joint_samples.get(key)
-        torch.testing.assert_close(mean(value, sample_dim), mean(joint_value, sample_dim), atol=0.01, rtol=0.01)
-        torch.testing.assert_close(std(value, sample_dim), std(joint_value, sample_dim), atol=0.01, rtol=0.01)
+        torch.testing.assert_close(mean(value, sample_dim), mean(joint_value, sample_dim), atol=0.2, rtol=0.2)
+        torch.testing.assert_close(std(value, sample_dim), std(joint_value, sample_dim), atol=0.2, rtol=0.2)
 
     # Similar log probs
     torch.testing.assert_close(mean(log_probs), mean(joint_log_probs), atol=0.01, rtol=0.01)

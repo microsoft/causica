@@ -12,7 +12,7 @@ from causica.distributions.noise.noise import Noise, NoiseModule
 class CategoricalNoise(OneHotCategorical, Noise):
     def __init__(self, delta_logits: torch.Tensor, base_logits: torch.Tensor):
         """
-        A Categorical distribution with parameters defined by base_logits and self.delta_logits (ICGNN predictions).
+        A Categorical distribution with parameters defined by base_logits and self.delta_logits (predictions from an NN).
 
         Args:
             delta_logits: Tensor with shape [sample_shape, event_shape]

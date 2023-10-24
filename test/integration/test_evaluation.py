@@ -11,7 +11,6 @@ from causica.distributions import ContinuousNoiseDist, JointNoiseModule, create_
 from causica.functional_relationships.linear_functional_relationships import LinearFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 from causica.training.evaluation import eval_ate_rmse, eval_intervention_likelihoods, eval_ite_rmse
-from causica.training.per_variable_metrics import calculate_counterfactual_deci_metrics
 
 
 def sem(data_dir: str) -> DistributionParametersSEM:
@@ -58,18 +57,3 @@ def test_evaluation_ite(dataset):
     root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
     ite = eval_ite_rmse([sem(root)], load_data(root, DataEnum.COUNTERFACTUALS)[0])
     assert ite.shape == tuple()
-
-
-@pytest.mark.parametrize("dataset", ["csuite_linexp_2"])
-def test_calculate_counterfactual_deci_metrics(dataset):
-    root = os.path.join(CAUSICA_DATASETS_PATH, dataset)
-    data = load_data(root, DataEnum.COUNTERFACTUALS)
-    cf = calculate_counterfactual_deci_metrics([sem(root)], data[0])
-    grouped_variable_names = {"x0": ["x0_0", "x0_1"], "x1": ["x1_0", "x1_1"]}
-    cf_metrics = calculate_counterfactual_deci_metrics(
-        [sem(root)], data[0], grouped_variable_names=grouped_variable_names
-    )
-    assert cf["rmse"].shape == tuple()
-    assert cf_metrics["rmse"].shape == tuple()
-    assert len(cf["rmse"].keys()) == 1
-    assert len(cf_metrics["rmse"].keys()) == 2

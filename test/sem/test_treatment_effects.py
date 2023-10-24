@@ -26,7 +26,8 @@ def test_ate_ite_cf_two_node(graph, two_variable_dict):
     intervention_values_a = TensorDict({"x2": torch.tensor([1.42, 0.42])}, batch_size=tuple())
     intervention_values_b = TensorDict({"x2": torch.tensor([0.42, 1.42])}, batch_size=tuple())
     average_treatment_effect = ate(sem, intervention_values_a, intervention_values_b)
-    factual_data = sem.sample(torch.Size([100]))
+    sample_size = 100
+    factual_data = sem.sample(torch.Size([sample_size]))
     if graph[0, 1] > 0.0:
         expected_treatment_effect = torch.zeros_like(average_treatment_effect["x1"])
         expected_mean_a = factual_data["x1"]
@@ -34,12 +35,12 @@ def test_ate_ite_cf_two_node(graph, two_variable_dict):
         expected_mean_a = torch.einsum("i,ij->j", intervention_values_a["x2"], coef_matrix[1:, :1])
         expected_mean_b = torch.einsum("i,ij->j", intervention_values_b["x2"], coef_matrix[1:, :1])
         expected_treatment_effect = expected_mean_a - expected_mean_b
-    assert torch.allclose(average_treatment_effect["x1"], expected_treatment_effect, rtol=1e-4)
+    torch.testing.assert_close(average_treatment_effect["x1"], expected_treatment_effect)
 
     individual_treatment_effect = ite(sem, factual_data, intervention_values_a, intervention_values_b)
     cf_effect = counterfactual(sem, factual_data, intervention_values_a)
-    assert torch.allclose(individual_treatment_effect["x1"], expected_treatment_effect)
-    assert torch.allclose(cf_effect["x1"], expected_mean_a)
+    torch.testing.assert_close(individual_treatment_effect["x1"], expected_treatment_effect.expand((sample_size, 1)))
+    torch.testing.assert_close(cf_effect["x1"], expected_mean_a.expand((sample_size, 1)))
 
 
 def test_ate_ite_cf_three_node(three_variable_dict):
@@ -51,16 +52,17 @@ def test_ate_ite_cf_three_node(three_variable_dict):
     intervention_values_a = TensorDict({"x2": torch.tensor([1.42, 0.42])}, batch_size=tuple())
     intervention_values_b = TensorDict({"x2": torch.tensor([0.42, 1.42])}, batch_size=tuple())
     average_treatment_effect = ate(sem, intervention_values_a, intervention_values_b)
-    assert torch.allclose(average_treatment_effect["x1"], torch.zeros_like(average_treatment_effect["x1"]))
+    torch.testing.assert_close(average_treatment_effect["x1"], torch.zeros_like(average_treatment_effect["x1"]))
     expected_mean_a = torch.einsum("i,ij->j", intervention_values_a["x2"], coef_matrix[2:4, 4:])
     expected_mean_b = torch.einsum("i,ij->j", intervention_values_b["x2"], coef_matrix[2:4, 4:])
     expected_treatment_effect = expected_mean_a - expected_mean_b
-    assert torch.allclose(average_treatment_effect["x3"], expected_treatment_effect)
+    torch.testing.assert_close(average_treatment_effect["x3"], expected_treatment_effect)
 
-    factual_data = sem.sample(torch.Size([100]))
+    sample_size = 100
+    factual_data = sem.sample(torch.Size([sample_size]))
     individual_treatment_effect = ite(sem, factual_data, intervention_values_a, intervention_values_b)
     cf_effect = counterfactual(sem, factual_data, intervention_values_a)
-    assert torch.allclose(individual_treatment_effect["x1"], torch.zeros_like(individual_treatment_effect["x1"]))
-    assert torch.allclose(individual_treatment_effect["x3"], expected_treatment_effect)
-    assert torch.allclose(cf_effect["x1"], factual_data["x1"])
-    assert torch.allclose(cf_effect["x3"], expected_mean_a)
+    torch.testing.assert_close(individual_treatment_effect["x1"], torch.zeros_like(individual_treatment_effect["x1"]))
+    torch.testing.assert_close(individual_treatment_effect["x3"], expected_treatment_effect.expand((sample_size, 1)))
+    torch.testing.assert_close(cf_effect["x1"], factual_data["x1"])
+    torch.testing.assert_close(cf_effect["x3"], expected_mean_a.expand((sample_size, 1)))

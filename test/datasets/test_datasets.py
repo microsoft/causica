@@ -5,7 +5,6 @@ from tensordict import TensorDict
 
 from causica.datasets.causica_dataset_format import Variable, tensordict_from_variables_metadata
 from causica.datasets.tensordict_utils import convert_one_hot, tensordict_from_pandas
-from causica.datasets.variable_types import VariableTypeEnum
 
 
 def test_dataset_without_groups():

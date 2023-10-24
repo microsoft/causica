@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from causica.functional_relationships.icgnn import FGNNI
+from causica.nn import DECIEmbedNN
 
 PROCESSED_DIM = 6
 NODE_NUM = 4
@@ -27,6 +27,6 @@ def test_fgnni_broadcast(graph_shape, sample_shape):
     graph_tensor = torch.randint(0, 2, (*graph_shape, NODE_NUM, NODE_NUM), dtype=torch.float32)
     sample_tensor = torch.randn((*sample_shape, PROCESSED_DIM))
 
-    fgnni = FGNNI(group_mask=GROUP_MASK)
+    fgnni = DECIEmbedNN(group_mask=GROUP_MASK, embedding_size=32, out_dim_g=32, num_layers_g=2, num_layers_zeta=2)
     out = fgnni(sample_tensor, graph_tensor)
     assert out.shape == sample_shape + graph_shape + (PROCESSED_DIM,)

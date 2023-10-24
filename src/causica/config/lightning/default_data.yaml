@@ -3,3 +3,4 @@ init_args:
   dataset_name: csuite_nonlingauss
   batch_size: 128
   load_counterfactual: false
+  load_interventional: true

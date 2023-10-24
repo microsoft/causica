@@ -49,10 +49,10 @@ class DoFunctionalRelationships(FunctionalRelationships):
     def forward(self, samples: TensorDict, graphs: torch.Tensor) -> TensorDict:
         """
         Args:
-            samples: Batched inputs, size batch_size_x + (processed_dim_all).
+            samples: Batched inputs, size batch_size_x + (concatenated_shape).
             graphs: Weighted adjacency matrix, size batch_size_g + (n, n)
         Returns:
-            A tensor of shape batch_shape_x + batch_shape_g + (processed_dim_all)
+            A tensor of shape batch_shape_x + batch_shape_g + (concatenated_shape)
         """
         # add the expanded intervention values to the samples
         samples_with_do = samples.update(self.do.expand(*samples.batch_size))

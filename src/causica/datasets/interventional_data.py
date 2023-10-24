@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 import torch
-from tensordict import TensorDict
+from tensordict import TensorDictBase
 
 
 @dataclass
@@ -19,9 +19,9 @@ class InterventionData:
         condition_values: A dictionary of node names to 1D numpy arrays of the conditioned values
     """
 
-    intervention_data: TensorDict
-    intervention_values: TensorDict
-    condition_values: TensorDict
+    intervention_data: TensorDictBase
+    intervention_values: TensorDictBase
+    condition_values: TensorDictBase
     sampled_nodes: set[str] = field(init=False)  # the nodes that are neither conditioned nor sampled
 
     def __post_init__(self):
@@ -53,9 +53,9 @@ class CounterfactualData:
         intervention_values: A dictionary of node names to 1D numpy arrays of the intervened values
     """
 
-    counterfactual_data: TensorDict
-    intervention_values: TensorDict
-    factual_data: TensorDict
+    counterfactual_data: TensorDictBase
+    intervention_values: TensorDictBase
+    factual_data: TensorDictBase
     sampled_nodes: set[str] = field(init=False)
 
     def __post_init__(self):

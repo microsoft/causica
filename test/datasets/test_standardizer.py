@@ -1,7 +1,7 @@
 import torch
 from tensordict import TensorDict
 
-from causica.datasets.standardizer import fit_standardizer
+from causica.datasets.normalization import fit_standardizer
 
 
 def test_standardizer():
@@ -13,7 +13,7 @@ def test_standardizer():
         batch_size=100,
     )
 
-    standardizer = fit_standardizer(data)()
+    standardizer = fit_standardizer(data)
 
     standardized_data = standardizer(data)
 
@@ -58,7 +58,7 @@ def test_standardizer_subset():
         batch_size=100,
     )
 
-    standardizer = fit_standardizer(data.select("x"))()
+    standardizer = fit_standardizer(data.select("x"))
 
     standardized_data = standardizer(data)
     assert torch.allclose(
@@ -85,7 +85,7 @@ def test_standardizer_with_zero_std():
         batch_size=100,
     )
 
-    standardizer = fit_standardizer(data)()
+    standardizer = fit_standardizer(data)
 
     standardized_data = standardizer(data)
 

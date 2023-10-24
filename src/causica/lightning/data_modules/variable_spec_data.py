@@ -5,13 +5,14 @@ from functools import partial
 from typing import Any, Iterable, Optional, Union
 
 import torch
-from tensordict import TensorDict
+from tensordict import TensorDict, TensorDictBase
 from torch.utils.data import DataLoader
 
 from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, VariablesMetadata, load_data
-from causica.datasets.standardizer import JointStandardizer, fit_standardizer
+from causica.datasets.normalization import FitNormalizerType, Normalizer, fit_standardizer
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
+from causica.distributions.transforms import JointTransformModule
 from causica.lightning.data_modules.deci_data_module import DECIDataModule
 
 
@@ -36,18 +37,21 @@ class VariableSpecDataModule(DECIDataModule):
         dataset_name: str = "anonymous_dataset",
         normalize: Union[bool, Iterable[str]] = False,
         exclude_normalization: Iterable[str] = tuple(),
+        fit_normalizer: FitNormalizerType = fit_standardizer,
         load_counterfactual: bool = False,
+        load_interventional: bool = False,
         **storage_options: Any,
     ):
         """
         Args:
             root_path: Path to directory with causal data
             batch_size: Batch size for training and test data.
-            storage_options: Storage options forwarded to `fsspec` when loading files.
             dataset_name: A name for the dataset
-            load_counterfactual: Whether there is counterfactual data
             normalize: Whether to normalize the data or list of variables to normalize
             exclude_normalization: Which variables to exclude from normalization
+            load_counterfactual: Whether counterfactual data should be loaded
+            load_interventional: Whether interventional data should be loaded
+            **storage_options: Storage options forwarded to `fsspec` when loading files.
         """
         super().__init__()
         self.batch_size = batch_size
@@ -58,8 +62,13 @@ class VariableSpecDataModule(DECIDataModule):
         self.normalize = normalize
         self.exclude_normalization = set(exclude_normalization)
         self.load_counterfactual = load_counterfactual
+        self.load_interventional = load_interventional
 
-        self.normalizer: Optional[JointStandardizer] = None
+        self.fit_normalizer = fit_normalizer
+        self.normalizer: Optional[Normalizer] = None
+        self._dataset_train: TensorDictBase
+        self._dataset_test: TensorDictBase
+        self.true_adj: torch.Tensor
 
     @property
     def variable_shapes(self) -> dict[str, torch.Size]:
@@ -90,12 +99,21 @@ class VariableSpecDataModule(DECIDataModule):
             load_data, root_path=self.root_path, variables_metadata=variables_metadata, **self.storage_options
         )
 
-        self._dataset_train = _load_data(data_enum=DataEnum.TRAIN)
-        self._dataset_test = _load_data(data_enum=DataEnum.TEST)
-        self.true_adj = _load_data(data_enum=DataEnum.TRUE_ADJACENCY)
-        self.interventions = _load_data(data_enum=DataEnum.INTERVENTIONS)
+        dataset_train = _load_data(data_enum=DataEnum.TRAIN)
+        dataset_test = _load_data(data_enum=DataEnum.TEST)
+        true_adj = _load_data(data_enum=DataEnum.TRUE_ADJACENCY)
+        assert isinstance(dataset_train, TensorDict)
+        assert isinstance(dataset_test, TensorDict)
+        assert isinstance(true_adj, torch.Tensor)
+        self._dataset_train = dataset_train
+        self._dataset_test = dataset_test
+        self.true_adj = true_adj
 
-        self.counterfactuals = None
+        self.interventions = []
+        if self.load_interventional:
+            self.interventions = _load_data(data_enum=DataEnum.INTERVENTIONS)
+
+        self.counterfactuals = []
         if self.load_counterfactual:
             self.counterfactuals = _load_data(data_enum=DataEnum.COUNTERFACTUALS)
 
@@ -114,8 +132,8 @@ class VariableSpecDataModule(DECIDataModule):
         #  init_args:
         #    ...
         #    variables_metadata: null
-        _load_data = partial(load_data, root_path=self.root_path, **self.storage_options)
-        variables_metadata: VariablesMetadata = _load_data(data_enum=DataEnum.VARIABLES_JSON)
+        _load_data = partial(load_data, root_path=self.root_path, **self.storage_options)  # type: ignore
+        variables_metadata: VariablesMetadata = _load_data(data_enum=DataEnum.VARIABLES_JSON)  # type: ignore
 
         self._load_all_data(variables_metadata)
 
@@ -140,11 +158,11 @@ class VariableSpecDataModule(DECIDataModule):
                     if v == VariableTypeEnum.CONTINUOUS and k not in self.exclude_normalization
                 }
 
-            self.normalizer = fit_standardizer(self._dataset_train.select(*normalization_variables))
-
-            transform = self.normalizer()
-            self._dataset_train = transform(self._dataset_train)
-            self._dataset_test = transform(self._dataset_test)
+            self.normalizer = self.fit_normalizer(self._dataset_train.select(*normalization_variables))
+            self._dataset_train = self.normalizer(self._dataset_train)
+            self._dataset_test = self.normalizer(self._dataset_test)
+        else:
+            self.normalizer = JointTransformModule({})
 
     def train_dataloader(self):
         return DataLoader(
@@ -162,11 +180,8 @@ class VariableSpecDataModule(DECIDataModule):
             test_dataloader,
             DataLoader(dataset=self.true_adj[None, ...]),
             DataLoader(dataset=self.interventions, collate_fn=identity, batch_size=None),
+            DataLoader(dataset=self.counterfactuals, collate_fn=identity, batch_size=None),
         ]
-
-        if self.counterfactuals is not None:
-            dataloader_list.append(DataLoader(dataset=self.counterfactuals, collate_fn=identity, batch_size=None))
-
         return dataloader_list
 
 
@@ -185,12 +200,16 @@ class CSuiteDataModule(VariableSpecDataModule):
         batch_size: int = 128,
         dataset_path: str = CAUSICA_DATASETS_PATH,
         load_counterfactual: bool = False,
+        load_interventional: bool = False,
+        normalize: Union[bool, Iterable[str]] = False,
     ):
         super().__init__(
             root_path=os.path.join(dataset_path, dataset_name),
             batch_size=batch_size,
             dataset_name=dataset_name,
             load_counterfactual=load_counterfactual,
+            load_interventional=load_interventional,
+            normalize=normalize,
         )
 
 

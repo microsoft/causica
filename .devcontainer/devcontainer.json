@@ -6,10 +6,7 @@
 		"target": "dev"
 	},
 	"runArgs": [
-		// The default shared memory size of Docker is 64MB which can lead to memory
-		// issues when using Pytorch dataloaders with multiple workers.
-		// See https://github.com/aws/sagemaker-python-sdk/issues/937 and
-		// https://github.com/pytorch/pytorch#docker-image.
+		// give headspace for pytorch dataloaders passing tensors across processes
 		"--shm-size=1gb"
 	],
 	"containerEnv": {
@@ -22,7 +19,8 @@
 	"hostRequirements": {
 		"gpu": "optional"  // Mount GPU(s) if available
 	},
-	"postStartCommand": "git config --global core.editor \"code --wait\"",
+	"postCreateCommand": "pre-commit install",
+	"postStartCommand": "git config --global core.editor \"code --wait\" && poetry install",
 	"shutdownAction": "none",
 	"customizations": {
 		"vscode": {
@@ -33,7 +31,7 @@
 				"python.testing.pytestEnabled": true,
 				"python.testing.pytestArgs": [
 					"--continue-on-collection-errors",
-					"causica/test"
+					"test"
 				],
 				"python.testing.unittestEnabled": false,
 				"vim.textwidth": 120,

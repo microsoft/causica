@@ -46,9 +46,58 @@ def test_pytorch_lightning_deterministic(dataset, noise_dist):
     trainer.test(module, data_module)
 
 
-@pytest.mark.parametrize("dataset", ["csuite_mixed_simpson"])
-def test_pytorch_lightning_expert_input(tmp_path, dataset):
+def test_pytorch_lightning_save_checkpoint(tmp_path):
+    """Test we can load a DECI Module"""
+    dataset = "csuite_mixed_simpson"
+    active_run = mlflow.active_run()
+    if active_run is not None:
+        mlflow.end_run()
+
+    trainer = pl.Trainer(fast_dev_run=True)
+    data_module = CSuiteDataModule(dataset_name=dataset)
+    data_module.prepare_data()
+    adj_matrix = data_module.true_adj
+    expert_graph_container = ExpertGraphContainer(
+        dag=adj_matrix, mask=torch.ones_like(adj_matrix), confidence=0.9, scale=1.0
+    )
+
+    constraint_matrix_path = tmp_path / "constraint_graph.npy"
+    with constraint_matrix_path.open("wb") as f:
+        np.save(f, adj_matrix.numpy())
+
+    module = DECIModule(
+        constraint_matrix_path=str(constraint_matrix_path),
+        expert_graph_container=expert_graph_container,
+        noise_dist=ContinuousNoiseDist.SPLINE,
+    )
+
+    trainer.fit(module, data_module)
+    path = tmp_path / "test.ckpt"
+    trainer.save_checkpoint(path)
+
+    module2 = DECIModule.load_from_checkpoint(path)
+
+    module1_params = dict(module.named_parameters())
+    module2_params = dict(module2.named_parameters())
+    assert module1_params.keys() == module2_params.keys()
+    # check that all parameters in the model are equal after loading
+    for key, value in module1_params.items():
+        torch.testing.assert_close(value, module2_params[key])
+    # check that the expert graph container is in the module params
+    # by the above check it is preserved by checkpointing
+    assert "expert_graph_container.dag" in module1_params.keys()
+    # check the constraint matrix is equal
+    torch.testing.assert_close(module.constraint_matrix, module2.constraint_matrix)
+
+
+def test_pytorch_lightning_load_checkpoint():
+    """Check that loading a historical model works"""
+    DECIModule.load_from_checkpoint("test/integration/decimodule.pt")
+
+
+def test_pytorch_lightning_expert_input(tmp_path):
     """Test that the additional expert graph and constraints can be used."""
+    dataset = "csuite_mixed_simpson"
     active_run = mlflow.active_run()
     if active_run is not None:
         mlflow.end_run()
