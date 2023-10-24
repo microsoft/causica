@@ -22,7 +22,6 @@
 	"hostRequirements": {
 		"gpu": "optional"  // Mount GPU(s) if available
 	},
-	"postCreateCommand": "pre-commit install",
 	"postStartCommand": "git config --global core.editor \"code --wait\"",
 	"shutdownAction": "none",
 	"customizations": {
