@@ -1,16 +1,15 @@
-name: Causica CI Build
-
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
 jobs:
-  build-linux:
+  pypi-publish:
+    name: Upload release to PyPI
     runs-on: ubuntu-latest
-    strategy:
-      max-parallel: 5
+    environment:
+      name: pypi
+      url: https://pypi.org/project/causica
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
 
     steps:
     - uses: actions/checkout@v3
@@ -32,13 +31,14 @@ jobs:
     - name: Install dependencies
       run: |
         poetry env use 3.10
-        poetry install
-      if: steps.cache.outputs.cache-hit != 'true'
+        poetry build
 
-    - name: Verify pre-commit checks
-      uses: pre-commit/action@v3.0.0
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v3
       with:
-        extra_args: --all-files
+        name: Build artifacts
+        path: ./dist
+        retention-days: 90
 
-    - name: Test with pytest
-      run: poetry run python -m pytest ./test
+    - name: Publish package distributions to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
