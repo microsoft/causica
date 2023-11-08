@@ -75,7 +75,9 @@ def test_pytorch_lightning_save_checkpoint(tmp_path):
     path = tmp_path / "test.ckpt"
     trainer.save_checkpoint(path)
 
-    module2 = DECIModule.load_from_checkpoint(path)
+    # pylint is unable to detect this as a classmethod and therefore thinks it's unbound, i.e. no value for the `cls`
+    # argument.
+    module2 = DECIModule.load_from_checkpoint(path)  # pylint: disable=no-value-for-parameter
 
     module1_params = dict(module.named_parameters())
     module2_params = dict(module2.named_parameters())
@@ -92,7 +94,9 @@ def test_pytorch_lightning_save_checkpoint(tmp_path):
 
 def test_pytorch_lightning_load_checkpoint():
     """Check that loading a historical model works"""
-    DECIModule.load_from_checkpoint("test/integration/decimodule.pt")
+    # pylint is unable to detect this as a classmethod and therefore thinks it's unbound, i.e. no value for the `cls`
+    # argument.
+    DECIModule.load_from_checkpoint("test/integration/decimodule.pt")  # pylint: disable=no-value-for-parameter
 
 
 def test_pytorch_lightning_expert_input(tmp_path):

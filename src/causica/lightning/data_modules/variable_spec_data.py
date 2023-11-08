@@ -40,6 +40,7 @@ class VariableSpecDataModule(DECIDataModule):
         fit_normalizer: FitNormalizerType = fit_standardizer,
         load_counterfactual: bool = False,
         load_interventional: bool = False,
+        load_validation: bool = False,
         **storage_options: Any,
     ):
         """
@@ -51,6 +52,7 @@ class VariableSpecDataModule(DECIDataModule):
             exclude_normalization: Which variables to exclude from normalization
             load_counterfactual: Whether counterfactual data should be loaded
             load_interventional: Whether interventional data should be loaded
+            load_validation: Whether to load the validation dataset
             **storage_options: Storage options forwarded to `fsspec` when loading files.
         """
         super().__init__()
@@ -63,11 +65,13 @@ class VariableSpecDataModule(DECIDataModule):
         self.exclude_normalization = set(exclude_normalization)
         self.load_counterfactual = load_counterfactual
         self.load_interventional = load_interventional
+        self.load_validation = load_validation
 
         self.fit_normalizer = fit_normalizer
         self.normalizer: Optional[Normalizer] = None
         self._dataset_train: TensorDictBase
         self._dataset_test: TensorDictBase
+        self._dataset_valid: TensorDictBase
         self.true_adj: torch.Tensor
 
     @property
@@ -91,6 +95,10 @@ class VariableSpecDataModule(DECIDataModule):
         return _check_exists(self, "_dataset_test")
 
     @property
+    def dataset_valid(self) -> TensorDict:
+        return _check_exists(self, "_dataset_valid")
+
+    @property
     def dataset_name(self) -> str:
         return self._dataset_name
 
@@ -101,6 +109,10 @@ class VariableSpecDataModule(DECIDataModule):
 
         dataset_train = _load_data(data_enum=DataEnum.TRAIN)
         dataset_test = _load_data(data_enum=DataEnum.TEST)
+        if self.load_validation:
+            dataset_valid = _load_data(data_enum=DataEnum.VALIDATION)
+            assert isinstance(dataset_valid, TensorDict)
+            self._dataset_valid = dataset_valid
         true_adj = _load_data(data_enum=DataEnum.TRUE_ADJACENCY)
         assert isinstance(dataset_train, TensorDict)
         assert isinstance(dataset_test, TensorDict)
@@ -161,6 +173,8 @@ class VariableSpecDataModule(DECIDataModule):
             self.normalizer = self.fit_normalizer(self._dataset_train.select(*normalization_variables))
             self._dataset_train = self.normalizer(self._dataset_train)
             self._dataset_test = self.normalizer(self._dataset_test)
+            if self.load_validation:
+                self._dataset_valid = self.normalizer(self._dataset_valid)
         else:
             self.normalizer = JointTransformModule({})
 

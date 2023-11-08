@@ -17,5 +17,8 @@ if __name__ == "__main__":
         subclass_mode_model=True,
         subclass_mode_data=True,
     )
-    cli.trainer.fit(cli.model, datamodule=cli.datamodule)
+    # This automatically resumes training if it finds a "last" checkpoint in one of the output directories of the
+    # ModelCheckpoint callbacks.
+    # See https://lightning.ai/docs/pytorch/stable/common/trainer.html#fit for more information.
+    cli.trainer.fit(cli.model, datamodule=cli.datamodule, ckpt_path="last")
     cli.trainer.test(cli.model, datamodule=cli.datamodule)

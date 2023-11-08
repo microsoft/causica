@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from causica.data_generation.samplers.functional_relationships_sampler import LinearRelationshipsSampler
 from causica.data_generation.samplers.noise_dist_sampler import (
     BernoulliNoiseModuleSampler,
+    CategoricalNoiseModuleSampler,
     JointNoiseModuleSampler,
     UnivariateNormalNoiseModuleSampler,
 )
@@ -21,16 +22,24 @@ def test_mixed_type_causal_dataset():
         "x_0": torch.Size([1]),
         "x_1": torch.Size([5]),
         "x_2": torch.Size([1]),
+        "x_3": torch.Size([3]),
+        "x_4": torch.Size([4]),
     }
 
     noise_dist_samplers = {
         "x_0": UnivariateNormalNoiseModuleSampler(std_dist=td.Uniform(low=0.2, high=2.0), dim=1),
         "x_1": UnivariateNormalNoiseModuleSampler(std_dist=td.Uniform(low=0.2, high=2.0), dim=5),
         "x_2": BernoulliNoiseModuleSampler(base_logits_dist=td.Uniform(low=0.2, high=2.0), dim=1),
+        "x_3": BernoulliNoiseModuleSampler(
+            base_logits_dist=td.Uniform(low=0.2 * torch.ones([3]), high=2.0 * torch.ones([3])), dim=3
+        ),
+        "x_4": CategoricalNoiseModuleSampler(
+            base_logits_dist=td.Uniform(low=0.2 * torch.ones([4]), high=2.0 * torch.ones([4])), num_classes=4
+        ),
     }
 
     # Create adjacency distribution, joint noise module sampler, and functional relationships sampler
-    adjacency_dist = ErdosRenyiDAGDistribution(num_nodes=3, probs=torch.tensor(0.2))
+    adjacency_dist = ErdosRenyiDAGDistribution(num_nodes=5, probs=torch.tensor(0.2))
     joint_noise_module_sampler = JointNoiseModuleSampler(noise_dist_samplers)
     initial_linear_coefficient_matrix_shape = sum(shape[0] for shape in shapes_dict.values())
     functional_relationships_sampler = LinearRelationshipsSampler(
@@ -46,13 +55,16 @@ def test_mixed_type_causal_dataset():
     dataset = CausalDataset(sem_sampler, 5, 7, 1, 2)
 
     for sample in dataset:
-        assert sample[0]["x_0"].shape == torch.Size([5, 1])
         assert sample[0].batch_size == torch.Size([5])
-        assert sample[1]["x_0"].shape == torch.Size([5, 1])
         assert sample[1].batch_size == torch.Size([5])
+        assert sample[0]["x_0"].shape == torch.Size([5, 1])
         assert sample[0]["x_1"].shape == torch.Size([5, 5])
+        assert sample[0]["x_2"].shape == torch.Size([5, 1])
+        assert sample[0]["x_3"].shape == torch.Size([5, 3])
+        assert sample[0]["x_4"].shape == torch.Size([5, 4])
+        assert sample[1]["x_0"].shape == torch.Size([5, 1])
         assert sample[1]["x_1"].shape == torch.Size([5, 5])
-        assert sample[2].shape == torch.Size([3, 3])
+        assert sample[2].shape == torch.Size([5, 5])
         assert len(sample[3]) == 1
         assert isinstance(sample[3][0], InterventionData)
         assert all((sample[0]["x_2"].unique()[:, None] == torch.tensor([0.0, 1.0])).any(dim=1))

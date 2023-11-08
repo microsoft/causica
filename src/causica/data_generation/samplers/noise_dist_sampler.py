@@ -8,6 +8,7 @@ from causica.data_generation.samplers.sampler import Sampler
 from causica.distributions import JointNoiseModule
 from causica.distributions.noise import NoiseModule, UnivariateNormalNoiseModule
 from causica.distributions.noise.bernoulli import BernoulliNoiseModule
+from causica.distributions.noise.categorical import CategoricalNoiseModule
 
 
 class NoiseModuleSampler(Sampler[NoiseModule]):
@@ -64,5 +65,21 @@ class BernoulliNoiseModuleSampler(NoiseModuleSampler):
     def sample(
         self,
     ) -> NoiseModule:
-        base_logits = self.base_logits_dist.sample().item()
+        base_logits = self.base_logits_dist.sample()
         return BernoulliNoiseModule(dim=self.dim, init_base_logits=base_logits)
+
+
+class CategoricalNoiseModuleSampler(NoiseModuleSampler):
+    """Sample a CategoricalNoiseModule, with num_classes classes. This does not actually sample but returns the noise."""
+
+    def __init__(self, base_logits_dist: td.Distribution | None, num_classes: int = 2):
+        super().__init__()
+        assert num_classes >= 2
+        self.num_classes = num_classes
+        self.base_logits_dist = base_logits_dist
+
+    def sample(
+        self,
+    ) -> NoiseModule:
+        init_base_logits = self.base_logits_dist.sample() if self.base_logits_dist else None
+        return CategoricalNoiseModule(num_classes=self.num_classes, init_base_logits=init_base_logits)
