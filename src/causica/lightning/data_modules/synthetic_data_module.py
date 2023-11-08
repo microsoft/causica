@@ -1,25 +1,12 @@
-from itertools import product
-from typing import Iterable
+from typing import Callable, Iterable, Union
 
 import pytorch_lightning as pl
 import torch
-import torch.distributions as td
 from tensordict import TensorDict
 from torch.utils.data import ChainDataset, DataLoader, Dataset
 
-from causica.data_generation.samplers.functional_relationships_sampler import (
-    LinearRelationshipsSampler,
-    RFFFunctionalRelationshipsSampler,
-)
-from causica.data_generation.samplers.noise_dist_sampler import (
-    JointNoiseModuleSampler,
-    UnivariateNormalNoiseModuleSampler,
-)
-from causica.data_generation.samplers.sampler import Sampler
 from causica.data_generation.samplers.sem_sampler import SEMSampler
 from causica.data_generation.synthetic_dataset import CausalDataset
-from causica.distributions import ErdosRenyiDAGDistribution
-from causica.functional_relationships.functional_relationships import FunctionalRelationships
 
 
 class SyntheticDataModule(pl.LightningDataModule):
@@ -27,8 +14,7 @@ class SyntheticDataModule(pl.LightningDataModule):
 
     def __init__(
         self,
-        node_nums: list[int],
-        probs: list[float],
+        sem_samplers: Union[list[SEMSampler], Callable[[], list[SEMSampler]]],
         train_batch_size: int,
         test_batch_size: int,
         dataset_size: int,
@@ -38,8 +24,7 @@ class SyntheticDataModule(pl.LightningDataModule):
     ) -> None:
         """
         Args:
-            node_nums: List of number of nodes for generated graphs
-            probs: List of the probabilities of edges in each graph when using Erdos Renyi
+            sem_samplers: Either a list of sem samplers or a function that returns a list of SEM samplers
             train_batch_size: The training batch size to use
             test_batch_size: The testing batch size to use
             dataset_size: The size of dataset to generate
@@ -48,12 +33,10 @@ class SyntheticDataModule(pl.LightningDataModule):
             num_workers: The number of workers to use for the dataloader
         """
         super().__init__()
-        self.node_nums = node_nums
-        self.probs = probs
         self.dataset_size = dataset_size
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
-        self.sems_dict: dict[tuple[int, float, bool], SEMSampler] = {}
+        self.sem_samplers = sem_samplers if isinstance(sem_samplers, list) else sem_samplers()
         self.num_interventions = num_interventions
         self.num_workers = num_workers
         self.num_sems = num_sems
@@ -76,53 +59,6 @@ class SyntheticDataModule(pl.LightningDataModule):
         self.val_dataset: Dataset
 
         self.save_hyperparameters()
-
-    def setup(self, stage: str):
-        for num_nodes, prob, is_linear in product(self.node_nums, self.probs, (True, False)):
-            shapes_dict = {f"x_{i}": torch.Size([1]) for i in range(num_nodes)}
-            noise_dist_samplers = {
-                f"x_{i}": UnivariateNormalNoiseModuleSampler(std_dist=td.Uniform(low=0.2, high=2.0), dim=1)
-                for i in range(num_nodes)
-            }
-            joint_noise_module_sampler = JointNoiseModuleSampler(noise_dist_samplers)
-            adjacency_dist = ErdosRenyiDAGDistribution(num_nodes=num_nodes, probs=torch.tensor(prob))
-
-            dim = sum(shape.numel() for shape in shapes_dict.values())
-
-            functional_relationships_sampler: Sampler[FunctionalRelationships]
-
-            if is_linear:
-                ones_matrix = torch.ones((dim, dim), dtype=torch.float32)
-                functional_relationships_sampler = LinearRelationshipsSampler(
-                    scale_dist=td.Uniform(
-                        low=ones_matrix,
-                        high=3.0 * ones_matrix,
-                    ),
-                    shapes_dict=shapes_dict,
-                )
-            else:
-                num_rf = 100
-                ones_matrix = torch.ones((num_rf, dim), dtype=torch.float32)
-                ones = torch.ones((num_rf,), dtype=torch.float32)
-                functional_relationships_sampler = RFFFunctionalRelationshipsSampler(
-                    rf_dist=td.Uniform(
-                        low=7.0 * ones_matrix,
-                        high=10.0 * ones_matrix,
-                    ),
-                    coeff_dist=td.Uniform(
-                        low=10.0 * ones,
-                        high=20.0 * ones,
-                    ),
-                    shapes_dict=shapes_dict,
-                )
-
-            # store each of the sem samplers in a dictionary
-            self.sems_dict[(num_nodes, prob, is_linear)] = SEMSampler(
-                adjacency_dist=adjacency_dist,
-                joint_noise_module_sampler=joint_noise_module_sampler,
-                functional_relationships_sampler=functional_relationships_sampler,
-            )
-
         self.train_dataset = self._get_dataset(self.train_batch_size)
         self.val_dataset = self._get_dataset(self.test_batch_size)
 
@@ -146,7 +82,7 @@ class SyntheticDataModule(pl.LightningDataModule):
                     num_interventions=self.num_interventions,
                     num_sems=self.num_sems,
                 )
-                for sampler in self.sems_dict.values()
+                for sampler in self.sem_samplers
             ]
         )
 

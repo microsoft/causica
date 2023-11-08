@@ -72,13 +72,22 @@ class BernoulliNoise(td.Bernoulli, Noise):
 class BernoulliNoiseModule(NoiseModule[IndependentNoise[BernoulliNoise]]):
     """Represents a BernoulliNoise distribution with learnable logits."""
 
-    def __init__(self, dim: int, init_base_logits: float = 0.0):
+    def __init__(self, dim: int, init_base_logits: float | torch.Tensor = 0.0):
         """
         Args:
             dim: Number of dimensions (independent Bernouilli's).
         """
         super().__init__()
-        self.base_logits = nn.Parameter(torch.full(torch.Size([dim]), init_base_logits))
+        if isinstance(init_base_logits, torch.Tensor):
+            if init_base_logits.squeeze().ndim == 0:
+                init_base_logits = torch.full(torch.Size([dim]), init_base_logits.item())
+            else:
+                assert init_base_logits.ndim == 1
+                assert init_base_logits.shape[0] == dim
+        else:
+            init_base_logits = torch.full(torch.Size([dim]), init_base_logits)
+
+        self.base_logits = nn.Parameter(init_base_logits)
 
     def forward(self, x: Optional[torch.Tensor] = None) -> IndependentNoise[BernoulliNoise]:
         if x is None:

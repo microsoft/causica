@@ -38,3 +38,18 @@ def test_extreme_sample():
     p = torch.tensor(0.0)
     sample = ErdosRenyiDAGDistribution(num_nodes=n, probs=p).sample()
     torch.testing.assert_close(sample, torch.zeros_like(sample))
+
+
+def test_num_deges():
+    num_edges = 16
+    samples = ErdosRenyiDAGDistribution(num_nodes=8, num_edges=torch.tensor(num_edges)).sample(torch.Size([100]))
+
+    assert samples.shape == torch.Size([100, 8, 8])
+    torch.testing.assert_close(
+        samples.sum(dim=(-2, -1)).mean(), torch.tensor(num_edges, dtype=torch.float32), atol=2.0, rtol=0.1
+    )
+
+    samples = ErdosRenyiDAGDistribution(num_nodes=2, num_edges=torch.tensor(2)).sample(torch.Size([100]))
+
+    assert samples.shape == torch.Size([100, 2, 2])
+    torch.testing.assert_close(samples.sum(dim=(-2, -1)).mean(), torch.tensor(1, dtype=torch.float32))

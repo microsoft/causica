@@ -6,7 +6,7 @@ import torch
 from tensordict import TensorDict
 from torch import nn
 
-from causica.datasets.causica_dataset_format import VariableTypeEnum
+from causica.datasets.variable_types import VariableTypeEnum
 from causica.distributions.noise.bernoulli import BernoulliNoiseModule
 from causica.distributions.noise.categorical import CategoricalNoiseModule
 from causica.distributions.noise.noise import Noise, NoiseModule

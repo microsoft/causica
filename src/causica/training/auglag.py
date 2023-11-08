@@ -46,6 +46,7 @@ class AugLagLRConfig:
         patience_max_rho: Maximum number of iterations to run once rho threshold is reached.
         penalty_tolerance: Tolerance of the dag penalty
         max_inner_steps: Maximum number of inner loop steps to run.
+        force_not_converged: If True, it will not be reported as converged until max_outer_steps is reached.
     """
 
     lr_update_lag: int = 500
@@ -65,6 +66,7 @@ class AugLagLRConfig:
     patience_max_rho: int = 3
     penalty_tolerance: float = 1e-5
     max_inner_steps: int = 3000
+    force_not_converged: bool = False
 
 
 class AugLagLR:
@@ -117,12 +119,18 @@ class AugLagLR:
         )
 
     def _is_outer_converged(self) -> bool:
-        """Check if the outer loop has converged based on the main outer opt counter, if the dag penalty is below a threshold
-        or if the rho parameter has reached a limit"
-
+        """Check if the outer loop has converged.
+        Determined as converged if any of the below conditions are true. If `force_not_converged` is true, only (1) is
+        checked.
+        1. Number of outer steps has reached `max_outer_steps`.
+        2. The constraint has been below the `penalty_tolerance` for more than `patience_penalty_reached` steps.
+        3. Rho has been over `safety_rho` for more than `patience_max_rho` steps.
         Returns:
-            bool: Return True if converged, else False
+            True if outer loop has converged
         """
+        if self.config.force_not_converged:
+            return self.outer_opt_counter >= self.config.max_outer_steps
+
         return (
             self.outer_opt_counter >= self.config.max_outer_steps
             or self.outer_below_penalty_tol >= self.config.patience_penalty_reached

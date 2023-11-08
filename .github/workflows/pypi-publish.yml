@@ -1,11 +1,6 @@
 on:
-  push:
-    branches: [ "main" ]
-    paths-ignore: 
-      - ".github/workflows/*"
-      - ".devcontainer/*"
-      - ".gitignore"
-      - ".pre-commit-config.yaml"
+  release:
+    types: [released]
 jobs:
   pypi-publish:
     name: Upload release to PyPI

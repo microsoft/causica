@@ -62,7 +62,12 @@ class DECIModule(VariableSpecModule):
         expert_graph_container: Optional[ExpertGraphContainer] = None,
         constraint_matrix_path: Optional[str] = None,
         disable_auglag_epochs: Optional[int] = None,
+        test_metric_prefix: Optional[str] = "eval",
     ):
+        """DECI Module
+        Args:
+            test_metric_prefix: Prefix used for logging. The logged metric name will be {test_metric_prefix}/{metric_name}.
+        """
         super().__init__()
         self.auglag_config = auglag_config if auglag_config is not None else AugLagLRConfig()
         self.disable_auglag_epochs = disable_auglag_epochs
@@ -81,6 +86,7 @@ class DECIModule(VariableSpecModule):
         self.is_setup = False
         self.noise_dist = noise_dist
         self.prior_sparsity_lambda = prior_sparsity_lambda
+        self.prefix = test_metric_prefix
 
         self.auglag_loss: AugLagLossCalculator = AugLagLossCalculator(init_alpha=init_alpha, init_rho=init_rho)
 
@@ -224,7 +230,7 @@ class DECIModule(VariableSpecModule):
         # Estimate log prob for each sample using graph samples and report the mean over graphs
         log_prob_test = list_logsumexp([sem.log_prob(batch) for sem in sems]) - np.log(NUM_GRAPH_SAMPLES)
         self.log(
-            "eval/test_LL",
+            f"{self.prefix}/test_LL",
             torch.sum(log_prob_test, dim=-1).item() / dataset_size[0],
             reduce_fx=sum,
             add_dataloader_idx=False,
@@ -238,8 +244,8 @@ class DECIModule(VariableSpecModule):
 
         adj_f1 = list_mean([adjacency_f1(true_adj_matrix, graph) for graph in graph_samples]).item()
         orient_f1 = list_mean([orientation_f1(true_adj_matrix, graph) for graph in graph_samples]).item()
-        self.log("eval/adjacency.f1", adj_f1, add_dataloader_idx=False)
-        self.log("eval/orientation.f1", orient_f1, add_dataloader_idx=False)
+        self.log(f"{self.prefix}/adjacency.f1", adj_f1, add_dataloader_idx=False)
+        self.log(f"{self.prefix}/orientation.f1", orient_f1, add_dataloader_idx=False)
 
     def test_step_interventions(self, interventions: InterventionWithEffects, *args, **kwargs):
         """Evaluate the ATE and Interventional log prob performance of the model"""
@@ -247,14 +253,14 @@ class DECIModule(VariableSpecModule):
         sems_list: list[SEM] = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         interventional_log_prob = eval_intervention_likelihoods(sems_list, interventions)
         self.log(
-            "eval/Interventional_LL",
+            f"{self.prefix}/Interventional_LL",
             torch.mean(interventional_log_prob).item(),
             add_dataloader_idx=False,
         )
 
         mean_ate_rmse = eval_ate_rmse(sems_list, interventions)
         self.log(
-            "eval/ATE_RMSE",
+            f"{self.prefix}/ATE_RMSE",
             list_mean(list(mean_ate_rmse.values())).item(),
             add_dataloader_idx=False,
         )
@@ -265,7 +271,7 @@ class DECIModule(VariableSpecModule):
         sems_list = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         ite_rmse = eval_ite_rmse(sems_list, counterfactuals)
         self.log(
-            "eval/ITE_RMSE",
+            f"{self.prefix}/ITE_RMSE",
             list_mean(list(ite_rmse.values())).item(),
             add_dataloader_idx=False,
         )

@@ -1,4 +1,4 @@
-from typing import Optional
+import math
 
 import numpy as np
 import torch
@@ -15,18 +15,34 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
 
     support = td.constraints.independent(td.constraints.boolean, 1)
 
-    def __init__(self, num_nodes: int, probs: torch.Tensor, validate_args: Optional[bool] = None):
+    def __init__(
+        self,
+        num_nodes: int,
+        probs: torch.Tensor | None = None,
+        num_edges: torch.Tensor | None = None,
+        validate_args: bool | None = None,
+    ):
         """
         Args:
             num_nodes: the number of nodes in the DAGs to be sampled
-            probs: A tensor of the probability that an edge exists between 2 nodes of shape batch_shape
+            probs: A tensor of the probability that an edge exists between 2 nodes of shape batch_shape. If None, calculate p from num_edges
+            num_edges: The number of edges to sample. If None, sample from a binomial distribution with p=probs
         """
         assert num_nodes > 0, "Number of nodes in the graph must be greater than 0"
         super().__init__(num_nodes=num_nodes, validate_args=validate_args)
+
+        if num_edges is not None:
+            if probs is not None:
+                raise ValueError("Only one of probs or num_edges must be provided")
+            # Calculate the probability of an edge existing based on the number of edges and the number of possible edges
+            probs = torch.minimum(num_edges / math.comb(num_nodes, 2), torch.ones_like(num_edges))
+        elif probs is None:
+            raise ValueError("Either probs or num_edges must be provided")
+
         self.probs = probs
         self.num_low_tri = num_nodes * (num_nodes - 1) // 2
-        expanded_probs = probs[..., None].expand(
-            *probs.shape + (self.num_low_tri,)
+        expanded_probs = self.probs[..., None].expand(
+            *self.probs.shape + (self.num_low_tri,)
         )  # shape batch_shape + (num_low_tri)
         self.bern_dist = td.Independent(td.Bernoulli(probs=expanded_probs), reinterpreted_batch_ndims=1)
         self.np_rng = np.random.default_rng()

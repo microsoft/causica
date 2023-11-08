@@ -64,13 +64,21 @@ class CategoricalNoise(OneHotCategorical, Noise):
 class CategoricalNoiseModule(NoiseModule[CategoricalNoise]):
     """Represents a CategoricalNoise distribution with learnable logits."""
 
-    def __init__(self, num_classes: int):
+    def __init__(self, num_classes: int, init_base_logits: torch.Tensor | None = None):
         """
         Args:
             num_classes: Number of classes.
+            init_base_logits: Initial base logits.
         """
         super().__init__()
-        self.base_logits = nn.Parameter(torch.zeros(num_classes))
+
+        if init_base_logits is not None:
+            assert init_base_logits.ndim == 1
+            assert init_base_logits.shape[0] == num_classes
+        else:
+            init_base_logits = torch.zeros(num_classes)
+
+        self.base_logits = nn.Parameter(init_base_logits)
 
     def forward(self, x: Optional[torch.Tensor] = None) -> CategoricalNoise:
         if x is None:
