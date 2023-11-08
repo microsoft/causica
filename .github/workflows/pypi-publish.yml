@@ -1,7 +1,11 @@
 on:
   push:
     branches: [ "main" ]
-    paths: ["**.py"]  # only push new packages when python files have changed
+    paths-ignore: 
+      - ".github/workflows/*"
+      - ".devcontainer/*"
+      - ".gitignore"
+      - ".pre-commit-config.yaml"
 jobs:
   pypi-publish:
     name: Upload release to PyPI
