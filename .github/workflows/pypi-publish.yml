@@ -1,6 +1,13 @@
 on:
   release:
     types: [released]
+permissions:
+  actions: read
+  contents: read
+  deployments: read
+  packages: none
+  pull-requests: write
+  security-events: write
 jobs:
   pypi-publish:
     name: Upload release to PyPI
