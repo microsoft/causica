@@ -64,7 +64,7 @@ class PiecewiseRationalQuadraticTransform(td.Transform):
         Returns:
             input_evaluations and absolute log determinants, a tuple of tensors of shape batch_shape + (input_dim)
         """
-        assert len(inputs.shape) == 2  # TODO(JJ) accept 1d inputs
+        assert len(inputs.shape) > 1  # TODO(JJ) accept 1d inputs
         batch_shape = inputs.shape[:-1]
         # shape batch_shape + (dim, 3 * num_bins - 1)
         expanded_knot_locations = self.knot_locations[None, ...].expand(*batch_shape, -1, -1, -1)

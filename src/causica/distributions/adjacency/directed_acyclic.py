@@ -14,6 +14,7 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
     """
 
     support = td.constraints.independent(td.constraints.boolean, 1)
+    arg_constraints = {"probs": td.constraints.unit_interval}
 
     def __init__(
         self,
@@ -29,7 +30,6 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
             num_edges: The number of edges to sample. If None, sample from a binomial distribution with p=probs
         """
         assert num_nodes > 0, "Number of nodes in the graph must be greater than 0"
-        super().__init__(num_nodes=num_nodes, validate_args=validate_args)
 
         if num_edges is not None:
             if probs is not None:
@@ -40,6 +40,8 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
             raise ValueError("Either probs or num_edges must be provided")
 
         self.probs = probs
+        super().__init__(num_nodes=num_nodes, validate_args=validate_args)
+
         self.num_low_tri = num_nodes * (num_nodes - 1) // 2
         expanded_probs = self.probs[..., None].expand(
             *self.probs.shape + (self.num_low_tri,)

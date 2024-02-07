@@ -4,9 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from pytorch_lightning.trainer import Trainer
 
 from causica.datasets.causica_dataset_format import Variable, VariablesMetadata
 from causica.lightning.data_modules.variable_spec_data import VariableSpecDataModule
+from causica.lightning.modules.deci_module import DECIModule
 
 DF = pd.DataFrame(
     {
@@ -129,7 +131,7 @@ def test_variable_spec_data(tmp_path, normalize):
         json.dump(INTERVENTIONS, f)
 
     if normalize:
-        data_module = VariableSpecDataModule(tmp_path, batch_size=2, normalize=True, exclude_normalization=["x1"])
+        data_module = VariableSpecDataModule(tmp_path, batch_size=2, standardize=True, exclude_standardization=["x1"])
     else:
         data_module = VariableSpecDataModule(tmp_path, batch_size=2)
 
@@ -144,3 +146,63 @@ def test_variable_spec_data(tmp_path, normalize):
         assert torch.all(data_module.dataset_train["x1"].mean(0) != torch.zeros(2))
     else:
         assert torch.all(data_module.dataset_train["x0"].mean(0) != torch.zeros(2))
+
+
+@pytest.mark.parametrize("log_normalize", [True, False])
+def test_save_load_variable_spec_data(tmp_path, log_normalize):
+    """Test saving and loading Variable Spec Data Module from checkpoint"""
+    variable_spec_path = tmp_path / "variables.json"
+    with variable_spec_path.open("w") as f:
+        json.dump(VARIABLES_METADATA.to_dict(encode_json=True), f)
+
+    train_path = tmp_path / "train.csv"
+    with train_path.open("w") as f:
+        DF.to_csv(f, index=False, header=False)
+
+    test_path = tmp_path / "test.csv"
+    with test_path.open("w") as f:
+        DF.to_csv(f, index=False, header=False)
+
+    adjacency_path = tmp_path / "adj_matrix.csv"
+    with adjacency_path.open("w") as f:
+        np.savetxt(f, ADJACENCY.tolist(), delimiter=",")
+
+    intervention_path = tmp_path / "interventions.json"
+    with intervention_path.open("w") as f:
+        json.dump(INTERVENTIONS, f)
+
+    if log_normalize:
+        data_module = VariableSpecDataModule(
+            tmp_path,
+            batch_size=2,
+            standardize=False,
+            log_normalize=["x1"],
+        )
+    else:
+        data_module = VariableSpecDataModule(tmp_path, batch_size=2, standardize=["x0"])
+
+    data_module.prepare_data()
+
+    # Initialize a DECI module
+    deci = DECIModule()
+    # Initialize a trainer and fit the model with datamodule
+    trainer = Trainer(max_epochs=1)
+    trainer.fit(deci, datamodule=data_module)
+    trainer.save_checkpoint(tmp_path / "deci.ckpt")
+    # Load checkpoint
+    load_data_module = VariableSpecDataModule.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+        checkpoint_path=tmp_path / "deci.ckpt"
+    )
+    # Note that if state_dict and load_state_dict are not set for DataModule, only hyperparameters will be loaded and
+    # only init function is called. So calling prepare_data() is needed to re-fit the normalizer.
+    load_data_module.prepare_data()
+    if log_normalize:
+        # Compare log normalizer offset
+        true_offsets = list(data_module.normalizer.buffers())
+        load_offsets = list(load_data_module.normalizer.buffers())
+        torch.testing.assert_close(true_offsets, load_offsets)
+    else:
+        # Compare standardizer loc
+        true_param = list(data_module.normalizer.buffers())
+        load_param = list(load_data_module.normalizer.buffers())
+        torch.testing.assert_close(true_param, load_param)

@@ -1,4 +1,5 @@
 """Lightning Classes for loading data in the default format used in Azure Blob Storage."""
+import functools
 import os
 from collections import defaultdict
 from functools import partial
@@ -9,7 +10,13 @@ from tensordict import TensorDict, TensorDictBase
 from torch.utils.data import DataLoader
 
 from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, VariablesMetadata, load_data
-from causica.datasets.normalization import FitNormalizerType, Normalizer, fit_standardizer
+from causica.datasets.normalization import (
+    FitNormalizerType,
+    Normalizer,
+    chain_normalizers,
+    fit_log_normalizer,
+    fit_standardizer,
+)
 from causica.datasets.tensordict_utils import identity, tensordict_shapes
 from causica.datasets.variable_types import VariableTypeEnum
 from causica.distributions.transforms import JointTransformModule
@@ -35,9 +42,12 @@ class VariableSpecDataModule(DECIDataModule):
         root_path: str,
         batch_size: int = 128,
         dataset_name: str = "anonymous_dataset",
-        normalize: Union[bool, Iterable[str]] = False,
-        exclude_normalization: Iterable[str] = tuple(),
-        fit_normalizer: FitNormalizerType = fit_standardizer,
+        standardize: Union[bool, Iterable[str]] = False,
+        log_normalize: Union[bool, Iterable[str]] = False,
+        exclude_standardization: Iterable[str] = tuple(),
+        exclude_log_normalization: Iterable[str] = tuple(),
+        default_offset: float = 1.0,
+        log_normalize_min_margin: float = 0.0,
         load_counterfactual: bool = False,
         load_interventional: bool = False,
         load_validation: bool = False,
@@ -48,8 +58,20 @@ class VariableSpecDataModule(DECIDataModule):
             root_path: Path to directory with causal data
             batch_size: Batch size for training and test data.
             dataset_name: A name for the dataset
-            normalize: Whether to normalize the data or list of variables to normalize
-            exclude_normalization: Which variables to exclude from normalization
+            standardize: Whether to standardize the data or not. It is applied to all continuous variables if True, or applied to those
+                variables specifed in normalize except those specified in
+                `exclude_normalization`. The standardizer is column-wise: (x_i-mean_i)/std_i for ith column.
+                If both standardize and log_normalize are True, log_normalize will be applied first.
+            log_normalize: Whether to log normalize the data. If True, it will log normalize all continuous variables.
+                Or it will be applied to those variables specified in log_normalize except those specified in `exclude_log_normalization`.
+                The operation is
+                log(x_i - min_i * (min_i < 0) + min_i + (max_i - min_i) * min_margin + offset). Also see the reference
+                in datasets.normalization.LogTransform. If both standardize and log_normalize are True,
+                log_normalize will be applied first.
+            exclude_standardization: Which variables to exclude from standardization
+            exclude_log_normalization: Which variables to exclude from log normalization
+            default_offset: Default offset for log normalization.
+            log_normalize_min_margin: Minimum margin for log normalization.
             load_counterfactual: Whether counterfactual data should be loaded
             load_interventional: Whether interventional data should be loaded
             load_validation: Whether to load the validation dataset
@@ -61,18 +83,23 @@ class VariableSpecDataModule(DECIDataModule):
         self.root_path = root_path
         self.batch_size = batch_size
         self.storage_options = storage_options
-        self.normalize = normalize
-        self.exclude_normalization = set(exclude_normalization)
+        self.standardize = standardize
+        self.log_normalize = log_normalize
+        self.exclude_standardization = set(exclude_standardization)
+        self.exclude_log_normalization = set(exclude_log_normalization)
         self.load_counterfactual = load_counterfactual
         self.load_interventional = load_interventional
         self.load_validation = load_validation
+        self.default_offset = default_offset
+        self.log_normalize_min_margin = log_normalize_min_margin
 
-        self.fit_normalizer = fit_normalizer
+        self.normalize_data = standardize or log_normalize
         self.normalizer: Optional[Normalizer] = None
         self._dataset_train: TensorDictBase
         self._dataset_test: TensorDictBase
         self._dataset_valid: TensorDictBase
         self.true_adj: torch.Tensor
+        self.save_hyperparameters()
 
     @property
     def variable_shapes(self) -> dict[str, torch.Size]:
@@ -101,6 +128,48 @@ class VariableSpecDataModule(DECIDataModule):
     @property
     def dataset_name(self) -> str:
         return self._dataset_name
+
+    def create_normalizer(self, normalization_variables: set[str]) -> FitNormalizerType:
+        """Return a fitting method for a sequence of normalizers.
+
+        This function is used to return a fitting method for a sequence of normalizers (e.g. log_normalize and standardize).
+        The variables for each normalizer is normalization_variables - exclude_normalizer, where normalization_variables is
+        a large set of variables (e.g. all continuous variables) and exclude_normalizer is a set of variables that should be excluded specific
+        to this normalizer (e.g. exclude_log_normalization and exclude_standardization).
+
+        Args:
+            normalization_variables: A larger set of variables to be normalized. It should at least contain the union of variables from all normalizers.
+
+        Returns:
+            Return a fitting method for a sequence of normalizers.
+        """
+        preprocessing: list[FitNormalizerType] = []
+        # Setup different separate normalizers
+        if self.log_normalize:
+            log_normalize_keys = normalization_variables - self.exclude_log_normalization
+            if isinstance(self.log_normalize, Iterable):
+                log_normalize_keys = set(self.log_normalize) - self.exclude_log_normalization
+
+            fit_log_normalizer_with_key = functools.partial(
+                fit_log_normalizer,
+                default_offset=self.default_offset,
+                min_margin=self.log_normalize_min_margin,
+                keys=log_normalize_keys,
+            )
+            preprocessing.append(fit_log_normalizer_with_key)
+
+        if self.standardize:
+            standardize_keys = normalization_variables - self.exclude_standardization
+            if isinstance(self.standardize, Iterable):
+                standardize_keys = set(self.standardize) - self.exclude_standardization
+
+            fit_standardizer_with_key = functools.partial(
+                fit_standardizer,
+                keys=standardize_keys,
+            )
+            preprocessing.append(fit_standardizer_with_key)
+
+        return chain_normalizers(*preprocessing)
 
     def _load_all_data(self, variables_metadata: VariablesMetadata):
         _load_data = partial(
@@ -160,17 +229,12 @@ class VariableSpecDataModule(DECIDataModule):
         for variable in variables_metadata.variables:
             self._column_names[variable.group_name].append(variable.name)
 
-        if self.normalize:
-            if isinstance(self.normalize, Iterable):
-                normalization_variables = set(self.normalize) - self.exclude_normalization
-            else:
-                normalization_variables = {
-                    k
-                    for k, v in self._variable_types.items()
-                    if v == VariableTypeEnum.CONTINUOUS and k not in self.exclude_normalization
-                }
-
-            self.normalizer = self.fit_normalizer(self._dataset_train.select(*normalization_variables))
+        if self.normalize_data:
+            # Only applied to continuous variables
+            normalization_variables = {k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS}
+            self.normalizer = self.create_normalizer(normalization_variables)(
+                self._dataset_train.select(*normalization_variables)
+            )
             self._dataset_train = self.normalizer(self._dataset_train)
             self._dataset_test = self.normalizer(self._dataset_test)
             if self.load_validation:
@@ -215,7 +279,7 @@ class CSuiteDataModule(VariableSpecDataModule):
         dataset_path: str = CAUSICA_DATASETS_PATH,
         load_counterfactual: bool = False,
         load_interventional: bool = False,
-        normalize: Union[bool, Iterable[str]] = False,
+        standardize: Union[bool, Iterable[str]] = False,
     ):
         super().__init__(
             root_path=os.path.join(dataset_path, dataset_name),
@@ -223,7 +287,7 @@ class CSuiteDataModule(VariableSpecDataModule):
             dataset_name=dataset_name,
             load_counterfactual=load_counterfactual,
             load_interventional=load_interventional,
-            normalize=normalize,
+            standardize=standardize,
         )
 
 

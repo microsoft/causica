@@ -1,6 +1,6 @@
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Callable, Iterable, Optional, TypeVar
+from typing import Any, Callable, Iterable, Mapping, Optional, TypeVar
 
 import torch
 from tensordict import TensorDict
@@ -24,7 +24,7 @@ class JointNoise(Noise[TensorDict]):
 
     arg_constraints = {}
 
-    def __init__(self, independent_noise_dists: dict[str, Noise[torch.Tensor]]):
+    def __init__(self, independent_noise_dists: Mapping[str, Noise[torch.Tensor]]):
         shapes = defaultdict[torch.Size, list[str]](list)
         for name, noise_dist in independent_noise_dists.items():
             shapes[noise_dist.batch_shape].append(name)
@@ -33,7 +33,7 @@ class JointNoise(Noise[TensorDict]):
 
         batch_shape = next(iter(shapes)) if shapes else torch.Size()
         super().__init__(batch_shape=batch_shape, event_shape=torch.Size([len(independent_noise_dists)]))
-        self._independent_noise_dists = independent_noise_dists
+        self._independent_noise_dists = dict(independent_noise_dists)
 
     def _apply_individually(self, value: TensorDict, func: Callable[[Noise, torch.Tensor], torch.Tensor]) -> TensorDict:
         return TensorDict(
@@ -147,7 +147,7 @@ class JointNoiseModule(NoiseModule[JointNoise]):
     Each noise module is used independently on their corresponding key of sample TensorDicts.
     """
 
-    def __init__(self, independent_noise_modules: dict[str, NoiseModule[Noise[torch.Tensor]]]):
+    def __init__(self, independent_noise_modules: Mapping[str, NoiseModule[Noise[torch.Tensor]]]):
         """
         Args:
             independent_noise_modules: Noise modules to be applied keywise to input TensorDicts. Could e.g. be created

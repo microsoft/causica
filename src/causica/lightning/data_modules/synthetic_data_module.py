@@ -1,26 +1,50 @@
-from typing import Callable, Iterable, Union
+import inspect
+from collections import defaultdict
+from typing import Callable
 
 import pytorch_lightning as pl
-import torch
-from tensordict import TensorDict
-from torch.utils.data import ChainDataset, DataLoader, Dataset
+from torch.utils.data import ConcatDataset, DataLoader
 
 from causica.data_generation.samplers.sem_sampler import SEMSampler
-from causica.data_generation.synthetic_dataset import CausalDataset
+from causica.datasets.samplers import SubsetBatchSampler
+from causica.datasets.synthetic_dataset import CausalMetaset
 
 
 class SyntheticDataModule(pl.LightningDataModule):
-    """A datamodule to produce datasets and their underlying causal graphs and interventions."""
+    """A datamodule to produce datasets and their underlying causal graphs and interventions.
+
+    This datamodule samples synthetic datasets from a list of SEM samplers and returns batches of CausalDataset objects.
+    This means, that the underlying tensors are not yet stacked and will need to be processed by the module using the
+    data. Currently, the data module uses the `SubsetBatchSampler` to sample batches from the different sampled SEMs,
+    ensuring that each batch is sampled from SEMs with the same number of nodes. This is important, as it allows for
+    easy batching of the data, as the tensors are already of the same shape.
+
+    Note:
+        This data module does currently not support DDP, because the batch sampler does not simply consume indices
+        from a a regular sampler. In future, DDP support will be added by ensuring that each compute node is individually
+        seeded to generate different data samples and adapting the batch sampler to ensure that an epoch has the same length
+        regardless of the number of compute nodes.
+
+        This data module might generate duplicate data samples, when num_workers > 1. This is because the individual
+        workers are not individually seeded.
+    """
 
     def __init__(
         self,
-        sem_samplers: Union[list[SEMSampler], Callable[[], list[SEMSampler]]],
+        sem_samplers: list[SEMSampler] | Callable[[], list[SEMSampler]],
         train_batch_size: int,
         test_batch_size: int,
         dataset_size: int,
         num_interventions: int = 0,
+        num_intervention_samples: int = 100,
         num_sems: int = 0,
+        batches_per_metaset: int = 1,
+        sample_interventions: bool = False,
+        sample_counterfactuals: bool = False,
         num_workers: int = 0,
+        pin_memory: bool = True,
+        persistent_workers: bool = True,
+        prefetch_factor: int = 16,
     ) -> None:
         """
         Args:
@@ -30,39 +54,52 @@ class SyntheticDataModule(pl.LightningDataModule):
             dataset_size: The size of dataset to generate
             num_interventions: The number of interventions to generate (0 for no interventions)
             num_sems: The number of SEMs to generate (0 for infinite SEMs)
+            batches_per_metaset: The number of batches per epoch per dataset
+            sample_interventions: Whether to sample interventions
+            sample_counterfactuals: Whether to sample counterfactuals
             num_workers: The number of workers to use for the dataloader
+            pin_memory: Whether to pin memory for the dataloader
+            persistent_workers: Whether to use persistent workers for the dataloader
+            prefetch_factor: The prefetch factor to use for the dataloader
         """
         super().__init__()
         self.dataset_size = dataset_size
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
-        self.sem_samplers = sem_samplers if isinstance(sem_samplers, list) else sem_samplers()
+        if callable(sem_samplers) and inspect.isclass(type(sem_samplers)):
+            self.sem_samplers_hparams = vars(sem_samplers)
+        elif callable(sem_samplers):
+            self.sem_samplers_hparams = {k: v.default for k, v in inspect.signature(sem_samplers).parameters.items()}
+        else:
+            self.sem_samplers_hparams = {}
+
+        self.sem_sampler_list = sem_samplers if isinstance(sem_samplers, list) else sem_samplers()
         self.num_interventions = num_interventions
+        self.num_intervention_samples = num_intervention_samples
         self.num_workers = num_workers
         self.num_sems = num_sems
+        self.batches_per_metaset = batches_per_metaset
+        self.sample_interventions = sample_interventions
+        self.sample_counterfactuals = sample_counterfactuals
 
-        self.dataloader_args = {
-            "collate_fn": _tuple_collate_fn,
-            "num_workers": self.num_workers,
-            "worker_init_fn": worker_init_fn if self.num_workers > 0 else None,
-            "persistent_workers": self.num_workers > 0,
-            "pin_memory": True,
-            "prefetch_factor": 16 if self.num_workers > 0 else None,
-        }
+        self.num_workers = num_workers
+        self.persistent_workers = persistent_workers
+        self.pin_memory = pin_memory
+        self.prefetch_factor = prefetch_factor
 
-        self.val_dataloader_args = {
-            "collate_fn": _tuple_collate_fn,
-            "pin_memory": True,
-        }
-
-        self.train_dataset: Dataset
-        self.val_dataset: Dataset
-
-        self.save_hyperparameters()
+        self.save_hyperparameters(logger=False)
         self.train_dataset = self._get_dataset(self.train_batch_size)
         self.val_dataset = self._get_dataset(self.test_batch_size)
 
-    def _get_dataset(self, dataset_size: int) -> Dataset:
+    def prepare_data(self) -> None:
+        # Log hyperparameters if trainer is available
+        if self.trainer and self.trainer.logger:
+            hyperparams = {k: v for k, v in self.hparams.items() if k != "sem_samplers"}
+            hyperparams["sem_samplers_hparams"] = self.sem_samplers_hparams
+
+            self.trainer.logger.log_hyperparams(hyperparams)
+
+    def _get_dataset(self, dataset_size: int) -> ConcatDataset:
         """Builds causal datasets given the SEM samplers.
 
         Args:
@@ -71,66 +108,45 @@ class SyntheticDataModule(pl.LightningDataModule):
         Returns:
             dataset object
         """
-        dataset_fraction = self.num_workers if self.num_workers > 0 else 1
-        factor = self.num_sems if self.num_sems > 0 else 1
-        dataset = ChainDataset(
-            [
-                CausalDataset(
+        cur_dataset_size = dataset_size * self.batches_per_metaset
+        if self.num_sems > 0 and cur_dataset_size < self.num_sems:
+            raise ValueError(
+                f"Dataset size must be at least the number of SEMs. Got {cur_dataset_size} < {self.num_sems}"
+            )
+        datasets_by_nodes = defaultdict(list)
+        for sampler in self.sem_sampler_list:
+            datasets_by_nodes[sampler.adjacency_dist.num_nodes].append(
+                CausalMetaset(
                     sampler,
                     sample_dataset_size=self.dataset_size,
-                    dataset_size=dataset_size * factor * 16 // dataset_fraction,
+                    dataset_size=cur_dataset_size,
                     num_interventions=self.num_interventions,
+                    num_intervention_samples=self.num_intervention_samples,
                     num_sems=self.num_sems,
+                    sample_interventions=self.sample_interventions,
+                    sample_counterfactuals=self.sample_counterfactuals,
                 )
-                for sampler in self.sem_samplers
-            ]
-        )
+            )
 
-        return dataset
+        return ConcatDataset(ConcatDataset(ds) for ds in datasets_by_nodes.values())
 
     def train_dataloader(self):
-        return DataLoader(dataset=self.train_dataset, batch_size=self.train_batch_size, **self.dataloader_args)
+        batch_sampler = SubsetBatchSampler([len(d) for d in self.train_dataset.datasets], self.train_batch_size)
+        return DataLoader(
+            dataset=self.train_dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=lambda x: x,
+            num_workers=self.num_workers,
+            persistent_workers=self.persistent_workers,
+            pin_memory=self.pin_memory,
+            prefetch_factor=self.prefetch_factor,
+        )
 
     def val_dataloader(self):
-        datasets = [self.train_dataset, self.val_dataset] if self.num_sems > 0 else [self.val_dataset]
+        batch_sampler = SubsetBatchSampler([len(d) for d in self.val_dataset.datasets], self.test_batch_size)
+        return DataLoader(
+            dataset=self.val_dataset, batch_sampler=batch_sampler, collate_fn=lambda x: x, pin_memory=self.pin_memory
+        )
 
-        return [
-            DataLoader(dataset=dataset, batch_size=self.test_batch_size, **self.val_dataloader_args)
-            for dataset in datasets
-        ]
-
-
-def worker_init_fn(_):
-    worker_info = torch.utils.data.get_worker_info()
-
-    dataset = worker_info.dataset  # the dataset copy in this worker process
-    if isinstance(dataset, ChainDataset):
-        # Split chained datasets across multiple workers.
-        dataset.datasets = [dataset.datasets[worker_info.id % len(dataset.datasets)]]
-
-
-def _tuple_collate_fn(data: Iterable[tuple[torch.Tensor, ...]]) -> tuple[torch.Tensor, ...]:
-    """Collates a list of tuples of tensors into a tuple of tensors.
-
-    The dataloader returns batch_shape tuples of (X, y, ...), so we stack them all
-    to get tensors of shapes [batch_shape, *X.shape] and [batch_shape, *y.shape] and so on.
-
-    Args:
-        data: list of tuple of tensors to collate. Assumes the dimensions of the tensors in the tuples match.
-
-    Returns:
-        collated data
-    """
-
-    def _nested_stack(x: list):
-        """Stacks a tuple of tensors, returns None if an element is None, or returns lists of lists."""
-        if isinstance(x[0], (torch.Tensor, TensorDict)):
-            return torch.stack(x, dim=0)
-        if isinstance(x[0], list):
-            return list(x)
-        if x[0] is None:
-            return None
-
-        raise ValueError(f"Unexpected type {type(x[0])}")
-
-    return tuple(_nested_stack(list(x)) for x in zip(*data))
+    def test_dataloader(self):
+        return self.val_dataloader()

@@ -71,38 +71,36 @@ class DECIEmbedNN(nn.Module):
         the ouptut is then masked to correspond to one variable
 
         Args:
-            samples: Batched inputs, size batch_size_x + (concatenated_shape).
-            graphs: Adjacency matrix, size batch_size_g + (num_nodes, num_nodes).
+            samples: tensor of shape batch_shape_x + batch_shape_f + batch_shape_g + [n_cols]
+            graph: tensor of shape batch_shape_g + [n_nodes, n_nodes]
         Returns:
-            A tensor of shape batch_shape_x + batch_shape_g + (concatenated_shape)
+            tensor of shape batch_shape_x + batch_shape_f + batch_shape_g + [n_cols]
         """
-        batch_shape_x = samples.shape[:-1]
+        batch_shape_samples = samples.shape[:-1]
         batch_shape_g = graphs.shape[:-2]
+        if len(batch_shape_g) > 0 and batch_shape_samples[-len(batch_shape_g) :] != batch_shape_g:
+            raise ValueError(
+                f"Batch shape of samples and graph must match but got {batch_shape_samples} and {batch_shape_g}"
+            )
 
-        # Shape batch_shape_x + (num_nodes, concatenated_shape)
+        # Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, concatenated_shape)
         masked_samples = torch.einsum("...i,ji->...ji", samples, self.group_mask)
-        # Shape batch_shape_x + (num_nodes, embedding_size)
-        expanded_embed = self.embeddings.expand(*batch_shape_x, -1, -1)
+        # Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, embedding_size)
+        expanded_embed = self.embeddings.expand(*batch_shape_samples, -1, -1)
 
-        # l(uⱼ, xⱼ) Shape batch_shape_x + (num_nodes, embedding_size + concatenated_shape)
+        # l(uⱼ, xⱼ) Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, embedding_size + concatenated_shape)
         encoded_samples = self.l(
             torch.cat([masked_samples, expanded_embed], dim=-1)  # (concatenate xⱼ and embeddings uⱼ)
-        )  # Shape batch_shape_x + (num_nodes, out_dim_g)
+        )  # Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, out_dim_g)
 
-        target_shape = batch_shape_x + batch_shape_g + encoded_samples.shape[-2:]
-        view_shape = batch_shape_x + (1,) * len(batch_shape_g) + encoded_samples.shape[-2:]
-        # Shape batch_shape_x + batch_shape_g + (num_nodes, out_dim_g)
-        encoded_samples_broad = encoded_samples.view(view_shape).expand(target_shape)
         # Aggregate sum and generate input for f (concatenate X_aggr and embeddings)
-        # Σⱼ Wᵢⱼ Gⱼᵢ l(uⱼ, xⱼ) Shape batch_shape_x + batch_shape_g + (num_nodes, out_dim_g)
-        encoded_samples_aggr = torch.einsum("...jk,...jl->...lk", encoded_samples_broad, self.w * graphs)
+        # Σⱼ Wᵢⱼ Gⱼᵢ l(uⱼ, xⱼ) Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, out_dim_g)
+        encoded_samples_aggr = torch.einsum("...jk,...jl->...lk", encoded_samples, self.w * graphs)
 
-        # expand dimensions of expanded_embed batch_shape_x + batch_shape_g + (num_nodes, embedding_size)
-        expanded_embed_broad = expanded_embed.view(view_shape).expand(target_shape)
-        # ζ(uᵢ, Σⱼ Wᵢⱼ Gⱼᵢ l(uⱼ, xⱼ)) Shape batch_shape_x + batch_shape_g + (num_nodes, concatenated_shape)
-        decoded_samples = self.zeta(torch.cat([encoded_samples_aggr, expanded_embed_broad], dim=-1))
+        # ζ(uᵢ, Σⱼ Wᵢⱼ Gⱼᵢ l(uⱼ, xⱼ)) Shape batch_shape_x + batch_shape_f + batch_shape_g + (num_nodes, concatenated_shape)
+        decoded_samples = self.zeta(torch.cat([encoded_samples_aggr, expanded_embed], dim=-1))
 
-        # Mask and aggregate Shape batch_shape_x + batch_shape_g + (concatenated_shape)
+        # Mask and aggregate Shape batch_shape_x + batch_shape_f + batch_shape_g + (concatenated_shape)
         return torch.einsum("...ij,ij->...j", decoded_samples, self.group_mask)
 
 

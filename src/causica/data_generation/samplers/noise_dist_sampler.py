@@ -9,6 +9,8 @@ from causica.distributions import JointNoiseModule
 from causica.distributions.noise import NoiseModule, UnivariateNormalNoiseModule
 from causica.distributions.noise.bernoulli import BernoulliNoiseModule
 from causica.distributions.noise.categorical import CategoricalNoiseModule
+from causica.distributions.noise.univariate_cauchy import UnivariateCauchyNoiseModule
+from causica.distributions.noise.univariate_laplace import UnivariateLaplaceNoiseModule
 
 
 class NoiseModuleSampler(Sampler[NoiseModule]):
@@ -52,6 +54,36 @@ class UnivariateNormalNoiseModuleSampler(NoiseModuleSampler):
         self,
     ):
         return UnivariateNormalNoiseModule(dim=self.dim, init_log_scale=torch.log(self.std_dist.sample()).item())
+
+
+class UnivariateLaplaceNoiseModuleSampler(NoiseModuleSampler):
+    """Sample a UnivariateLaplaceNoiseModule, with standard deviation given by a distribution."""
+
+    def __init__(self, std_dist: td.Distribution, dim: int = 1):
+        super().__init__()
+        self.std_dist = std_dist
+        self.dim = dim
+
+    def sample(
+        self,
+    ):
+        log_std_sampled = torch.log(self.std_dist.sample())
+        return UnivariateLaplaceNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
+
+
+class UnivariateCauchyNoiseModuleSampler(NoiseModuleSampler):
+    """Sample a UnivariateLaplaceNoiseModule, with standard deviation given by a distribution."""
+
+    def __init__(self, std_dist: td.Distribution, dim: int = 1):
+        super().__init__()
+        self.std_dist = std_dist
+        self.dim = dim
+
+    def sample(
+        self,
+    ):
+        log_std_sampled = torch.log(self.std_dist.sample())
+        return UnivariateCauchyNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
 
 
 class BernoulliNoiseModuleSampler(NoiseModuleSampler):

@@ -32,7 +32,7 @@ jobs:
     - name: Install dependencies
       run: |
         poetry env use 3.10
-        poetry install
+        poetry install --extras seaborn
       if: steps.cache.outputs.cache-hit != 'true'
 
     - name: Verify pre-commit checks

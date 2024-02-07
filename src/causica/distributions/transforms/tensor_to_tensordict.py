@@ -57,6 +57,10 @@ class TensorToTensorDictTransform(TypedTransform[torch.Tensor, TensorDictBase]):
             stacked_key_masks[i, slice_] = 1.0
         return stacked_key_masks
 
+    def order_td(self, td: TensorDictBase) -> TensorDictBase:
+        """Order the keys of a TensorDict to match the order of the shapes."""
+        return td.select(*self.shapes.keys(), inplace=True)
+
 
 def shapes_to_slices(shapes: dict[str, torch.Size]) -> tuple[int, dict[str, slice]]:
     """
