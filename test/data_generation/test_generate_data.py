@@ -177,7 +177,7 @@ def test_generate_sem_variable_groups(five_variable_two_dim_metadata: VariablesM
 
 
 def test_generate_sem_numpy(five_node_graph: torch.Tensor, five_variable_one_dim_metadata: VariablesMetadata):
-    tmpfile = tempfile.mktemp() + ".npy"
+    tmpfile = tempfile.mkstemp(suffix=".npy")[1]
 
     np.save(tmpfile, five_node_graph.numpy())
     assert os.path.exists(tmpfile)
