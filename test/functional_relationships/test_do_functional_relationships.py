@@ -21,7 +21,7 @@ def test_do_linear_graph_stack(two_variable_dict):
     interventions = TensorDict({"x2": torch.tensor([1.42, 0.42])}, batch_size=torch.Size())
     func = LinearFunctionalRelationships(two_variable_dict, coef_matrix)
     do_func, do_graph = create_do_functional_relationship(interventions, func, graph)
-    array = torch.linspace(-2, 2, 100)[..., None]
+    array = torch.linspace(-2, 2, 100)[..., None, None].expand(-1, 2, 1)
     prediction = do_func.forward(TensorDict({"x1": array}, batch_size=array.shape[:-1]), graphs=do_graph)
     assert prediction["x1"].shape == (100, 2, 1)
     assert torch.allclose(prediction["x1"][:, 0, :], torch.tensor(0.0))
@@ -39,9 +39,9 @@ def test_linear_3d_graph_do_1_node(three_variable_dict):
     do_func, do_graph = create_do_functional_relationship(interventions, func, graph)
     test_val = torch.rand(100, 3)
 
-    prediction = do_func.forward(
-        TensorDict({"x2": test_val[:, 0:2], "x3": test_val[:, 2:]}, batch_size=test_val.shape[:-1]), graphs=do_graph
-    )
+    input_noise = TensorDict({"x2": test_val[:, 0:2], "x3": test_val[:, 2:]}, batch_size=test_val.shape[:-1])
+    prediction = do_func.forward(input_noise, graphs=do_graph)
+    assert "x1" not in input_noise.keys()
     assert prediction["x2"].shape == (100, 2)
     assert prediction["x3"].shape == (100, 1)
 
@@ -62,7 +62,9 @@ def test_linear_3d_graph_do_2_nodes(three_variable_dict):
 
     test_val = torch.linspace(-2, 2, 100).unsqueeze(-1)
 
-    prediction = do_func(TensorDict({"x3": test_val}, batch_size=test_val.shape[:-1]), do_graph)
+    input_noise = TensorDict({"x3": test_val}, batch_size=test_val.shape[:-1])
+    prediction = do_func(input_noise, do_graph)
+    assert "x1" not in input_noise.keys() and "x2" not in input_noise.keys()
     assert prediction["x3"].shape == (100, 1)
 
     true_pred = torch.matmul(torch.tensor([1.42, 0.42, -0.42, 0.402]).unsqueeze(-2), coef_matrix[:4, 4:]).squeeze()

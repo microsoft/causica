@@ -9,8 +9,15 @@ from tensordict import TensorDict
 class SEM(dist.Distribution, abc.ABC):
     """A structural equation model (SEM).
 
-    An SEM defines the causal relationships amongst a given set of nodes. This class provides methods to sample data
+    A SEM defines the causal relationships amongst a given set of nodes. This class provides methods to sample data
     from the observational and interventional distributions of the SEM.
+
+    A SEMs have a batch shape: `batch_shape_f + batch_shape_g`
+
+    In general, a SEM has a batch shape corresponding to `functions shape + graphs shape` specified as `batch_shape_f`
+    and `batch_shape_g` respectively. This allows for batched processing of different functions (e.g. interventions on
+    the same nodes) on different graphs. Samples and noise are broadcast to include this shape before calling the
+    functional relationships.
     """
 
     arg_constraints: dict = {}
@@ -20,14 +27,17 @@ class SEM(dist.Distribution, abc.ABC):
         graph: torch.Tensor,
         node_names: Sequence[str],
         event_shape: torch.Size = torch.Size(),
-        batch_shape: torch.Size = torch.Size(),
+        batch_shape: torch.Size | None = None,
     ) -> None:
         """
         Args:
             graph: Adjacency Matrix for the underlying SEM
             node_names: The names of each node in the graph
-            event_shape: Shape of a sample from the distribution
-            batch_shape: Batch shape of the distribution
+            event_shape: Shape of a sample from the distribution. This is currently not used because the output shape is
+                determined by the dictionary holding the samples.
+            batch_shape: Batch shape of the distribution. This decomposes into the batch shape of the functions and the
+                batch shape of the graphs: batch_shape = batch_shape_f + batch_shape_g. If None, the batch shape of the
+                graph is used.
         """
         self._graph = graph
         self.node_names = node_names
@@ -36,6 +46,10 @@ class SEM(dist.Distribution, abc.ABC):
             len(node_names),
             len(node_names),
         ), "Graph adjacency matrix must have shape [num_nodes, num_nodes] (excluding batch dimensions)"
+        self.batch_shape_g = torch.Size(graph.shape[:-2])
+        if batch_shape is None:
+            batch_shape = self.batch_shape_g
+        self.batch_shape_f = batch_shape[: -len(self.batch_shape_g)]
         super().__init__(event_shape=event_shape, batch_shape=batch_shape)
 
     @property
@@ -51,7 +65,43 @@ class SEM(dist.Distribution, abc.ABC):
 
     @abc.abstractmethod
     def do(self, interventions: TensorDict) -> "SEM":
-        """Return the SEM associated with the interventions"""
+        """Return the SEM associated with the interventions.
+
+        If the interventions have a batch shape, then the returned functions will have the same batch shape to batch
+        the computation across interventions.
+        """
+
+    def condition(self, conditioning: TensorDict) -> "SEM":
+        """Return a SEM with conditioned variables.
+
+        This implementation of conditioning relies on the do operator and only supports conditioning on a conditioning
+        set with no unconditioned parents. This is a limitation of the current implementation and will be lifted in the
+        future. For example in a SEM with the following graph: A -> B -> C and A -> C, conditioning on B is not
+        supported yet. However, conditioning on A or {A, B} is supported.
+
+        Args:
+            conditioning: A dictionary of conditioning values for the nodes in the SEM. There must not be any nodes
+                outside of the conditioning set that are parents of the conditioning set.
+
+        Return:
+            The SEM conditioned on the conditioning set
+        """
+        conditioning_node_names = set(conditioning.keys())
+        unconditioned_node_names = [
+            name for name in self.node_names if name not in conditioning_node_names
+        ]  # keep order
+
+        unconditioned_idx = [self.node_names.index(name) for name in unconditioned_node_names]
+
+        for i, name in enumerate(self.node_names):
+            if name in conditioning_node_names and self.graph[unconditioned_idx, i].sum() > 0:
+                parents = set(node for idx, node in enumerate(self.node_names) if self.graph[idx, i] > 0)
+                unconditioned_parents = parents - conditioning_node_names
+                raise NotImplementedError(
+                    f"Conditioning on a node with unconditioned parents is not supported yet. Tried conditioning on {name} with parents {unconditioned_parents}"
+                )
+
+        return self.do(conditioning)
 
     @abc.abstractmethod
     def noise_to_sample(self, noise: TensorDict) -> TensorDict:

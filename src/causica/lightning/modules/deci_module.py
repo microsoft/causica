@@ -1,4 +1,5 @@
 import logging
+from dataclasses import asdict, is_dataclass
 from typing import Any, Mapping, Optional, Sequence, Union
 
 import fsspec
@@ -20,7 +21,6 @@ from causica.distributions import (
     create_noise_modules,
 )
 from causica.distributions.noise.joint import ContinuousNoiseDist
-from causica.fsspec_helpers import get_storage_options_for_path
 from causica.functional_relationships import DECIEmbedFunctionalRelationships
 from causica.graph.dag_constraint import calculate_dagness
 from causica.graph.evaluation_metrics import adjacency_f1, orientation_f1
@@ -66,7 +66,26 @@ class DECIModule(VariableSpecModule):
     ):
         """DECI Module
         Args:
-            test_metric_prefix: Prefix used for logging. The logged metric name will be {test_metric_prefix}/{metric_name}.
+            noise_dist: The type of the noise distribution to use. The noise type will be used for each variable in the
+                SEM.
+            embedding_size: The size of the embedding used in the functional relationships. This specifies the
+                flexibility of the trainable embeddings for each node.
+            out_dim_g: The size of the output of the functional relationships encoder g.
+            num_layers_g: The number of layers in the functional relationships encoder g.
+            num_layers_zeta: The number of layers in the decoder zeta.
+            init_alpha: The initial value of the augmented lagrangian parameter alpha. The augmented lagrangian is
+                \rho h(G)^2 + \alpha h(G), where h(G) is the DAG constraint.
+            init_rho: The initial value of the augmented lagrangian parameter rho.
+            prior_sparsity_lambda: The sparsity coefficient in the graph prior. Larger value prefers sparser graphs.
+            gumbel_temp: The temperature used in the gumbel softmax relaxation.
+            auglag_config: The configuration for the augmented lagrangian scheduler.
+            expert_graph_container: The expert graph container to use. It contains the prior knowledge graph that
+                the inferred graph should be close to.
+            constraint_matrix_path: The path to the constraint matrix. The constraint matrix specifies the edge
+                directions that are prohibited or required.
+            disable_auglag_epochs: The number of epochs to disable the augmented lagrangian for.
+            test_metric_prefix: Prefix used for logging. The logged metric name will be
+                {test_metric_prefix}/{metric_name}.
         """
         super().__init__()
         self.auglag_config = auglag_config if auglag_config is not None else AugLagLRConfig()
@@ -86,7 +105,7 @@ class DECIModule(VariableSpecModule):
         self.is_setup = False
         self.noise_dist = noise_dist
         self.prior_sparsity_lambda = prior_sparsity_lambda
-        self.prefix = test_metric_prefix
+        self.test_metric_prefix = test_metric_prefix
 
         self.auglag_loss: AugLagLossCalculator = AugLagLossCalculator(init_alpha=init_alpha, init_rho=init_rho)
 
@@ -94,14 +113,25 @@ class DECIModule(VariableSpecModule):
         self.num_samples = None
         self.variable_group_shapes = None
         self.variable_types = None
-        self.save_hyperparameters()
+
+        self.save_hyperparameters(logger=False)
+
+    def on_train_start(self) -> None:
+        super().on_train_start()
+
+        # Log a version of hparams that are easier to handle for loggers, by converting dataclasses to dicts
+        if self.logger is not None:
+            hyperparams = {
+                k: asdict(v) if is_dataclass(v) else v
+                for k, v in self.hparams.items()
+                if not isinstance(v, torch.nn.Module)
+            }
+            self.logger.log_hyperparams(hyperparams)
 
     def prepare_data(self) -> None:
         """Set the constraint matrix (if necessary)."""
         if self.constraint_matrix_path:
-            storage_options = get_storage_options_for_path(self.constraint_matrix_path)
-
-            with fsspec.open(self.constraint_matrix_path, **storage_options) as f:
+            with fsspec.open(self.constraint_matrix_path) as f:
                 if self.constraint_matrix_path.endswith("npy"):
                     constraint_matrix = np.load(f)
                 else:
@@ -230,7 +260,7 @@ class DECIModule(VariableSpecModule):
         # Estimate log prob for each sample using graph samples and report the mean over graphs
         log_prob_test = list_logsumexp([sem.log_prob(batch) for sem in sems]) - np.log(NUM_GRAPH_SAMPLES)
         self.log(
-            f"{self.prefix}/test_LL",
+            f"{self.test_metric_prefix}/test_LL",
             torch.sum(log_prob_test, dim=-1).item() / dataset_size[0],
             reduce_fx=sum,
             add_dataloader_idx=False,
@@ -244,8 +274,8 @@ class DECIModule(VariableSpecModule):
 
         adj_f1 = list_mean([adjacency_f1(true_adj_matrix, graph) for graph in graph_samples]).item()
         orient_f1 = list_mean([orientation_f1(true_adj_matrix, graph) for graph in graph_samples]).item()
-        self.log(f"{self.prefix}/adjacency.f1", adj_f1, add_dataloader_idx=False)
-        self.log(f"{self.prefix}/orientation.f1", orient_f1, add_dataloader_idx=False)
+        self.log(f"{self.test_metric_prefix}/adjacency.f1", adj_f1, add_dataloader_idx=False)
+        self.log(f"{self.test_metric_prefix}/orientation.f1", orient_f1, add_dataloader_idx=False)
 
     def test_step_interventions(self, interventions: InterventionWithEffects, *args, **kwargs):
         """Evaluate the ATE and Interventional log prob performance of the model"""
@@ -253,14 +283,14 @@ class DECIModule(VariableSpecModule):
         sems_list: list[SEM] = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         interventional_log_prob = eval_intervention_likelihoods(sems_list, interventions)
         self.log(
-            f"{self.prefix}/Interventional_LL",
+            f"{self.test_metric_prefix}/Interventional_LL",
             torch.mean(interventional_log_prob).item(),
             add_dataloader_idx=False,
         )
 
         mean_ate_rmse = eval_ate_rmse(sems_list, interventions)
         self.log(
-            f"{self.prefix}/ATE_RMSE",
+            f"{self.test_metric_prefix}/ATE_RMSE",
             list_mean(list(mean_ate_rmse.values())).item(),
             add_dataloader_idx=False,
         )
@@ -271,7 +301,7 @@ class DECIModule(VariableSpecModule):
         sems_list = list(self.sem_module().sample(torch.Size([NUM_ATE_ITE_SEMS])))
         ite_rmse = eval_ite_rmse(sems_list, counterfactuals)
         self.log(
-            f"{self.prefix}/ITE_RMSE",
+            f"{self.test_metric_prefix}/ITE_RMSE",
             list_mean(list(ite_rmse.values())).item(),
             add_dataloader_idx=False,
         )

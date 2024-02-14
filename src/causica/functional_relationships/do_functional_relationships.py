@@ -7,19 +7,27 @@ from causica.functional_relationships.functional_relationships import Functional
 class DoFunctionalRelationships(FunctionalRelationships):
     """
     A `FunctionalRelationship` that one can "do", i.e. condition nodes and cut the links to their parents.
+
+    The do intervention can be a single intervention (i.e. empty batch shape) or a batch of interventions. The batch
+    shape of the do tensordict batches the interventions and the original functional relationship is broadcast across
+    the batch shape of the do tensordict.
     """
 
     def __init__(self, func: FunctionalRelationships, do: TensorDict, submatrix: torch.Tensor) -> None:
         """
         Args:
             func: The unintervened functional relationships
-            do: the nodes on which to intervene
+            do: the nodes on which to intervene. If the do has a batch shape, then the functional relationship will be
+                broadcast to that batch shape.
             submatrix: the submatrix that the unintervened nodes represent in the larger graph
         """
-        assert all(val.ndim == 1 for val in do.values()), "Intervention is only supported for 1 vector per variable"
+        if not all(val.ndim >= 1 for val in do.values()):
+            raise ValueError("Intervention is only supported for at least vector valued interventions")
+        if len({val.ndim for val in do.values()}) > 1:
+            raise ValueError("Intervention must have the same number of dimensions for all variables")
 
         new_shapes = {key: shape for key, shape in func.shapes.items() if key not in do.keys()}
-        super().__init__(new_shapes)
+        super().__init__(new_shapes, batch_shape=do.batch_size + func.batch_shape)
 
         self.func = func
         self.do = do  # dict of key to vectors
@@ -48,14 +56,25 @@ class DoFunctionalRelationships(FunctionalRelationships):
 
     def forward(self, samples: TensorDict, graphs: torch.Tensor) -> TensorDict:
         """
+        Run forward on the underlying functional relationship with the intervened nodes filled in.
+
+        The samples are expected to have a batch shape in order: samples, functions, graphs.
+
         Args:
-            samples: Batched inputs, size batch_size_x + (concatenated_shape).
+            samples: Batched inputs, size batch_size_x + batch_size_f + batch_shape_g + (concatenated_shape).
             graphs: Weighted adjacency matrix, size batch_size_g + (n, n)
         Returns:
-            A tensor of shape batch_shape_x + batch_shape_g + (concatenated_shape)
+            A tensor of shape batch_shape_x + batch_size_f + batch_shape_g + (concatenated_shape)
         """
         # add the expanded intervention values to the samples
-        samples_with_do = samples.update(self.do.expand(*samples.batch_size))
+        batch_shape_g = graphs.shape[:-2]
+
+        do = self.do
+        if do.batch_dims > 0:
+            do = do[(...,) + (None,) * len(batch_shape_g)]
+        expanded_do = do.expand(*samples.batch_size)
+
+        samples_with_do = samples.clone(False).update(expanded_do)
 
         # create the full graphs
         graphs = self.pad_intervened_graphs(graphs)
@@ -94,6 +113,15 @@ def create_do_functional_relationship(
     Return:
         A tuple with the intervened functional relationship and the intervened graph
     """
+    if func.batch_shape == torch.Size((1,)):
+        func.batch_shape = torch.Size()
+    if interventions.ndim > 1:
+        raise ValueError("Interventions must be at most a single batch of interventions")
+    if graph.ndim > 3:
+        raise ValueError("Graph must be at most a single batch of graphs")
+    if interventions.batch_dims > 0 and len(func.batch_shape) > 0:
+        raise ValueError("Cannot intervene on a batch of interventions and a batch of functional relationships")
+
     node_names = list(func.shapes.keys())
     do_nodes_mask = torch.zeros(len(node_names), dtype=torch.bool)
     for i, name in enumerate(node_names):
@@ -102,4 +130,13 @@ def create_do_functional_relationship(
 
     do_graph = graph[..., ~do_nodes_mask, :][..., :, ~do_nodes_mask]
     submatrix = graph[..., do_nodes_mask, :][..., :, ~do_nodes_mask]
+
+    # Expanding graph if interventions or functions are batched
+    if do_graph.ndim == 2 and interventions.batch_dims > 0 or len(func.batch_shape) > 0:
+        do_graph = do_graph.unsqueeze(0)
+        submatrix = submatrix.unsqueeze(0)
+    # Expanding interventions if graph is batched and functions are not
+    if do_graph.ndim == 3 and interventions.batch_dims == 0 and len(func.batch_shape) == 0:
+        interventions = interventions.unsqueeze(0)
+
     return DoFunctionalRelationships(func, interventions, submatrix), do_graph

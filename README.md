@@ -62,6 +62,16 @@ The Spline model uses a flexible spline flow that is learnt from the data. This 
 
 To use DECI to learn the functional relationships, remove the variational distribution terms from the loss and replace the sample with the known graph.
 
+**Example using the CLI**
+
+An example of how to run a training job with the noise distribution specified in the config `src/causica/config/lightning/default_gaussian.yaml` and the data configuration specified in `src/causica/config/lightning/default_data.yaml`:
+
+```
+python -m causica.lightning.main \
+    --config src/causica/config/lightning/default_gaussian.yaml --data src/causica/config/lightning/default_data.yaml
+```
+
+
 ## Further extensions
 
 For now, we have removed Rhino and DDECI from the codebase but they will be added back. You can still access the previously released versions [here](https://github.com/microsoft/causica/releases/tag/v0.0.0).

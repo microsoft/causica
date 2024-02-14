@@ -152,7 +152,7 @@ def _load_interventions(json_object: dict[str, Any], metadata: VariablesMetadata
         intervention_nodes = [intervened_column_to_group_name[idx] for idx in environment["intervention_idxs"]]
 
         intervention = _to_intervention(
-            np.array(environment["test_data"]),
+            np.array(environment["test_data"], dtype=float),
             intervention_nodes=intervention_nodes,
             condition_nodes=condition_nodes,
             variables_list=metadata.variables,
@@ -161,7 +161,7 @@ def _load_interventions(json_object: dict[str, Any], metadata: VariablesMetadata
         if (reference_data := environment["reference_data"]) is None:
             raise RuntimeError()
         reference = _to_intervention(
-            np.array(reference_data),
+            np.array(reference_data, dtype=float),
             intervention_nodes=intervention_nodes,
             condition_nodes=condition_nodes,
             variables_list=metadata.variables,
@@ -199,7 +199,7 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: VariablesMetada
         factual_data = np.array(environment["conditioning_values"])
         intervention_nodes = [intervened_column_to_group_name[idx] for idx in environment["intervention_idxs"]]
         intervention = _to_counterfactual(
-            np.array(environment["test_data"]),
+            np.array(environment["test_data"], dtype=float),
             factual_data,
             intervention_nodes=intervention_nodes,
             variables_list=metadata.variables,
@@ -209,7 +209,7 @@ def _load_counterfactuals(json_object: dict[str, Any], metadata: VariablesMetada
             reference = None
         else:
             reference = _to_counterfactual(
-                np.array(reference_data),
+                np.array(reference_data, dtype=float),
                 factual_data,
                 intervention_nodes=intervention_nodes,
                 variables_list=metadata.variables,

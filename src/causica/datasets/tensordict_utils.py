@@ -70,10 +70,15 @@ def expand_tensordict_groups(tensordict: TensorDictBase, variable_groups: dict[s
     Returns:
         A new TensorDict with the expanded variables
     """
-    assert set(variable_groups.keys()) == set(tensordict.keys()), "The variable groups must match the TensorDict"
-    assert all(
-        (len(v) == tensordict.get(k).shape[-1]) or (len(v) == 1) for k, v in variable_groups.items()
-    ), "The variable groups must match the shape of the TensorDict"
+    if variable_groups.keys() < set(tensordict.keys()):
+        missing_keys = set(tensordict.keys()) - variable_groups.keys()
+        raise ValueError(f"The provided variable_groups are missing the following keys in {missing_keys}.")
+    if not all(
+        (len(variable_groups[k]) == v.shape[-1])  # Matching shape
+        or (len(variable_groups[k]) == 1)  # Or, allow any shape for unitary variable groups to allow categoricals
+        for k, v in tensordict.items()
+    ):
+        raise ValueError("All variables in tensordict must have the same number of elements as the variable groups.")
 
     return TensorDict(
         {
@@ -158,3 +163,67 @@ def unbound_items(td: TensorDictBase, dim: int = -1) -> Iterable[tuple[tuple[str
     # TensorDict.items incorrectly assumes that the keys are always strings, even though they are tuples for nested
     # leaves. Since we're unbinding above, they will always be tuples below. Ignore this perceived type error.
     return unbound.items(include_nested=True, leaves_only=True)  # type: ignore
+
+
+def expand_td_with_batch_shape(td: TensorDict, batch_shape: torch.Size) -> TensorDict:
+    """Expand the tensordict with a given batch shape.
+
+    This is used for making tensors in tensordict broadcastable to a given batch shape.
+
+    We assume that a given tensordict fulfils one of the following conditions:
+    1) The tensordict has no batch shape (i.e. `td.batch_dims == 0`) and will be broadcasted to (1, *batch shape) if
+        the given batch shape is not empty
+    2) The tensordict has a batch shape with a single batch dim (i.e. `td.batch_dims == 1`) and will be broadcasted to
+        (-1, *batch shape) if the given batch shape is not empty. -1 indicates no change.
+    3) The tensordict has a batch shape with three batch dims (i.e. `td.batch_dims == 3`) and will be broadcasted to
+        (-1, *batch shape) if the given batch shape is not empty. -1 indicates no change. If the last dimensions of the
+        tensordict batch shape are not broadcastable to the given batch shape, an error will be raised, i.e. if the
+        shape is (2, 3, 1) and the given batch shape is (3, 5) the output shape will be (2, 3, 5) but (2, 3, 4) and
+        (3, 5) will raise an error.
+
+    This is useful for working with SEMs with batch dims. For example, if you have a SEM with batch shape [2, 3] and
+    you want to process a batch of data with batch shape [5] you can use this function to expand the data to have batch
+    shape [5, 2, 3] and then apply the SEM to the expanded data. The convention is that the first batch dim is the
+    sample dim and the remaining batch dims are the SEM batch dims corresponding to the functional relationships and
+    the graph, respectively.
+
+    Args:
+        td: a tensordict with batch shape `()` (empty) or `sample_shape` or `sample_shape + batch_shape`
+        batch_shape: the batch shape that might be added to the tensordict. The batch shape must have length 0 or 2. A
+            length of 0 indicates that the tensordict should not be expanded. A length of 2 indicates that the
+            tensordict should be expanded to have 3 batch dims.
+
+    Returns:
+        A tensordict with batch shape `sample_shape + batch_shape` with 0, 1, or 3 batch dims.
+    """
+    if td.batch_dims not in (0, 1, 3):
+        raise ValueError(
+            f"Cannot expand a tensordict with batch dims {td.batch_dims}. Only batch dims of 0, 1, and 3 are supported."
+        )
+
+    batch_dims = len(batch_shape)
+    # Return the tensordict if the SEM does not have any batch shape
+    if batch_dims == 0:
+        return td
+    if batch_dims != 2:
+        raise ValueError(
+            f"Cannot expand a tensordict to batch shape {batch_shape}. Only batch dims of 0 and 2 are supported."
+        )
+
+    # Expand the tensordict if the tensordict has no batch shape
+    match td.batch_dims:
+        case 0:
+            # Expand the tensordict from no batch dims to 3 batch dims
+            new_shape = (1,) + batch_shape
+        case 1:
+            # Expand the tensordict from 1 batch dim to 3 batch dims
+            td = td[:, None, None]
+            new_shape = (td.batch_size[0],) + batch_shape
+        case 3:
+            # Check that the tensordict batch shape matches the given shape or is broadcastable to the given shape
+            if any((td.batch_size[dim] != batch_shape[dim - 1] and td.batch_size[dim] != 1) for dim in (1, 2)):
+                raise ValueError(
+                    f"Cannot expand a tensordict with batch shape {td.batch_size} to batch shape {batch_shape}."
+                )
+            new_shape = (td.batch_size[0],) + batch_shape
+    return td.expand(*new_shape)

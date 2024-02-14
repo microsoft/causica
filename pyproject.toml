@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "causica"
-version = "0.3.6"
+version = "0.4.0"
 description = ""
 readme = "README.md"
-authors = []
+authors = ["Microsoft Research - Causica"]
 packages = [
     { include = "causica", from = "src" }
 ]
@@ -18,11 +18,15 @@ numpy = "^1.22.4"
 pandas = "^1.4.2"
 python = "~3.10"
 pytorch-lightning = {version = "^2.1.0", extras= ["extra"]}
+seaborn = {version = "^0.12.2", optional = true}
 tensorboard = "^2.9.0"
 tensordict = "^0.1.0"
 torch = "2.0.0"
 torchmetrics = "^1.0.3"
 types-PyYAML = "^6.0.12.2"
+
+[tool.poetry.extras]
+seaborn = ["seaborn"]
 
 [tool.poetry.dev-dependencies]
 black = {version="^22.6.0", extras=["jupyter"]}
@@ -34,6 +38,13 @@ pre-commit = "^2.19.0"
 pylint = "^2.14.4"
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
+sphinx = "^7.2.6"
+sphinx-autoapi = "^3.0.0"
+numpydoc = "^1.6.0"
+sphinx-rtd-theme = "^2.0.0"
+sphinx-immaterial = "^0.11.9"
+myst-parser = "^2.0.0"
+myst-nb = "^1.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

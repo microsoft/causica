@@ -3,7 +3,6 @@ import numpy as np
 import torch
 
 from causica.distributions.adjacency import ExpertGraphContainer
-from causica.fsspec_helpers import get_storage_options_for_path
 
 
 class LoadedExpertGraphContainer(ExpertGraphContainer):
@@ -17,8 +16,7 @@ class LoadedExpertGraphContainer(ExpertGraphContainer):
             confidence: See ExpertGraphContainer
             scale: See ExpertGraphContainer
         """
-        storage_options = get_storage_options_for_path(graph_path)
-        with fsspec.open(graph_path, **storage_options) as f:
+        with fsspec.open(graph_path) as f:
             if graph_path.endswith(".csv"):
                 prior_adj_matrix = np.loadtxt(f, delimiter=",")
             else:

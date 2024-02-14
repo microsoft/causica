@@ -341,7 +341,7 @@ def save_dataset(
     save_data(savedir, adjacency, DataEnum.TRUE_ADJACENCY, variables, **storage_kwargs)
     save_data(savedir, train_data, DataEnum.TRAIN, variables, **storage_kwargs)
     save_data(savedir, test_data, DataEnum.TEST, variables, **storage_kwargs)
-    if val_data:
+    if val_data is not None:
         save_data(savedir, val_data, DataEnum.VALIDATION, variables, **storage_kwargs)
     if interventions:
         save_data(savedir, interventions, DataEnum.INTERVENTIONS, variables, **storage_kwargs)
