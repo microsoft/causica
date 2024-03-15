@@ -9,22 +9,19 @@ RUN conda install anaconda-clean  && \
     rm -rf /opt/miniconda
 
 RUN apt-get update && \
-    apt-get install -y graphviz-dev python3-dev && \
+    apt-get install -y graphviz-dev python3-dev python3-pip && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/* && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     python -c 'import sys; assert sys.version_info[:2] == (3, 10)'
 
-
-# Install Poetry to default env (conda)
 ENV POETRY_CACHE_DIR="/root/.cache/pypoetry" \
-    POETRY_HOME="/root/.local/share/pypoetry" \
     POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_VIRTUALENVS_IN_PROJECT=false \
-    POETRY_VERSION=1.7.1
-ENV PATH="$PATH:$POETRY_HOME/bin"
-RUN curl -sSL https://install.python-poetry.org | python3 -
+    POETRY_VERSION=1.7.1 
+RUN python -m pip install -U pip setuptools wheel
+RUN python -m pip install poetry==$POETRY_VERSION
 
 # Install dependencies separately to allow dependency caching
 # Note: Temporarily create dummy content to allow installing the dev dependencies.

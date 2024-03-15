@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 import torch
 from pytorch_lightning.trainer import Trainer
+from tensordict import TensorDict
 
 from causica.datasets.causica_dataset_format import Variable, VariablesMetadata
 from causica.lightning.data_modules.variable_spec_data import VariableSpecDataModule
@@ -131,9 +132,11 @@ def test_variable_spec_data(tmp_path, normalize):
         json.dump(INTERVENTIONS, f)
 
     if normalize:
-        data_module = VariableSpecDataModule(tmp_path, batch_size=2, standardize=True, exclude_standardization=["x1"])
+        data_module = VariableSpecDataModule(
+            tmp_path, batch_size=2, standardize=True, exclude_standardization=["x1"], load_interventional=True
+        )
     else:
-        data_module = VariableSpecDataModule(tmp_path, batch_size=2)
+        data_module = VariableSpecDataModule(tmp_path, batch_size=2, load_interventional=True)
 
     data_module.prepare_data()
 
@@ -146,6 +149,16 @@ def test_variable_spec_data(tmp_path, normalize):
         assert torch.all(data_module.dataset_train["x1"].mean(0) != torch.zeros(2))
     else:
         assert torch.all(data_module.dataset_train["x0"].mean(0) != torch.zeros(2))
+
+    intervention_a, intervention_b, _ = data_module.interventions[0]
+    intervention_td = TensorDict({"x0": torch.ones(2)}, batch_size=[])
+    samples_td = TensorDict({"x0": torch.ones(5, 2), "x1": torch.zeros(5, 2)}, batch_size=(5,))
+
+    torch.testing.assert_close(intervention_a.intervention_values, data_module.normalizer(intervention_td))
+    torch.testing.assert_close(intervention_b.intervention_values, data_module.normalizer(intervention_td))
+
+    torch.testing.assert_close(intervention_a.intervention_data, data_module.normalizer(samples_td))
+    torch.testing.assert_close(intervention_b.intervention_data, data_module.normalizer(samples_td))
 
 
 @pytest.mark.parametrize("log_normalize", [True, False])

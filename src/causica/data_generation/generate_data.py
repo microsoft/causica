@@ -52,6 +52,7 @@ def get_graph_distribution(
     graph_type: str,
     num_nodes: int | None = None,
     num_edges: int | None = None,
+    probs: float | None = None,
     graph_file: str | None = None,
     **storage_options,
 ) -> AdjacencyDistribution:
@@ -61,6 +62,7 @@ def get_graph_distribution(
         graph_type: The type of graph to generate. Either "er" for Erdos-Renyi or "numpy" for a numpy graph.
         num_nodes: The number of nodes in the graph. Not used if using a numpy graph.
         num_edges: The number of edges in the graph. Not used if using a numpy graph.
+        probs: A float of the probability that an edge exists between 2 nodes
         graph_file: The path to a graph file if using a numpy graph.
         storage_options: The storage options to pass to fsspec.
 
@@ -68,9 +70,15 @@ def get_graph_distribution(
         The adjacency matrix of the graph.
     """
     if graph_type == "er":
-        if num_edges is None or num_nodes is None:
-            raise ValueError("Must provide num_edges and num_nodes for Erdos-Renyi graph.")
-        return ErdosRenyiDAGDistribution(num_nodes=num_nodes, num_edges=torch.tensor(num_edges, dtype=torch.float32))
+        if num_nodes is None:
+            raise ValueError("Must provide num_nodes for Erdos-Renyi graph.")
+        num_edges_tensor = None
+        if num_edges is not None:
+            num_edges_tensor = torch.tensor(num_edges, dtype=torch.float32)
+        probs_tensor = None
+        if probs is not None:
+            probs_tensor = torch.tensor(probs)
+        return ErdosRenyiDAGDistribution(num_nodes=num_nodes, num_edges=num_edges_tensor, probs=probs_tensor)
     if graph_type == "numpy":
         if graph_file is None:
             raise ValueError("Must provide graph_file for numpy graph.")
@@ -230,8 +238,7 @@ def sample_treatment_and_effect(
             descendants = nx.descendants(nx_graph, treatment)
             effects = np.random.choice(list(descendants), size=num_effects, replace=False)
             return treatment, effects.tolist()
-        else:
-            warnings.warn("No edges found. Defaulting to random sampling.")
+        warnings.warn("No edges found. Defaulting to random sampling.")
 
     samples = np.random.choice(node_names, size=1 + num_effects, replace=False)
     treatment = samples[0]
@@ -422,6 +429,7 @@ def generate_sem_sampler(
     num_edges: int | None,
     graph_type: str,
     function_type: str,
+    probs: float | None = None,
     storage_options: dict[str, str] | None = None,
 ) -> SEMSampler:
     """Generates a SEM according to specifications
@@ -431,6 +439,7 @@ def generate_sem_sampler(
         num_nodes: The number of nodes in the graph. Not used if using a numpy graph.
         graph_file: The path to a graph file if using a numpy graph. This can be any fsspec compatible url.
         num_edges: The number of edges in the graph. Not used if using a numpy graph.
+        probs: A float of the probability that an edge exists between 2 nodes
         graph_type: The type of graph to generate. Either "er" for Erdos-Renyi or "numpy" for a numpy graph.
         function_type: The type of function to generate. Either "linear" or "rff".
         storage_options: The storage options to pass to fsspec.
@@ -446,7 +455,7 @@ def generate_sem_sampler(
     num_nodes = len(size_dict)
 
     print("Generating SEM sampler...")
-    adjacency_dist = get_graph_distribution(graph_type, num_nodes, num_edges, graph_file, **storage_options)
+    adjacency_dist = get_graph_distribution(graph_type, num_nodes, num_edges, probs, graph_file, **storage_options)
     functional_relationships_sampler = get_functional_relationship_sampler(function_type, shapes_dict)
     joint_noise_dist_sampler = get_noise_module_sampler(variables)
 
@@ -516,6 +525,7 @@ def generate_save_plot_synthetic_data(
     num_nodes: int | None = None,
     graph_file: str | None = None,
     num_edges: int | None = None,
+    probs: float | None = None,
     overwrite: bool = False,
     plot_kind: str = "",
     plot_num: int = 10,
@@ -538,6 +548,7 @@ def generate_save_plot_synthetic_data(
         num_nodes: The number of nodes in the graph. Not used if using a numpy graph.
         graph_file: The path to a graph file if using a numpy graph. This can be any fsspec compatible url.
         num_edges: The number of edges in the graph. Not used if using a numpy graph.
+        probs: A float of the probability that an edge exists between 2 nodes
         overwrite: Whether to overwrite the dataset if it already exists.
         plot_kind: Type of joint plot to create.
         plot_num: Maximum number of variables to plot.
@@ -551,6 +562,7 @@ def generate_save_plot_synthetic_data(
         variables=variables,
         graph_file=graph_file,
         num_edges=num_edges,
+        probs=probs,
         graph_type=graph_type,
         function_type=function_type,
         storage_options=storage_options,
@@ -592,6 +604,7 @@ def main() -> None:
     parser.add_argument("--num-interventions", "-i", type=int, default=1)
     parser.add_argument("--num-variables", "-nv", type=int)
     parser.add_argument("--num-edges", "-ne", type=int)
+    parser.add_argument("--edge-probabilities", "-p", type=float)
     parser.add_argument(
         "--graph-type",
         "-g",
@@ -642,6 +655,7 @@ def main() -> None:
         num_nodes=args.num_variables,
         graph_file=args.graph_file,
         num_edges=args.num_edges,
+        probs=args.edge_probabilities,
         graph_type=args.graph_type,
         datadir=args.datadir,
         function_type=args.function_type,

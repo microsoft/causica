@@ -42,7 +42,7 @@ class AuglagLRCallback(pl.Callback):
         else:
             self.scheduler.enable(auglag_loss)
 
-        is_converged = self.scheduler.step(
+        is_converged, convergence_reasons = self.scheduler.step(
             optimizer=optimizer,
             loss=auglag_loss,
             loss_value=outputs["loss"],
@@ -51,6 +51,20 @@ class AuglagLRCallback(pl.Callback):
 
         # Notify trainer to stop if the auglag algorithm has converged
         if is_converged:
+            pl_module.log(
+                "auglag_inner_convergence_reason",
+                convergence_reasons.inner_convergence_reason.value,
+                on_epoch=True,
+                rank_zero_only=True,
+                prog_bar=False,
+            )
+            pl_module.log(
+                "auglag_outer_convergence_reason",
+                convergence_reasons.outer_convergence_reason.value,
+                on_epoch=True,
+                rank_zero_only=True,
+                prog_bar=False,
+            )
             trainer.should_stop = True
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
