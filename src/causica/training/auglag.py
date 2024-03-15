@@ -1,10 +1,56 @@
-from collections import deque
+from collections import deque, namedtuple
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from enum import Enum
+from typing import Any, Optional, Tuple, Union
 
 import torch
 from dataclasses_json import dataclass_json
 from torch.optim import Optimizer
+
+
+class AugLagOuterConvergenceReason(Enum):
+    """
+    Enum class to represent different reasons for outer loop convergence in AugLag learning rate scheduler.
+
+    Attributes:
+        MAX_OUTER_STEPS_REACHED: Number of outer steps has reached `max_outer_steps`.
+        PENALTY_TOLERANCE_REACHED: The constraint has been below the `penalty_tolerance` for more than `patience_penalty_reached` steps.
+        PATIENCE_MAX_RHO_REACHED: Rho has been over `safety_rho` for more than `patience_max_rho` steps.
+        NOT_CONVERGED: Not converged.
+    """
+
+    MAX_OUTER_STEPS_REACHED = 1
+
+    PENALTY_TOLERANCE_REACHED = 2
+
+    PATIENCE_MAX_RHO_REACHED = 3
+
+    NOT_CONVERGED = 4
+
+
+class AugLagInnerConvergenceReason(Enum):
+    """
+    Enum class to represent different reasons for inner loop convergence in AugLag learning rate scheduler.
+
+    Attributes:
+        MAX_INNER_STEPS_REACHED: Number of inner steps has reached `max_inner_steps`.
+        NUM_LR_UPDATES_REACHED: Number of learning rate updates has reached `max_lr_down`.
+        EARLY_STOPPING_REACHED: The current step counter is equal to or greater than the sum of the last best step and the inner early stopping patience.
+        NOT_CONVERGED: Not converged.
+    """
+
+    MAX_INNER_STEPS_REACHED = 1
+
+    NUM_LR_UPDATES_REACHED = 2
+
+    EARLY_STOPPING_REACHED = 3
+
+    NOT_CONVERGED = 4
+
+
+AugLagConvergenceReasonTuple = namedtuple(
+    "AugLagConvergenceReasonTuple", ["inner_convergence_reason", "outer_convergence_reason"]
+)
 
 
 class AugLagLossCalculator(torch.nn.Module):
@@ -106,19 +152,31 @@ class AugLagLR:
         self.loss_tracker_sum: Optional[torch.Tensor] = None
         self.step_counter = 0
 
-    def _is_inner_converged(self) -> bool:
+    def _is_inner_converged(self) -> Tuple[bool, AugLagInnerConvergenceReason]:
         """Check if the inner optimization loop has converged, based on maximum number of inner steps, number of lr updates.
 
         Returns:
             bool: Return True if converged, else False.
+            reason: Reason for convergence.
         """
-        return (
-            self.step_counter >= self.config.max_inner_steps
-            or self.num_lr_updates >= self.config.max_lr_down
-            or self.last_best_step + self.config.inner_early_stopping_patience <= self.step_counter
-        )
+        # Define a dictionary mapping conditions to convergence reasons
+        conditions = {
+            AugLagInnerConvergenceReason.MAX_INNER_STEPS_REACHED: self.step_counter >= self.config.max_inner_steps,
+            AugLagInnerConvergenceReason.NUM_LR_UPDATES_REACHED: self.num_lr_updates >= self.config.max_lr_down,
+            AugLagInnerConvergenceReason.EARLY_STOPPING_REACHED: self.last_best_step
+            + self.config.inner_early_stopping_patience
+            <= self.step_counter,
+        }
 
-    def _is_outer_converged(self) -> bool:
+        # Check each condition
+        for reason, condition in conditions.items():
+            if condition:
+                return True, reason
+
+        # If none of the conditions were met, return False and NOT_CONVERGED
+        return False, AugLagInnerConvergenceReason.NOT_CONVERGED
+
+    def _is_outer_converged(self) -> Tuple[bool, AugLagOuterConvergenceReason]:
         """Check if the outer loop has converged.
         Determined as converged if any of the below conditions are true. If `force_not_converged` is true, only (1) is
         checked.
@@ -126,16 +184,29 @@ class AugLagLR:
         2. The constraint has been below the `penalty_tolerance` for more than `patience_penalty_reached` steps.
         3. Rho has been over `safety_rho` for more than `patience_max_rho` steps.
         Returns:
-            True if outer loop has converged
+            bool: Return True if outer loop is converged, else False.
+            reason: Reason for convergence.
         """
-        if self.config.force_not_converged:
-            return self.outer_opt_counter >= self.config.max_outer_steps
+        conditions = {
+            AugLagOuterConvergenceReason.MAX_OUTER_STEPS_REACHED: self.outer_opt_counter >= self.config.max_outer_steps,
+            AugLagOuterConvergenceReason.PENALTY_TOLERANCE_REACHED: self.outer_below_penalty_tol
+            >= self.config.patience_penalty_reached,
+            AugLagOuterConvergenceReason.PATIENCE_MAX_RHO_REACHED: self.outer_max_rho >= self.config.patience_max_rho,
+        }
 
-        return (
-            self.outer_opt_counter >= self.config.max_outer_steps
-            or self.outer_below_penalty_tol >= self.config.patience_penalty_reached
-            or self.outer_max_rho >= self.config.patience_max_rho
-        )
+        if self.config.force_not_converged:
+            return (
+                conditions[AugLagOuterConvergenceReason.MAX_OUTER_STEPS_REACHED],
+                AugLagOuterConvergenceReason.MAX_OUTER_STEPS_REACHED,
+            )
+
+        # Check each condition
+        for reason, condition in conditions.items():
+            if condition:
+                return True, reason
+
+        # If none of the conditions were met, return False and NOT_CONVERGED
+        return False, AugLagOuterConvergenceReason.NOT_CONVERGED
 
     def _enough_steps_since_last_lr_update(self) -> bool:
         """Check if enough steps have been taken since the previous learning rate update, based on the previous one.
@@ -218,7 +289,9 @@ class AugLagLR:
         loss.alpha = torch.min(loss.alpha, torch.full_like(loss.alpha, self.config.safety_alpha))
         loss.rho = torch.min(loss.rho, torch.full_like(loss.rho, self.config.safety_rho))
 
-    def _is_auglag_converged(self, optimizer: Union[Optimizer, list[Optimizer]], loss: AugLagLossCalculator) -> bool:
+    def _is_auglag_converged(
+        self, optimizer: Union[Optimizer, list[Optimizer]], loss: AugLagLossCalculator
+    ) -> Tuple[bool, AugLagConvergenceReasonTuple]:
         """Checks if the inner and outer loops have converged. If inner loop is converged,
         it initilaizes the optimisation parameters for a new inner loop. If both are converged, it returns True.
 
@@ -228,11 +301,14 @@ class AugLagLR:
 
         Returns:
             bool: Returns True if both inner and outer have converged, else False
+            dict: Dictionary of convergence reasons for inner and outer loop
         """
-        if self._is_inner_converged():
-            if self._is_outer_converged():
-                return True
+        is_inner_converged, inner_convergence_reason = self._is_inner_converged()
+        is_outer_converged, outer_convergence_reason = self._is_outer_converged()
 
+        if is_inner_converged:
+            if is_outer_converged:
+                return True, AugLagConvergenceReasonTuple(inner_convergence_reason, outer_convergence_reason)
             self._update_lagrangian_params(loss)
             self.outer_opt_counter += 1
             self._init_new_inner_optimisation()
@@ -240,7 +316,7 @@ class AugLagLR:
         elif self._enough_steps_since_last_lr_update() and self._enough_steps_since_best_model():
             self._update_lr(optimizer)
 
-        return False
+        return False, AugLagConvergenceReasonTuple(inner_convergence_reason, outer_convergence_reason)
 
     def _update_loss_tracker(self, loss_value: torch.Tensor):
         """Update the loss tracker with the current loss value.
@@ -306,7 +382,7 @@ class AugLagLR:
         loss: AugLagLossCalculator,
         loss_value: torch.Tensor,
         lagrangian_penalty: torch.Tensor,
-    ) -> bool:
+    ) -> Tuple[bool, AugLagConvergenceReasonTuple]:
         """The main update method to take one auglag inner step.
 
         Args:
@@ -317,9 +393,13 @@ class AugLagLR:
 
         Returns:
             bool: if the auglag has converged (False) or not (True)
+            reason: named tuple (`AugLagConvergenceReasonTuple`) of convergence reasons for inner and outer loop, see
+            also `AugLagInnerConvergenceReason` and `AugLagOuterConvergenceReason`.
         """
         if self.disabled:
-            return False
+            return False, AugLagConvergenceReasonTuple(
+                AugLagInnerConvergenceReason.NOT_CONVERGED, AugLagOuterConvergenceReason.NOT_CONVERGED
+            )
         assert torch.all(lagrangian_penalty >= 0), "auglag penalty must be non-negative"
         self._update_loss_tracker(loss_value.detach())
         self._cur_lagrangian_penalty = lagrangian_penalty.detach()

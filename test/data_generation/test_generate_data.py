@@ -204,6 +204,32 @@ def test_generate_sem_numpy(five_node_graph: torch.Tensor, five_variable_one_dim
     torch.testing.assert_close(sem.graph, five_node_graph)
 
 
+def test_generate_sem_er_with_probs(five_variable_one_dim_metadata: VariablesMetadata):
+    num_nodes = 5
+    num_sem_samples = 1000
+    probs = 0.5
+    expected_num_edges = num_nodes * (num_nodes - 1) / 2 * probs
+
+    variables = get_variable_definitions(num_nodes=num_nodes)
+    sem_sampler = generate_sem_sampler(
+        variables=variables,
+        graph_file=None,
+        num_edges=None,
+        probs=probs,
+        graph_type="er",
+        function_type="linear",
+    )
+    num_edges_list = []
+    for _ in range(num_sem_samples):
+        num_edges_list.append(sem_sampler.sample().graph.sum().item())
+
+    avg_num_edges = sum(num_edges_list) / num_sem_samples
+
+    assert len(variables.variables) == 5
+    assert variables == five_variable_one_dim_metadata
+    assert np.isclose(avg_num_edges, expected_num_edges, atol=0.05 * expected_num_edges)
+
+
 def test_sample_dataset(mixture_sem_sampler_and_shapes: tuple[SEMSampler, dict[str, torch.Size]]):
     mixture_sem_sampler, shapes_dict = mixture_sem_sampler_and_shapes
     sem = mixture_sem_sampler.sample()

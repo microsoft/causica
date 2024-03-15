@@ -10,6 +10,7 @@ from tensordict import TensorDict, TensorDictBase
 from torch.utils.data import DataLoader
 
 from causica.datasets.causica_dataset_format import CAUSICA_DATASETS_PATH, DataEnum, VariablesMetadata, load_data
+from causica.datasets.interventional_data import CounterfactualData, InterventionData
 from causica.datasets.normalization import (
     FitNormalizerType,
     Normalizer,
@@ -93,7 +94,7 @@ class VariableSpecDataModule(DECIDataModule):
         self.default_offset = default_offset
         self.log_normalize_min_margin = log_normalize_min_margin
 
-        self.normalize_data = standardize or log_normalize
+        self.use_normalizer = standardize or log_normalize
         self.normalizer: Optional[Normalizer] = None
         self._dataset_train: TensorDictBase
         self._dataset_test: TensorDictBase
@@ -229,18 +230,37 @@ class VariableSpecDataModule(DECIDataModule):
         for variable in variables_metadata.variables:
             self._column_names[variable.group_name].append(variable.name)
 
-        if self.normalize_data:
+        if self.use_normalizer:
             # Only applied to continuous variables
             normalization_variables = {k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS}
             self.normalizer = self.create_normalizer(normalization_variables)(
                 self._dataset_train.select(*normalization_variables)
             )
-            self._dataset_train = self.normalizer(self._dataset_train)
-            self._dataset_test = self.normalizer(self._dataset_test)
-            if self.load_validation:
-                self._dataset_valid = self.normalizer(self._dataset_valid)
+            self.normalize_data()
         else:
             self.normalizer = JointTransformModule({})
+
+    def normalize_data(self):
+        self._dataset_train = self.normalizer(self._dataset_train)
+        self._dataset_test = self.normalizer(self._dataset_test)
+        if self.load_validation:
+            self._dataset_valid = self.normalizer(self._dataset_valid)
+
+        if self.load_interventional:
+            for intervention in self.interventions:
+                for i in intervention:
+                    if isinstance(i, InterventionData):
+                        i.intervention_data = self.normalizer(i.intervention_data)
+                        i.intervention_values = self.normalizer(i.intervention_values)
+                        i.condition_values = self.normalizer(i.condition_values)
+
+        if self.load_counterfactual:
+            for cf in self.counterfactuals:
+                for c in cf:
+                    if isinstance(c, CounterfactualData):
+                        c.counterfactual_data = self.normalizer(c.counterfactual_data)
+                        c.factual_data = self.normalizer(c.factual_data)
+                        c.intervention_values = self.normalizer(c.intervention_values)
 
     def train_dataloader(self):
         return DataLoader(

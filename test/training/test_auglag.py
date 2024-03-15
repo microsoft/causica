@@ -2,7 +2,14 @@ import torch
 from torch.nn import Parameter
 from torch.optim import Adam
 
-from causica.training.auglag import AugLagLossCalculator, AugLagLR, AugLagLRConfig
+from causica.training.auglag import (
+    AugLagConvergenceReasonTuple,
+    AugLagInnerConvergenceReason,
+    AugLagLossCalculator,
+    AugLagLR,
+    AugLagLRConfig,
+    AugLagOuterConvergenceReason,
+)
 
 
 def _get_auglag_config(lr_init_dict: dict[str, float]):
@@ -104,10 +111,14 @@ def test_solve_auglag():
         auglag_loss_tensor = auglag_loss(loss, constraint)
         auglag_loss_tensor.backward()
         optimizer.step()
-        converged = scheduler.step(
+        converged, convergence_reason = scheduler.step(
             optimizer=optimizer, loss=auglag_loss, loss_value=loss, lagrangian_penalty=constraint
         )
         if converged:
+            assert convergence_reason == AugLagConvergenceReasonTuple(
+                AugLagInnerConvergenceReason.MAX_INNER_STEPS_REACHED,
+                AugLagOuterConvergenceReason.PENALTY_TOLERANCE_REACHED,
+            )
             break
 
         step_counter += 1

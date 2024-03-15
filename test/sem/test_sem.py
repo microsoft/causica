@@ -35,14 +35,14 @@ def test_do_linear_sem(graph, two_variable_dict):
     else:
         expected_mean = torch.tensor([0.0])
     expected_log_probs = td.Independent(td.Normal(expected_mean, 1.0), 1).log_prob(array)
-    assert torch.allclose(log_probs, expected_log_probs)
+    torch.testing.assert_close(log_probs, expected_log_probs)
     noise = sem.sample_noise((10,))
     do_sample = do_sem.noise_to_sample(noise)
     sample = sem.noise_to_sample(noise)
     if graph[1, 0] == 1.0:
-        assert torch.allclose(do_sample["x1"], expected_mean + noise["x1"])
+        torch.testing.assert_close(do_sample["x1"], expected_mean + noise["x1"])
     else:
-        assert torch.allclose(do_sample["x1"], sample["x1"])
+        torch.testing.assert_close(do_sample["x1"], sample["x1"])
 
     # Test multi-dim interventions
     do_sem = sem.do(
@@ -57,9 +57,9 @@ def test_do_linear_sem(graph, two_variable_dict):
     do_sample = do_sem.noise_to_sample(noise)
     sample = sem.noise_to_sample(noise)
     if graph[1, 0] == 1.0:
-        assert torch.allclose(do_sample["x1"], expected_mean + noise["x1"])
+        torch.testing.assert_close(do_sample["x1"], expected_mean + noise["x1"])
     else:
-        assert torch.allclose(do_sample["x1"], sample["x1"])
+        torch.testing.assert_close(do_sample["x1"], sample["x1"])
 
 
 @pytest.mark.parametrize("graph", [torch.tensor([[0, 0], [1, 0.0]]), torch.tensor([[0, 1], [0, 0.0]])])
@@ -95,10 +95,7 @@ def test_batched_intervention_2d_graph(graph, intervention_variable, interventio
             .squeeze(1)
         )
     non_batch_sample = torch.stack(non_batch_sample_list, dim=1)
-    diff = torch.abs(do_sample[sampled_variable] - non_batch_sample[sampled_variable])
-    assert torch.allclose(
-        do_sample[sampled_variable], non_batch_sample[sampled_variable], atol=1e-5, rtol=1e-4
-    ), f"{diff.max()}"
+    torch.testing.assert_close(do_sample[sampled_variable], non_batch_sample[sampled_variable], atol=1e-5, rtol=1e-4)
 
 
 def test_batched_intervention_3d_graph(three_variable_dict):
@@ -119,7 +116,8 @@ def test_batched_intervention_3d_graph(three_variable_dict):
     noise = batched_do_sem.sample_noise((10,))
     do_sample = batched_do_sem.noise_to_sample(noise)
     inferred_noise = batched_do_sem.sample_to_noise(do_sample)
-    assert all(torch.allclose(noise[key], inferred_noise[key]) for key in noise.keys() if key != "x2")
+    torch.testing.assert_close(noise["x1"], inferred_noise["x1"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(noise["x3"], inferred_noise["x3"], atol=1e-5, rtol=1e-4)
 
     non_batch_sample_list = []
     for i, intervention in enumerate(intervention_value):
@@ -129,8 +127,8 @@ def test_batched_intervention_3d_graph(three_variable_dict):
 
     non_batch_sample = torch.stack(non_batch_sample_list, dim=1)
 
-    assert torch.allclose(do_sample["x1"], non_batch_sample["x1"], atol=1e-5, rtol=1e-4)
-    assert torch.allclose(do_sample["x3"], non_batch_sample["x3"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(do_sample["x1"], non_batch_sample["x1"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(do_sample["x3"], non_batch_sample["x3"], atol=1e-5, rtol=1e-4)
 
 
 def test_intervention_batched_3d_graph(three_variable_dict):
@@ -144,9 +142,8 @@ def test_intervention_batched_3d_graph(three_variable_dict):
     regular_noise = sem.sample_noise(torch.Size([10]))
     samples = sem.noise_to_sample(regular_noise)
     inferred_noise = sem.sample_to_noise(samples)
-    assert all(
-        torch.allclose(regular_noise[key], inferred_noise[key], atol=1e-5, rtol=1e-4) for key in regular_noise.keys()
-    )
+
+    torch.testing.assert_close(regular_noise, inferred_noise, atol=1e-5, rtol=1e-4)
 
     intervention_value = torch.tensor([1.42, 0.42])
     do_sem = sem.do(
@@ -158,7 +155,8 @@ def test_intervention_batched_3d_graph(three_variable_dict):
     noise = do_sem.sample_noise(torch.Size([10]))
     do_sample = do_sem.noise_to_sample(noise)
     inferred_noise = do_sem.sample_to_noise(do_sample)
-    assert all(torch.allclose(noise[key], inferred_noise[key]) for key in noise.keys() if key != "x2")
+    torch.testing.assert_close(noise["x1"], inferred_noise["x1"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(noise["x3"], inferred_noise["x3"], atol=1e-5, rtol=1e-4)
 
 
 def test_batched_intervention_batched_3d_graph(three_variable_dict):
@@ -181,7 +179,8 @@ def test_batched_intervention_batched_3d_graph(three_variable_dict):
     do_sample = batched_do_sem.noise_to_sample(noise)
     assert do_sample.batch_size == torch.Size([10, 3, 2])  # 10 samples, 3 interventions, 2 graphs
     inferred_noise = batched_do_sem.sample_to_noise(do_sample)
-    assert all(torch.allclose(noise[key], inferred_noise[key]) for key in noise.keys() if key != "x2")
+    torch.testing.assert_close(noise["x1"], inferred_noise["x1"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(noise["x3"], inferred_noise["x3"], atol=1e-5, rtol=1e-4)
     non_batch_sample_list = []
     for i, intervention in enumerate(intervention_value):
         non_batch_sample_list.append(
@@ -189,8 +188,8 @@ def test_batched_intervention_batched_3d_graph(three_variable_dict):
         )
     non_batch_sample = torch.stack(non_batch_sample_list, dim=1)
 
-    assert torch.allclose(do_sample["x1"], non_batch_sample["x1"], atol=1e-5, rtol=1e-4)
-    assert torch.allclose(do_sample["x3"], non_batch_sample["x3"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(do_sample["x1"], non_batch_sample["x1"], atol=1e-5, rtol=1e-4)
+    torch.testing.assert_close(do_sample["x3"], non_batch_sample["x3"], atol=1e-5, rtol=1e-4)
 
 
 def test_linear_sem_3d_graph_do_1_node(three_variable_dict):
@@ -204,7 +203,7 @@ def test_linear_sem_3d_graph_do_1_node(three_variable_dict):
     log_probs = do_sem.log_prob(TensorDict({"x2": test_val[:, 0:2], "x3": test_val[:, 2:]}, batch_size=[100]))
     expected_mean = torch.einsum("i,ij->j", intervention_value, coef_matrix[:2, 2:])
     expected_log_probs = td.Independent(td.Normal(expected_mean, 1.0), 1).log_prob(test_val)
-    assert torch.allclose(log_probs, expected_log_probs)
+    torch.testing.assert_close(log_probs, expected_log_probs)
 
 
 def test_linear_sem_3d_graph_condition_1_node(three_variable_dict):
@@ -225,7 +224,7 @@ def test_linear_sem_3d_graph_condition_1_node(three_variable_dict):
     log_probs = condition_sem.log_prob(TensorDict({"x3": test_val}, batch_size=[100]))
     expected_mean = torch.einsum("i,ij->j", torch.cat([condition_value, condition_value]), coef_matrix[:4, 4:])
     expected_log_probs = td.Independent(td.Normal(expected_mean, 1.0), 1).log_prob(test_val)
-    assert torch.allclose(log_probs, expected_log_probs)
+    torch.testing.assert_close(log_probs, expected_log_probs)
 
 
 def test_linear_sem_3d_graph_do_2_nodes(three_variable_dict):
@@ -238,7 +237,7 @@ def test_linear_sem_3d_graph_do_2_nodes(three_variable_dict):
     log_probs = do_sem.log_prob(TensorDict({"x3": test_val}, batch_size=[100]))
     expected_mean = torch.einsum("i,ij->j", torch.cat((int_data["x1"], int_data["x2"])), coef_matrix[:4, 4:])
     expected_log_probs = td.Independent(td.Normal(expected_mean, 1.0), 1).log_prob(test_val)
-    assert torch.allclose(log_probs, expected_log_probs)
+    torch.testing.assert_close(log_probs, expected_log_probs)
 
 
 @pytest.mark.parametrize("graph", [torch.tensor([[0, 0], [1, 0.0]]), torch.tensor([[0, 1], [0, 0.0]])])
