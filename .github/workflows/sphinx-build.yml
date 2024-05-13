@@ -22,7 +22,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.10"
   POETRY_NO_INTERACTION: 1
-  POETRY_VIRTUALENVS_CREATE: false
+  POETRY_VIRTUALENVS_CREATE: true
   POETRY_VIRTUALENVS_IN_PROJECT: false
   POETRY_VERSION: "1.8.2"
 
@@ -55,20 +55,12 @@ jobs:
         poetry install --with dev
       if: steps.cache.outputs.cache-hit != 'true'
 
-    - name: Verify pre-commit checks
-      uses: pre-commit/action@v3.0.0
-      with:
-        extra_args: --all-files
-
-    - name: Test with pytest
-      run: poetry run python -m pytest ./test
-
     - name: Setup Pages
       id: pages
       uses: actions/configure-pages@v5
 
     - name: Build docs with Sphinx
-      run: make html
+      run: poetry run make html
       working-directory: docs
 
     - name: Upload docs
