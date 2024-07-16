@@ -1,5 +1,3 @@
-from typing import Iterable
-
 import torch
 from torch.utils.data import Dataset
 
@@ -28,6 +26,8 @@ class CausalMetaset(Dataset):
         num_sems: int = 0,
         sample_interventions: bool = False,
         sample_counterfactuals: bool = False,
+        treatment_variable: str | None = None,
+        effect_variables: list[str] | None = None,
     ):
         """
         Args:
@@ -41,6 +41,10 @@ class CausalMetaset(Dataset):
             num_sems: The number of sems to sample the data from. If 0, each data sample is generated from a new SEM.
             sample_interventions: Whether to sample interventions.
             sample_counterfactuals: Whether to sample counterfactuals.
+            treatment_variable: This specify the name of the nodes to be taken as treatment from the generated sems.
+                The sem sampler must always generate this treatment.
+            effet_variables: This specify the names of the nodes to be taken as effects from the generated sems.
+                The sem sampler must always generate this effect.
         """
         self.sem_sampler = sem_sampler
         self.sample_dataset_size = torch.Size([sample_dataset_size])
@@ -50,6 +54,8 @@ class CausalMetaset(Dataset):
         self.num_sems = num_sems
         self.sample_interventions = sample_interventions
         self.sample_counterfactuals = sample_counterfactuals
+        self.treatment_variable = treatment_variable
+        self.effect_variables = effect_variables
 
         self.sems = [sem_sampler.sample() for _ in range(num_sems)]
         self.td_to_tensor_transform = TensorToTensorDictTransform(self.sem_sampler.shapes_dict)
@@ -82,4 +88,6 @@ class CausalMetaset(Dataset):
             self.num_intervention_samples,
             self.sample_interventions,
             self.sample_counterfactuals,
+            self.treatment_variable,
+            self.effect_variables,
         )

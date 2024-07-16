@@ -209,8 +209,66 @@ def get_size_dict(variables: VariablesMetadata) -> dict[str, int]:
     return size_dict
 
 
+def sample_treatment_given_effects(graph: torch.Tensor, node_names: Sequence[str], effect_variables: list[str]) -> str:
+    """Sample a treatment from the graph.
+
+    Args:
+        graph: The adjacency matrix of the graph.
+        node_names: The names of the nodes in the graph.
+        effect_variables: pre-specified effect variables.
+
+    Returns:
+        The treatment variable.
+    """
+    nx_graph = nx.from_numpy_array(graph.numpy(), create_using=nx.DiGraph)
+    nx_graph = nx.relabel_nodes(nx_graph, dict(enumerate(node_names)))
+
+    common_ancestors = nx.ancestors(nx_graph, effect_variables[0])
+    for effect_variable in effect_variables[1:]:
+        common_ancestors &= nx.ancestors(nx_graph, effect_variable)
+    if common_ancestors:
+        treatment = np.random.choice(list(common_ancestors), size=1, replace=False).item()
+        return treatment
+    warnings.warn("No common ancestors found for the given effects. Returning random sampled treatment.")
+    possible_treatments = [node for node in node_names if node not in effect_variables]
+    treatment = np.random.choice(possible_treatments, size=1, replace=False).item()
+    return treatment
+
+
+def sample_effects_given_treatment(
+    graph: torch.Tensor,
+    node_names: Sequence[str],
+    treatment_variable: str,
+    num_effects: int = 1,
+) -> list[str]:
+    """Sample effect variables from the graph given a treatment.
+
+    Args:
+        graph: The adjacency matrix of the graph.
+        node_names: The names of the nodes in the graph.
+        treatment_variable: The treatment variable from which to find effects.
+        num_effects: The number of effect nodes to sample.
+
+    Returns:
+        The list of effect variables.
+    """
+    nx_graph = nx.from_numpy_array(graph.numpy(), create_using=nx.DiGraph)
+    nx_graph = nx.relabel_nodes(nx_graph, dict(enumerate(node_names)))
+
+    descendants = list(nx.descendants(nx_graph, treatment_variable))
+    if not descendants:
+        warnings.warn("No descendants found for the given treatment. Defaulting to random sampling.")
+        possible_effects = [node for node in node_names if node != treatment_variable]
+        return np.random.choice(possible_effects, size=num_effects, replace=False).tolist()
+
+    return np.random.choice(descendants, size=num_effects, replace=False).tolist()
+
+
 def sample_treatment_and_effect(
-    graph: torch.Tensor, node_names: Sequence[str], ensure_effect: bool = True, num_effects: int = 1
+    graph: torch.Tensor,
+    node_names: Sequence[str],
+    ensure_effect: bool = True,
+    num_effects: int = 1,
 ) -> tuple[str, list[str]]:
     """Sample a treatment and effects from a graph.
 
@@ -219,32 +277,26 @@ def sample_treatment_and_effect(
         node_names: The names of the nodes in the graph.
         ensure_effect: Whether to ensure that there is a path from the treatment to the effect.
         num_effects: The number of effect nodes to sample.
-
     Returns:
-        The treatment and effects.
+        A tuple containing the treatment variable and a list of effect variables.
     """
-    if ensure_effect:
-        assert num_effects == 1, "Can only ensure effect for one effect node."
 
+    if ensure_effect:
         nx_graph = nx.from_numpy_array(graph.numpy(), create_using=nx.DiGraph)
         nx_graph = nx.relabel_nodes(nx_graph, dict(enumerate(node_names)))
-
-        topological_order = nx.topological_sort(nx_graph)
-        topological_order_with_descendants = [n for n in topological_order if nx.descendants(nx_graph, n)]
-
-        if topological_order_with_descendants:
-            treatment = np.random.choice(topological_order_with_descendants, size=1, replace=False).item()
-            # randomly sample a effect not that is a descendant of the treatment
-            descendants = nx.descendants(nx_graph, treatment)
-            effects = np.random.choice(list(descendants), size=num_effects, replace=False)
-            return treatment, effects.tolist()
-        warnings.warn("No edges found. Defaulting to random sampling.")
+        nodes_with_outgoing_edges = [n for n in node_names if any(True for _ in nx_graph.successors(n))]
+        if nodes_with_outgoing_edges:
+            treatment = np.random.choice(nodes_with_outgoing_edges, size=1, replace=False).item()
+            descendants = list(nx.descendants(nx_graph, treatment))
+            effects = np.random.choice(descendants, size=num_effects, replace=False).tolist()
+            return treatment, effects
+        warnings.warn("No nodes with descendants found in the graph. Defaulting to random sampling.")
 
     samples = np.random.choice(node_names, size=1 + num_effects, replace=False)
     treatment = samples[0]
-    effects = samples[1:]
+    effects = samples[1:].tolist()
 
-    return treatment, effects.tolist()
+    return treatment, effects
 
 
 def sample_dataset(
@@ -254,6 +306,8 @@ def sample_dataset(
     num_intervention_samples: int = 1000,
     sample_interventions: bool = False,
     sample_counterfactuals: bool = False,
+    treatment_variable: str | None = None,
+    effect_variables: list[str] | None = None,
 ) -> CausalDataset:
     """Sample a new dataset and returns it as a CausalDataset object.
 
@@ -264,7 +318,8 @@ def sample_dataset(
         num_intervention_samples: The number of interventional samples to sample.
         sample_interventions: Whether to sample interventions.
         sample_counterfactuals: Whether to sample counterfactuals.
-
+        treatment_variable: pre-specified treatment
+        effet_variables: pre-specified effects
     Returns:
         A CausalDataset object holding the data, graph and potential interventions and counterfactuals.
     """
@@ -276,7 +331,19 @@ def sample_dataset(
     counterfactuals: list[CounterfactualWithEffects] = []
 
     for _ in range(num_interventions):
-        treatment, effects = sample_treatment_and_effect(sem.graph, sem.node_names)
+        if treatment_variable and effect_variables:
+            treatment, effects = treatment_variable, effect_variables
+        elif treatment_variable:
+            treatment, effects = treatment_variable, sample_effects_given_treatment(
+                sem.graph, sem.node_names, treatment_variable
+            )
+        elif effect_variables:
+            treatment, effects = (
+                sample_treatment_given_effects(sem.graph, sem.node_names, effect_variables),
+                effect_variables,
+            )
+        else:
+            treatment, effects = sample_treatment_and_effect(sem.graph, sem.node_names)
 
         if sample_interventions:
             interventions.append(

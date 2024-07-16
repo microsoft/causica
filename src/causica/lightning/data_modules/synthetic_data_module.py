@@ -41,6 +41,8 @@ class SyntheticDataModule(pl.LightningDataModule):
         batches_per_metaset: int = 1,
         sample_interventions: bool = False,
         sample_counterfactuals: bool = False,
+        treatment_variable: str | None = None,
+        effect_variables: list[str] | None = None,
         num_workers: int = 0,
         pin_memory: bool = True,
         persistent_workers: bool = True,
@@ -57,6 +59,10 @@ class SyntheticDataModule(pl.LightningDataModule):
             batches_per_metaset: The number of batches per epoch per dataset
             sample_interventions: Whether to sample interventions
             sample_counterfactuals: Whether to sample counterfactuals
+            treatment_variable: This specify the name of the nodes to be taken as treatment from the generated sems.
+                The sem sampler must always generate this treatment.
+            effet_variables: This specify the names of the nodes to be taken as effects from the generated sems.
+                The sem sampler must always generate this effect.
             num_workers: The number of workers to use for the dataloader
             pin_memory: Whether to pin memory for the dataloader
             persistent_workers: Whether to use persistent workers for the dataloader
@@ -81,6 +87,8 @@ class SyntheticDataModule(pl.LightningDataModule):
         self.batches_per_metaset = batches_per_metaset
         self.sample_interventions = sample_interventions
         self.sample_counterfactuals = sample_counterfactuals
+        self.treatment_variable = treatment_variable
+        self.effect_variables = effect_variables
 
         self.num_workers = num_workers
         self.persistent_workers = persistent_workers
@@ -125,6 +133,8 @@ class SyntheticDataModule(pl.LightningDataModule):
                     num_sems=self.num_sems,
                     sample_interventions=self.sample_interventions,
                     sample_counterfactuals=self.sample_counterfactuals,
+                    treatment_variable=self.treatment_variable,
+                    effect_variables=self.effect_variables,
                 )
             )
 

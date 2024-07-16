@@ -1,14 +1,16 @@
-from typing import Iterable, Optional
+from typing import Iterable, Optional, TypeVar
 
 import pandas as pd
 import torch
 from tensordict.tensordict import TensorDict, TensorDictBase
 
+TD = TypeVar("TD", bound=TensorDictBase)
+
 
 def convert_one_hot(
-    data: TensorDict,
+    data: TD,
     one_hot_sizes: Optional[dict[str, int]] = None,
-):
+) -> TD:
     """
     Args:
         data: A tensordict representing the underlying data

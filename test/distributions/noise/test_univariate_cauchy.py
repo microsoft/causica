@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from causica.distributions.noise import UnivariateCauchyNoise
+from causica.distributions.noise import UnivariateCauchyNoise, UnivariateCauchyNoiseModule
 
 
 @pytest.mark.parametrize(("batch", "dimension"), [(1, 10), (2, 5)])
@@ -50,3 +50,21 @@ def test_noise_to_sample():
     pred = torch.Tensor([[5, 12], [18, 19]])
     noise_model = UnivariateCauchyNoise(loc=pred, scale=torch.ones_like(pred))
     assert torch.allclose(noise_model.noise_to_sample(noise), torch.Tensor([[10, 17], [20, 25]]))
+
+
+def test_forward_module():
+    dim = 2
+    init_log_scale = 1.0
+    noise_module = UnivariateCauchyNoiseModule(dim, init_log_scale)
+
+    # provide only loc
+    loc = torch.randn((dim,))
+    noise_model = noise_module(loc)
+
+    samples = torch.randn((dim,))
+    assert torch.allclose(noise_model.sample_to_noise(samples), samples - loc)
+
+    # provide loc and log_scale
+    log_scale = torch.randn((dim,))
+    noise_model = noise_module((loc, log_scale))
+    assert torch.allclose(noise_model.sample_to_noise(samples), (samples - loc) / log_scale.exp())

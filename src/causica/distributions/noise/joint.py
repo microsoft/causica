@@ -156,11 +156,22 @@ class JointNoiseModule(NoiseModule[JointNoise]):
         super().__init__()
         self.noise_modules = nn.ModuleDict(independent_noise_modules)
 
-    def forward(self, x: Optional[TensorDict] = None) -> JointNoise:
-        if x is None:
-            noise_distributions = {name: noise_module() for name, noise_module in self.noise_modules.items()}
-        else:
+    def forward(self, x: Optional[tuple[TensorDict, TensorDict] | TensorDict] = None) -> JointNoise:
+        """
+        Some noise_module allows to access to tuple of two Tensors rather than a single Tensor (e.g. univariate_normal, univariate_laplace, univariate_cauchy)
+        Note that if a tuple is provided to a noise_module that does not allow tuple of tensor, this forward call will raise an error.
+        """
+
+        if isinstance(x, tuple):
+            x, y = x
+            noise_distributions = {
+                name: noise_module((x.get(name), y.get(name))) for name, noise_module in self.noise_modules.items()
+            }
+        elif isinstance(x, TensorDict):
             noise_distributions = {name: noise_module(x.get(name)) for name, noise_module in self.noise_modules.items()}
+        else:
+            noise_distributions = {name: noise_module() for name, noise_module in self.noise_modules.items()}
+
         return JointNoise(independent_noise_dists=noise_distributions)
 
     def __getitem__(self, selection: Iterable[str]) -> "JointNoiseModule":

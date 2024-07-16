@@ -4,5 +4,9 @@ from causica.functional_relationships.do_functional_relationships import (
     create_do_functional_relationship,
 )
 from causica.functional_relationships.functional_relationships import FunctionalRelationships
+from causica.functional_relationships.heteroscedastic_rff_functional_relationships import (
+    HeteroscedasticRFFFunctionalRelationships,
+)
 from causica.functional_relationships.linear_functional_relationships import LinearFunctionalRelationships
 from causica.functional_relationships.rff_functional_relationships import RFFFunctionalRelationships
+from causica.functional_relationships.temporal_functional_relationships import TemporalEmbedFunctionalRelationships

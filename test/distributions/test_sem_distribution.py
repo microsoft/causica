@@ -8,6 +8,7 @@ from causica.distributions.noise.noise import Noise, NoiseModule
 from causica.distributions.noise.univariate_normal import UnivariateNormalNoiseModule
 from causica.functional_relationships import DECIEmbedFunctionalRelationships
 from causica.functional_relationships.functional_relationships import FunctionalRelationships
+from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 from causica.sem.sem_distribution import SEMDistribution
 
 

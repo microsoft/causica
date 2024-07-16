@@ -24,6 +24,7 @@ tensordict = "^0.1.0"
 torch = "2.0.0"
 torchmetrics = "^1.0.3"
 types-PyYAML = "^6.0.12.2"
+igraph ="^0.11.3"
 
 [tool.poetry.extras]
 seaborn = ["seaborn"]

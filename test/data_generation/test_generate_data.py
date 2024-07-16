@@ -13,8 +13,10 @@ from causica.data_generation.generate_data import (
     plot_dataset,
     sample_counterfactual,
     sample_dataset,
+    sample_effects_given_treatment,
     sample_intervention,
     sample_treatment_and_effect,
+    sample_treatment_given_effects,
 )
 from causica.data_generation.samplers.functional_relationships_sampler import LinearRelationshipsSampler
 from causica.data_generation.samplers.noise_dist_sampler import (
@@ -288,7 +290,7 @@ def test_sample_treatment_and_effect():
     graph = torch.zeros(5, 5)
     node_names = [f"x_{i}" for i in range(5)]
 
-    with pytest.warns(UserWarning, match="No edges found."):
+    with pytest.warns(UserWarning, match="No nodes with descendants found in the graph."):
         treatment, effects = sample_treatment_and_effect(graph, node_names)
 
     graph[0, 1] = 1
@@ -297,3 +299,33 @@ def test_sample_treatment_and_effect():
     treatment, effects = sample_treatment_and_effect(graph, node_names)
 
     assert (treatment == "x_0" and effects == ["x_1"]) or (treatment == "x_2" and effects == ["x_3"])
+
+
+def test_sample_treatment_given_effects():
+    graph = torch.zeros(5, 5)
+    node_names = [f"x_{i}" for i in range(5)]
+    graph[0, 1] = 1
+    graph[2, 3] = 1
+
+    with pytest.warns(None):
+        treatment = sample_treatment_given_effects(graph, node_names, effect_variables=["x_3"])
+    assert treatment == "x_2"
+
+    with pytest.warns(UserWarning, match="No common ancestors found for the given effects."):
+        treatment = sample_treatment_given_effects(graph, node_names, effect_variables=["x_2"])
+    assert treatment != "x_2"
+
+
+def test_sample_effects_given_treatment():
+    graph = torch.zeros(5, 5)
+    node_names = [f"x_{i}" for i in range(5)]
+    graph[0, 1] = 1
+    graph[2, 3] = 1
+
+    with pytest.warns(None):
+        effects = sample_effects_given_treatment(graph, node_names, treatment_variable="x_0")
+    assert effects == ["x_1"]
+
+    with pytest.warns(UserWarning, match="No descendants found for the given treatment."):
+        effects = sample_effects_given_treatment(graph, node_names, treatment_variable="x_1")
+    assert effects != ["x_1"]

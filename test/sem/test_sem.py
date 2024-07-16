@@ -9,7 +9,7 @@ from causica.distributions.noise.joint import ContinuousNoiseDist
 from causica.functional_relationships import LinearFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
 
-from . import create_lingauss_sem, create_rffgauss_sem
+from . import create_heteroscedastic_rffgauss_sem, create_lingauss_sem, create_rffgauss_sem
 
 
 @pytest.fixture(name="two_variable_dict")
@@ -71,6 +71,44 @@ def test_batched_intervention_2d_graph(graph, intervention_variable, interventio
     rff_features = torch.rand((10, 3))
     coef_matrix = torch.rand((10,))
     sem = create_rffgauss_sem(two_variable_dict, rff_features, coef_matrix, graph)
+    variable_names = set(two_variable_dict.keys())
+    sampled_variables = variable_names - {intervention_variable}
+    assert len(sampled_variables) == 1
+    sampled_variable = sampled_variables.pop()
+    intervention_value = torch.tensor(intervention_value)
+    batched_do_sem = sem.do(
+        TensorDict(
+            {intervention_variable: intervention_value},
+            batch_size=[
+                3,
+            ],
+        )
+    )
+    noise = batched_do_sem.sample_noise((10,))
+    do_sample = batched_do_sem.noise_to_sample(noise)
+
+    non_batch_sample_list = []
+    for i, intervention in enumerate(intervention_value):
+        non_batch_sample_list.append(
+            sem.do(TensorDict({intervention_variable: intervention}, batch_size=tuple()))
+            .noise_to_sample(noise[:, i, None])
+            .squeeze(1)
+        )
+    non_batch_sample = torch.stack(non_batch_sample_list, dim=1)
+    torch.testing.assert_close(do_sample[sampled_variable], non_batch_sample[sampled_variable], atol=1e-5, rtol=1e-4)
+
+
+@pytest.mark.parametrize("graph", [torch.tensor([[0, 0], [1, 0.0]]), torch.tensor([[0, 1], [0, 0.0]])])
+@pytest.mark.parametrize(
+    "intervention_variable,intervention_value",
+    [("x1", [[1.42], [0.42], [1.12]]), ("x2", [[1.42, 0.42], [0.42, 1.42], [0.42, 0.42]])],
+)
+def test_heteroscedastic_batched_intervention_2d_graph(
+    graph, intervention_variable, intervention_value, two_variable_dict
+):
+    rff_features = torch.rand((10, 3))
+    coef_matrix = torch.rand((10,))
+    sem = create_heteroscedastic_rffgauss_sem(two_variable_dict, rff_features, coef_matrix, graph)
     variable_names = set(two_variable_dict.keys())
     sampled_variables = variable_names - {intervention_variable}
     assert len(sampled_variables) == 1

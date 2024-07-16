@@ -36,6 +36,18 @@ def test_get_sparsity_term():
     assert gibbs_dag_prior.get_sparsity_term(dense_dag) > gibbs_dag_prior.get_sparsity_term(sparse_dag)
 
 
+def test_get_sparsity_term_temporal():
+    gibbs_dag_prior = GibbsDAGPrior(num_nodes=2, sparsity_lambda=torch.tensor(1), context_length=2)
+
+    empty_dag = torch.zeros(2, 3, 3)
+
+    assert gibbs_dag_prior.get_sparsity_term(empty_dag) == 0
+
+    dense_dag = torch.ones(2, 3, 3)
+
+    assert gibbs_dag_prior.get_sparsity_term(dense_dag) > gibbs_dag_prior.get_sparsity_term(empty_dag)
+
+
 def test_get_expert_graph_term():
 
     mask = torch.Tensor([[0, 0, 0], [0, 0, 0], [0, 0, 0]])
@@ -67,6 +79,40 @@ def test_get_expert_graph_term():
     torch.testing.assert_close(gibbs_dag_prior.get_expert_graph_term(A), torch.tensor(0.2))
 
 
+def test_get_expert_graph_term_temporal():
+
+    mask = torch.zeros(2, 3, 3)
+    dag = torch.stack([torch.Tensor([[0, 0, 1], [0, 0, 0], [0, 0, 0]]), torch.ones(3, 3)])
+    confidence = 0.8
+    scale = 10
+
+    expert_graph_container = ExpertGraphContainer(dag, mask, confidence, scale)
+
+    gibbs_dag_prior = GibbsDAGPrior(
+        num_nodes=3,
+        sparsity_lambda=torch.tensor(1),
+        expert_graph_container=expert_graph_container,
+        context_length=2,
+    )
+
+    A = torch.Tensor([[[0, 0, 1], [0, 1, 1], [1, 0, 1]], [[0, 0, 1], [0, 1, 1], [1, 0, 1]]])
+
+    assert gibbs_dag_prior.get_expert_graph_term(A) == torch.tensor(0)
+
+    mask[0, 0, 2] = 1
+    mask[1, 0, 2] = 1
+
+    expert_graph_container = ExpertGraphContainer(dag, mask, confidence, scale)
+    gibbs_dag_prior = GibbsDAGPrior(
+        num_nodes=3,
+        sparsity_lambda=torch.tensor(1),
+        expert_graph_container=expert_graph_container,
+        context_length=2,
+    )
+
+    torch.testing.assert_close(gibbs_dag_prior.get_expert_graph_term(A), torch.tensor(0.4))
+
+
 def test_log_prob():
     gibbs_dag_prior = GibbsDAGPrior(num_nodes=123, sparsity_lambda=torch.tensor(1))
 
@@ -87,3 +133,25 @@ def test_log_prob():
     A = torch.Tensor([[0, 1], [0, 0]])
 
     torch.testing.assert_close(gibbs_dag_prior.log_prob(A), torch.tensor(-1.0))
+
+
+def test_log_prob_temporal():
+    gibbs_dag_prior = GibbsDAGPrior(num_nodes=3, sparsity_lambda=torch.tensor(1), context_length=3)
+
+    A = torch.Tensor([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    with pytest.raises(AssertionError):
+        gibbs_dag_prior.log_prob(A)
+
+    gibbs_dag_prior = GibbsDAGPrior(num_nodes=2, sparsity_lambda=torch.tensor(1), context_length=2)
+
+    A = torch.Tensor([[[1, 1], [0, 1]], [[1, 1], [0, 1]]])
+
+    torch.testing.assert_close(
+        gibbs_dag_prior.log_prob(A),
+        torch.tensor(-6.0),
+    )
+
+    A = torch.Tensor([[[0, 1], [0, 0]], [[0, 1], [0, 0]]])
+
+    torch.testing.assert_close(gibbs_dag_prior.log_prob(A), torch.tensor(-2.0))
