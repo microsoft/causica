@@ -24,3 +24,11 @@ def test_calculate_dagness():
         2 * np.exp(1) - 2,
         decimal=5,
     )
+
+    stacked_dags = torch.stack([dag, dag_one_cycle, dag_two_cycle])
+    dagness = calculate_dagness(stacked_dags)
+    assert dagness.shape == (3,)
+    assert dagness[0] == 0
+    assert dagness[1] > 0
+    assert dagness[2] > 0
+    assert dagness[1] < dagness[2]

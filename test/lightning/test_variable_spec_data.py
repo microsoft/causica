@@ -64,6 +64,27 @@ DF = pd.DataFrame(
     }
 )
 
+DF2 = pd.DataFrame(
+    {
+        "x0_0": {
+            0: -10.5569139122962952,
+            1: 0.5148046016693115,
+        },
+        "x0_1": {
+            0: 0.06510090827941895,
+            1: 1.4334404468536377,
+        },
+        "x1_0": {
+            0: 0.008327394723892214,
+            1: -0.3806004524230957,
+        },
+        "x1_1": {
+            0: 0.33135163784027094,
+            1: 0.03788989782333375,
+        },
+    }
+)
+
 
 VARIABLES_METADATA = VariablesMetadata(
     variables=[
@@ -108,9 +129,7 @@ INTERVENTIONS = {
 }
 
 
-@pytest.mark.parametrize("normalize", [True, False])
-def test_variable_spec_data(tmp_path, normalize):
-    """Test Variable Spec Data Module functionality"""
+def _save_tmp_data(tmp_path):
     variable_spec_path = tmp_path / "variables.json"
     with variable_spec_path.open("w") as f:
         json.dump(VARIABLES_METADATA.to_dict(encode_json=True), f)
@@ -123,6 +142,10 @@ def test_variable_spec_data(tmp_path, normalize):
     with test_path.open("w") as f:
         DF.to_csv(f, index=False, header=False)
 
+    valid_path = tmp_path / "val.csv"
+    with valid_path.open("w") as f:
+        DF2.to_csv(f, index=False, header=False)
+
     adjacency_path = tmp_path / "adj_matrix.csv"
     with adjacency_path.open("w") as f:
         np.savetxt(f, ADJACENCY.tolist(), delimiter=",")
@@ -131,12 +154,26 @@ def test_variable_spec_data(tmp_path, normalize):
     with intervention_path.open("w") as f:
         json.dump(INTERVENTIONS, f)
 
+
+@pytest.mark.parametrize("normalize", [True, False])
+def test_variable_spec_data(tmp_path, normalize):
+    """Test Variable Spec Data Module functionality"""
+    _save_tmp_data(tmp_path)
+
     if normalize:
         data_module = VariableSpecDataModule(
-            tmp_path, batch_size=2, standardize=True, exclude_standardization=["x1"], load_interventional=True
+            tmp_path,
+            batch_size=2,
+            standardize=True,
+            exclude_standardization=["x1"],
+            load_interventional=True,
         )
     else:
-        data_module = VariableSpecDataModule(tmp_path, batch_size=2, load_interventional=True)
+        data_module = VariableSpecDataModule(
+            tmp_path,
+            batch_size=2,
+            load_interventional=True,
+        )
 
     data_module.prepare_data()
 
@@ -161,28 +198,25 @@ def test_variable_spec_data(tmp_path, normalize):
     torch.testing.assert_close(intervention_b.intervention_data, data_module.normalizer(samples_td))
 
 
+def test_log_normalizer_error(tmp_path):
+    """Test error when log normalizer is applied to negative values"""
+    _save_tmp_data(tmp_path)
+
+    with pytest.raises(ValueError, match="NaN values found in the validation data after normalization."):
+        data_module = VariableSpecDataModule(
+            tmp_path,
+            batch_size=2,
+            standardize=False,
+            log_normalize=True,
+            load_validation=True,
+        )
+        data_module.prepare_data()
+
+
 @pytest.mark.parametrize("log_normalize", [True, False])
 def test_save_load_variable_spec_data(tmp_path, log_normalize):
     """Test saving and loading Variable Spec Data Module from checkpoint"""
-    variable_spec_path = tmp_path / "variables.json"
-    with variable_spec_path.open("w") as f:
-        json.dump(VARIABLES_METADATA.to_dict(encode_json=True), f)
-
-    train_path = tmp_path / "train.csv"
-    with train_path.open("w") as f:
-        DF.to_csv(f, index=False, header=False)
-
-    test_path = tmp_path / "test.csv"
-    with test_path.open("w") as f:
-        DF.to_csv(f, index=False, header=False)
-
-    adjacency_path = tmp_path / "adj_matrix.csv"
-    with adjacency_path.open("w") as f:
-        np.savetxt(f, ADJACENCY.tolist(), delimiter=",")
-
-    intervention_path = tmp_path / "interventions.json"
-    with intervention_path.open("w") as f:
-        json.dump(INTERVENTIONS, f)
+    _save_tmp_data(tmp_path)
 
     if log_normalize:
         data_module = VariableSpecDataModule(

@@ -1,0 +1,15 @@
+class_path: lightning_module.ExampleDECIModule
+init_args:
+  noise_dist: GAUSSIAN
+  prior_sparsity_lambda: 43.0
+  init_rho: 30.0
+  init_alpha: 0.20
+  auglag_config:
+    class_path: causica.training.auglag.AugLagLRConfig
+    init_args:
+      max_inner_steps: 3400
+      max_outer_steps: 8
+      lr_init_dict:
+        functional_relationships: 3e-4
+        noise_dist: 0.0070
+        vardist: 0.0098

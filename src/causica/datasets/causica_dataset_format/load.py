@@ -110,7 +110,7 @@ def load_data(
         match data_enum:
             case (DataEnum.TRAIN | DataEnum.TEST | DataEnum.VALIDATION):
                 arr = np.loadtxt(f, delimiter=",")
-                categorical_sizes = _get_categorical_sizes(variables_list=variables_metadata.variables)
+                categorical_sizes = get_categorical_sizes(variables_list=variables_metadata.variables)
                 return convert_one_hot(
                     tensordict_from_variables_metadata(arr, variables_metadata.variables),
                     one_hot_sizes=categorical_sizes,
@@ -241,7 +241,7 @@ def _to_intervention(
         {node_name: first_row[node_name] for node_name in condition_nodes}, batch_size=tuple()
     )
 
-    categorical_sizes = _get_categorical_sizes(variables_list=variables_list)
+    categorical_sizes = get_categorical_sizes(variables_list=variables_list)
 
     return InterventionData(
         intervention_values=convert_one_hot(
@@ -265,7 +265,7 @@ def _to_counterfactual(
     )
     factual_data = tensordict_from_variables_metadata(base_data, variables_list=variables_list)
 
-    categorical_sizes = _get_categorical_sizes(variables_list=variables_list)
+    categorical_sizes = get_categorical_sizes(variables_list=variables_list)
 
     return CounterfactualData(
         intervention_values=convert_one_hot(
@@ -276,7 +276,8 @@ def _to_counterfactual(
     )
 
 
-def _get_categorical_sizes(variables_list: list[Variable]) -> dict[str, int]:
+def get_categorical_sizes(variables_list: list[Variable]) -> dict[str, int]:
+    """Returns the number of categories of each categorical variable."""
     categorical_sizes = {}
     for item in variables_list:
         if item.type == VariableTypeEnum.CATEGORICAL:
@@ -290,15 +291,17 @@ def _get_categorical_sizes(variables_list: list[Variable]) -> dict[str, int]:
     return categorical_sizes
 
 
-def tensordict_from_variables_metadata(data: np.ndarray, variables_list: list[Variable]) -> TensorDict:
+def tensordict_from_variables_metadata(data: np.ndarray | torch.Tensor, variables_list: list[Variable]) -> TensorDict:
     """Returns a tensor created by concatenating all values along the last dim."""
-    assert data.ndim == 2, "Numpy loading only supported for 2d data"
+    if data.ndim != 2:
+        raise ValueError("Creating a TensorDict for tabular data is only supported for 2D data")
     batch_size = data.shape[0]
 
-    # guaranteed to be ordered correctly in python 3.7+ https://docs.python.org/3/library/collections.html#collections.Counter
+    # Ordered correctly in python 3.7+ https://docs.python.org/3/library/collections.html#collections.Counter
     sizes = Counter(d.group_name for d in variables_list)  # get the dimensions of each key from the variables
     sum_sizes = sum(sizes.values())
-    assert sum_sizes == data.shape[1], f"Variable sizes do not match data shape, got {sum_sizes} and {data.shape}"
+    if sum_sizes != data.shape[1]:
+        raise ValueError(f"Variable sizes do not match data shape, got {sum_sizes} and {data.shape}")
 
     # NOTE: This assumes that variables in the same group will have the same type.
     dtypes = {item.group_name: DTYPE_MAP[item.type] for item in variables_list}

@@ -28,6 +28,7 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
             num_nodes: the number of nodes in the DAGs to be sampled
             probs: A tensor of the probability that an edge exists between 2 nodes of shape batch_shape. If None, calculate p from num_edges
             num_edges: The number of edges to sample. If None, sample from a binomial distribution with p=probs
+            validate_args: Arguments from AdjacencyDistribution
         """
         assert num_nodes > 0, "Number of nodes in the graph must be greater than 0"
 

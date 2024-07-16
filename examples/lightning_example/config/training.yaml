@@ -1,0 +1,15 @@
+# This recreates the latest run:
+# The seed of the run was: 65384781
+seed_everything: true
+trainer:
+  max_epochs: 2000
+  check_val_every_n_epoch: 10
+best_checkpoint_callback:
+  dirpath: "./outputs"
+  filename: "best_model"
+  save_top_k: 1
+  mode: "max"
+  monitor: "batch_log_prob"
+  every_n_train_steps: 1
+last_checkpoint_callback:
+  save_last: true

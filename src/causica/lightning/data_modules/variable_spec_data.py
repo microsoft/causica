@@ -49,6 +49,7 @@ class VariableSpecDataModule(DECIDataModule):
         exclude_log_normalization: Iterable[str] = tuple(),
         default_offset: float = 1.0,
         log_normalize_min_margin: float = 0.0,
+        fit_normalizer_on_test_sets: bool = False,
         load_counterfactual: bool = False,
         load_interventional: bool = False,
         load_validation: bool = False,
@@ -73,6 +74,7 @@ class VariableSpecDataModule(DECIDataModule):
             exclude_log_normalization: Which variables to exclude from log normalization
             default_offset: Default offset for log normalization.
             log_normalize_min_margin: Minimum margin for log normalization.
+            fit_normalizer_on_test_sets: Whether to normalize all data. If True, normalization will be fitted on all data splits.
             load_counterfactual: Whether counterfactual data should be loaded
             load_interventional: Whether interventional data should be loaded
             load_validation: Whether to load the validation dataset
@@ -93,6 +95,7 @@ class VariableSpecDataModule(DECIDataModule):
         self.load_validation = load_validation
         self.default_offset = default_offset
         self.log_normalize_min_margin = log_normalize_min_margin
+        self.fit_normalizer_on_test_sets = fit_normalizer_on_test_sets
 
         self.use_normalizer = standardize or log_normalize
         self.normalizer: Optional[Normalizer] = None
@@ -233,8 +236,14 @@ class VariableSpecDataModule(DECIDataModule):
         if self.use_normalizer:
             # Only applied to continuous variables
             normalization_variables = {k for k, v in self._variable_types.items() if v == VariableTypeEnum.CONTINUOUS}
+            normalization_sets = [self._dataset_train, self._dataset_test]
+            if self.load_validation:
+                normalization_sets.append(self._dataset_valid)
+            normalization_data = (
+                torch.cat(normalization_sets) if self.fit_normalizer_on_test_sets else self._dataset_train
+            )
             self.normalizer = self.create_normalizer(normalization_variables)(
-                self._dataset_train.select(*normalization_variables)
+                normalization_data.select(*normalization_variables)
             )
             self.normalize_data()
         else:
@@ -243,8 +252,16 @@ class VariableSpecDataModule(DECIDataModule):
     def normalize_data(self):
         self._dataset_train = self.normalizer(self._dataset_train)
         self._dataset_test = self.normalizer(self._dataset_test)
+        if self._dataset_test.apply(torch.isnan).any():
+            raise ValueError(
+                "NaN values found in the test data after normalization. Consider changing the normalization parameters."
+            )
         if self.load_validation:
             self._dataset_valid = self.normalizer(self._dataset_valid)
+            if self._dataset_valid.apply(torch.isnan).any():
+                raise ValueError(
+                    "NaN values found in the validation data after normalization. Consider changing the normalization parameters."
+                )
 
         if self.load_interventional:
             for intervention in self.interventions:

@@ -1,0 +1,10 @@
+class_path: data_module.ExampleDataModule
+init_args:
+  dataset_name: "Example dataset"
+  root_path: "https://azuastoragepublic.z6.web.core.windows.net/causal_ai_suite"
+  batch_size: 128
+  standardize: true
+  log_normalize: 
+    - "Revenue"
+  default_offset: 1.0
+  log_normalize_min_margin: 5e-4

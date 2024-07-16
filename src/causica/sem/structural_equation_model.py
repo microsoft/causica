@@ -46,10 +46,10 @@ class SEM(dist.Distribution, abc.ABC):
             len(node_names),
             len(node_names),
         ), "Graph adjacency matrix must have shape [num_nodes, num_nodes] (excluding batch dimensions)"
-        self.batch_shape_g = torch.Size(graph.shape[:-2])
         if batch_shape is None:
+            self.batch_shape_g = torch.Size(graph.shape[:1]) if graph.ndim > 2 else torch.Size([])
             batch_shape = self.batch_shape_g
-        self.batch_shape_f = batch_shape[: -len(self.batch_shape_g)]
+            self.batch_shape_f = torch.Size([])
         super().__init__(event_shape=event_shape, batch_shape=batch_shape)
 
     @property

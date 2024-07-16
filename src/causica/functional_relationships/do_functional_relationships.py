@@ -2,6 +2,7 @@ import torch
 from tensordict import TensorDict
 
 from causica.functional_relationships.functional_relationships import FunctionalRelationships
+from causica.functional_relationships.temporal_functional_relationships import TemporalEmbedFunctionalRelationships
 
 
 class DoFunctionalRelationships(FunctionalRelationships):
@@ -25,6 +26,8 @@ class DoFunctionalRelationships(FunctionalRelationships):
             raise ValueError("Intervention is only supported for at least vector valued interventions")
         if len({val.ndim for val in do.values()}) > 1:
             raise ValueError("Intervention must have the same number of dimensions for all variables")
+        if isinstance(func, TemporalEmbedFunctionalRelationships):
+            raise NotImplementedError("Intervention is not yet implemented for temporal functions.")
 
         new_shapes = {key: shape for key, shape in func.shapes.items() if key not in do.keys()}
         super().__init__(new_shapes, batch_shape=do.batch_size + func.batch_shape)
@@ -46,6 +49,7 @@ class DoFunctionalRelationships(FunctionalRelationships):
         Returns:
             A tensor of shape batch_shape_g + (func_n, func_n)
         """
+
         num_nodes = self.func.tensor_to_td.num_keys
         target_shape = graphs.shape[:-2] + (num_nodes, num_nodes)
 
@@ -113,11 +117,16 @@ def create_do_functional_relationship(
     Return:
         A tuple with the intervened functional relationship and the intervened graph
     """
+    is_temporal = isinstance(func, TemporalEmbedFunctionalRelationships)
+    if is_temporal:
+        raise NotImplementedError("Interventions are not yet supported for temporal graphs")
+
+    graph_ndims = 3 if is_temporal else 2
     if func.batch_shape == torch.Size((1,)):
         func.batch_shape = torch.Size()
     if interventions.ndim > 1:
         raise ValueError("Interventions must be at most a single batch of interventions")
-    if graph.ndim > 3:
+    if graph.ndim > graph_ndims + 1:
         raise ValueError("Graph must be at most a single batch of graphs")
     if interventions.batch_dims > 0 and len(func.batch_shape) > 0:
         raise ValueError("Cannot intervene on a batch of interventions and a batch of functional relationships")
@@ -132,11 +141,11 @@ def create_do_functional_relationship(
     submatrix = graph[..., do_nodes_mask, :][..., :, ~do_nodes_mask]
 
     # Expanding graph if interventions or functions are batched
-    if do_graph.ndim == 2 and interventions.batch_dims > 0 or len(func.batch_shape) > 0:
+    if do_graph.ndim == graph_ndims and interventions.batch_dims > 0 or len(func.batch_shape) > 0:
         do_graph = do_graph.unsqueeze(0)
         submatrix = submatrix.unsqueeze(0)
     # Expanding interventions if graph is batched and functions are not
-    if do_graph.ndim == 3 and interventions.batch_dims == 0 and len(func.batch_shape) == 0:
+    if do_graph.ndim == graph_ndims + 1 and interventions.batch_dims == 0 and len(func.batch_shape) == 0:
         interventions = interventions.unsqueeze(0)
 
     return DoFunctionalRelationships(func, interventions, submatrix), do_graph

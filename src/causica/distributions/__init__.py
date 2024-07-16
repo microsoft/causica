@@ -2,12 +2,20 @@ from causica.distributions.adjacency import (
     AdjacencyDistribution,
     ConstrainedAdjacency,
     ConstrainedAdjacencyDistribution,
+    EdgesPerNodeErdosRenyiDAGDistribution,
     ENCOAdjacencyDistribution,
     ENCOAdjacencyDistributionModule,
     ErdosRenyiDAGDistribution,
     ExpertGraphContainer,
+    GeometricRandomGraphDAGDistribution,
     GibbsDAGPrior,
+    RhinoLaggedAdjacencyDistributionModule,
+    ScaleFreeDAGDistribution,
+    StochasticBlockModelDAGDistribution,
+    TemporalAdjacencyDistributionModule,
+    TemporalConstrainedAdjacencyDistribution,
     ThreeWayAdjacencyDistribution,
+    WattsStrogatzDAGDistribution,
 )
 from causica.distributions.distribution_module import DistributionModule
 from causica.distributions.noise import (
@@ -23,8 +31,15 @@ from causica.distributions.noise import (
     NoiseModule,
     SplineNoise,
     SplineNoiseModule,
+    UnivariateCauchyNoise,
+    UnivariateCauchyNoiseModule,
+    UnivariateLaplaceNoise,
+    UnivariateLaplaceNoiseModule,
+    UnivariateLaplaceNoiseRescaled,
     UnivariateNormalNoise,
     UnivariateNormalNoiseModule,
+    UnivariateNormalNoiseRescaled,
     create_noise_modules,
     create_spline_dist_params,
 )
+from causica.distributions.signed_uniform import MultivariateSignedUniform

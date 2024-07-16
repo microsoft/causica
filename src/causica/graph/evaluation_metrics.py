@@ -48,6 +48,27 @@ def orientation_precision_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> 
     return precision, recall
 
 
+def orientation_fallout_recall(graph1: torch.Tensor, graph2: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Evaluate the precision and recall of edge orientation for two adjacency matrices."""
+    vec1 = _to_vector(graph1)
+    vec2 = _to_vector(graph2)
+    non_zero_vec1 = vec1 != 0
+    zero_vec1 = vec1 == 0
+    non_zero_vec2 = vec2 != 0
+
+    if (non_zero_vec1_sum := non_zero_vec1.sum()) != 0:
+        recall = ((vec1 == vec2) & non_zero_vec1).sum() / non_zero_vec1_sum
+    else:
+        recall = torch.tensor(0.0, device=graph1.device)
+
+    if (zero_vec1_sum := zero_vec1.sum()) != 0:
+        fallout = (non_zero_vec2 & zero_vec1).sum() / zero_vec1_sum
+    else:
+        fallout = torch.tensor(0.0, device=graph1.device)
+
+    return fallout, recall
+
+
 def orientation_f1(graph1: torch.Tensor, graph2: torch.Tensor) -> torch.Tensor:
     """Evaluate the f1 score of edge existence for two adjacency matrices."""
     return f1_score(*orientation_precision_recall(graph1, graph2))

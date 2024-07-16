@@ -5,8 +5,9 @@ from torch.distributions.constraints import Constraint
 from causica.distributions.adjacency import AdjacencyDistribution
 from causica.distributions.distribution_module import DistributionModule
 from causica.distributions.noise.joint import JointNoiseModule
-from causica.functional_relationships.functional_relationships import FunctionalRelationships
+from causica.functional_relationships import FunctionalRelationships, TemporalEmbedFunctionalRelationships
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
+from causica.sem.temporal_distribution_parameters_sem import TemporalDistributionParametersSEM
 
 
 class SEMDistribution(td.Distribution):
@@ -40,7 +41,7 @@ class SEMDistribution(td.Distribution):
         self._functional_relationships = functional_relationships
 
     def _create_sems(self, graphs: torch.Tensor) -> list[DistributionParametersSEM]:
-        graphs = graphs.reshape(-1, *graphs.shape[-2:])
+        graphs = graphs.reshape(-1, *self._adjacency_dist.event_shape)
         return [
             DistributionParametersSEM(
                 graph=graph,
@@ -56,9 +57,7 @@ class SEMDistribution(td.Distribution):
             graphs = graphs[None, ...]
         return self._create_sems(graphs)
 
-    def relaxed_sample(
-        self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0
-    ) -> list[DistributionParametersSEM]:
+    def relaxed_sample(self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0):
         graphs = self._adjacency_dist.relaxed_sample(sample_shape=sample_shape, temperature=temperature)
         return self._create_sems(graphs)
 
@@ -67,19 +66,11 @@ class SEMDistribution(td.Distribution):
 
     @property
     def mean(self) -> DistributionParametersSEM:  # type: ignore
-        return DistributionParametersSEM(
-            graph=self._adjacency_dist.mean,
-            noise_dist=self._noise_module,
-            func=self._functional_relationships,
-        )
+        return self._create_sems(self._adjacency_dist.mean)[0]
 
     @property
     def mode(self) -> DistributionParametersSEM:  # type: ignore
-        return DistributionParametersSEM(
-            graph=self._adjacency_dist.mode,
-            noise_dist=self._noise_module,
-            func=self._functional_relationships,
-        )
+        return self._create_sems(self._adjacency_dist.mode)[0]
 
     def log_prob(self, value: DistributionParametersSEM) -> torch.Tensor:  # type: ignore
         return self._adjacency_dist.log_prob(value.graph)
@@ -101,6 +92,50 @@ class SEMDistributionModule(DistributionModule[SEMDistribution]):
 
     def forward(self) -> SEMDistribution:
         return SEMDistribution(
+            adjacency_dist=self.adjacency_module(),
+            noise_module=self.noise_module,
+            functional_relationships=self.functional_relationships,
+        )
+
+
+class TemporalSEMDistribution(SEMDistribution):
+    def __init__(
+        self,
+        adjacency_dist: AdjacencyDistribution,
+        noise_module: JointNoiseModule,
+        functional_relationships: TemporalEmbedFunctionalRelationships,
+    ):
+        super().__init__(adjacency_dist, noise_module, functional_relationships)
+        self._functional_relationships: TemporalEmbedFunctionalRelationships = functional_relationships
+
+    def _create_sems(self, graphs: torch.Tensor) -> list[TemporalDistributionParametersSEM]:  # type: ignore
+        graphs = graphs.reshape(-1, *self._adjacency_dist.event_shape)
+        return [
+            TemporalDistributionParametersSEM(
+                graph=graph,
+                noise_dist=self._noise_module,
+                func=self._functional_relationships,
+            )
+            for graph in graphs.unbind(dim=0)
+        ]
+
+
+class TemporalSEMDistributionModule(DistributionModule[TemporalSEMDistribution]):
+    """Represents a SEMDistribution with learnable parameters."""
+
+    def __init__(
+        self,
+        adjacency_module: DistributionModule[AdjacencyDistribution],
+        functional_relationships: TemporalEmbedFunctionalRelationships,
+        noise_module: JointNoiseModule,
+    ):
+        super().__init__()
+        self.adjacency_module = adjacency_module
+        self.functional_relationships = functional_relationships
+        self.noise_module = noise_module
+
+    def forward(self) -> TemporalSEMDistribution:
+        return TemporalSEMDistribution(
             adjacency_dist=self.adjacency_module(),
             noise_module=self.noise_module,
             functional_relationships=self.functional_relationships,

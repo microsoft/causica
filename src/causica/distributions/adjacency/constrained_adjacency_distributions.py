@@ -1,10 +1,14 @@
 from functools import partial
-from typing import Callable, Type
+from typing import Callable, Optional, Type, Union
 
 import torch
 import torch.distributions as td
 
 from causica.distributions.adjacency.adjacency_distributions import AdjacencyDistribution
+from causica.distributions.adjacency.temporal_adjacency_distributions import (
+    LaggedAdjacencyDistribution,
+    TemporalAdjacencyDistribution,
+)
 from causica.distributions.distribution_module import DistributionModule
 
 
@@ -20,7 +24,10 @@ class ConstrainedAdjacencyDistribution(AdjacencyDistribution):
     arg_constraints = {"positive_constraints": td.constraints.boolean, "negative_constraints": td.constraints.boolean}
 
     def __init__(
-        self, dist: AdjacencyDistribution, positive_constraints: torch.Tensor, negative_constraints: torch.Tensor
+        self,
+        dist: AdjacencyDistribution | LaggedAdjacencyDistribution,
+        positive_constraints: torch.Tensor,
+        negative_constraints: torch.Tensor,
     ):
         """
         Args:
@@ -113,6 +120,83 @@ class ConstrainedAdjacencyDistribution(AdjacencyDistribution):
         return 1.0 - (1.0 - G * self.negative_constraints) * (~self.positive_constraints)
 
 
+class LaggedConstrainedAdjacencyDistribution(LaggedAdjacencyDistribution, ConstrainedAdjacencyDistribution):
+    """Adjacency distribution that applies hard constraints to a temporal base lagged distribution.
+
+    The expected shape of adjacency matrices in the base distribution is batch_shape + [lag, nodes, ndoes], where
+    lag = context_length - 1, and refers to edges from past timesteps. This distribution applies constraints and
+    overrides the graph produced from the base adjacency distribution with
+    - 0 when the corresponding negative_constraint=0
+    - 1 when the corresponding positive constraint=1
+    - unmodified: all other elements
+
+    See also:
+        ConstrainedAdjacencyDistribution: Similar for non-temporal graphs.
+
+    """
+
+    def __init__(
+        self, dist: LaggedAdjacencyDistribution, positive_constraints: torch.Tensor, negative_constraints: torch.Tensor
+    ):
+        """
+        Args:
+            dist (LaggedAdjacencyDistribution): Base lagged adj distribution, event shape ([lags, nodes, nodes]) matching the postive and negative constraints.
+            positive_constraints (torch.Tensor): Positive constraints. 1 means edge is present.
+            negative_constraints (torch.Tensor): Negative constraints. 0 means edge is not present.
+        """
+        if not dist.event_shape == positive_constraints.shape == negative_constraints.shape:
+            raise ValueError("The constraints must match the event shape of the distribution.")
+        self.dist = dist
+        self.positive_constraints = positive_constraints
+        self.negative_constraints = negative_constraints
+        super().__init__(num_nodes=self.dist.num_nodes, lags=self.dist.lags)
+
+
+class TemporalConstrainedAdjacencyDistribution(TemporalAdjacencyDistribution):
+    """Temporal Adjacency distribution that applies hard constraints to a base distribution.
+
+    This relies on the two constrained base distributions: ConstrainedAdjacencyDistribution for instantaneous graph
+    and LaggedConstrainedAdjacencyDistribution for lagged graph. For detailed explanation of constraint distributions,
+    see ConstrainedAdjacencyDistribution and LaggedConstrainedAdjacencyDistribution.
+
+    """
+
+    arg_constraints = {"positive_constraints": td.constraints.boolean, "negative_constraints": td.constraints.boolean}
+
+    def __init__(
+        self,
+        dist: TemporalAdjacencyDistribution,
+        positive_constraints: torch.Tensor,
+        negative_constraints: torch.Tensor,
+        validate_args: Optional[bool] = None,
+    ):
+        """
+        Args:
+            dist (TemporalAdjacencyDistribution): Base temporal adjacency distribution, event shape matching the postive
+                and negative constraints.
+            positive_constraints (torch.Tensor): Positive constraints with shape [context_length, nodes, nodes].
+                1 means edge is present.
+            negative_constraints (torch.Tensor): Negative constraintswith shape [context_length, nodes, nodes].
+                0 means edge is not present.
+        """
+        self.positive_constraints = positive_constraints
+        self.negative_constraints = negative_constraints
+        constrained_inst_dist = ConstrainedAdjacencyDistribution(
+            dist.inst_dist, positive_constraints[..., -1, :, :], negative_constraints[..., -1, :, :]
+        )
+        if dist.lagged_dist is not None:
+            constrained_lagged_dist = LaggedConstrainedAdjacencyDistribution(
+                dist.lagged_dist, positive_constraints[..., :-1, :, :], negative_constraints[..., :-1, :, :]
+            )
+        else:
+            constrained_lagged_dist = None
+        super().__init__(
+            instantaneous_distribution=constrained_inst_dist,
+            lagged_distribution=constrained_lagged_dist,
+            validate_args=validate_args,
+        )
+
+
 def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Converts graph constraint matrix into a positive and negative matrix for easier usage.
 
@@ -128,7 +212,6 @@ def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> tuple[torch.T
     assert graph_constraint_matrix.shape[0] == graph_constraint_matrix.shape[1], "Constraint matrix must be square."
     # Mask self-edges
     mask = ~torch.eye(graph_constraint_matrix.shape[0], dtype=torch.bool, device=graph_constraint_matrix.device)
-
     positive_constraints = mask * torch.nan_to_num(graph_constraint_matrix, nan=0).to(
         dtype=torch.bool, non_blocking=True
     )
@@ -136,32 +219,82 @@ def get_graph_constraint(graph_constraint_matrix: torch.Tensor) -> tuple[torch.T
     return positive_constraints, negative_constraints
 
 
+def get_temporal_graph_constraint(temporal_graph_constraint_matrix: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert temporal graph constraint matrix into a positive and negative constraint matrix for easier usage.
+
+    See also:
+        get_graph_constraint: Similar for non-temporal graphs.
+
+    Args:
+        temporal_graph_constraint_matrix: Temporal graph constraints: 0 = no edge, 1 = edge, nan: no constraint.
+            Should be a 3D tensor with shape [context_length, num_nodes, num_nodes].
+
+    Returns:
+        A tuple of (positive_constraints, negative_constraint). See TemporalConstrainedAdjacencyDistribution for their
+        interpretation.
+    """
+    assert (
+        temporal_graph_constraint_matrix.ndim == 3
+    ), "Temporal constraint matrix must be 3D, with shape [context_length, num_nodes, num_nodes]."
+    assert (
+        temporal_graph_constraint_matrix.shape[1] == temporal_graph_constraint_matrix.shape[2]
+    ), "Constraint matrix for each time must be square."
+    assert (
+        temporal_graph_constraint_matrix.shape[0] >= 0
+    ), f"context_length in constraint matrix must be non-negative, but got {temporal_graph_constraint_matrix.shape[0]}"
+    # Mask self-edges in instantaneous graph
+    mask = ~torch.eye(
+        temporal_graph_constraint_matrix.shape[1], dtype=torch.bool, device=temporal_graph_constraint_matrix.device
+    )  # [nodes, nodes]
+    # Create positive and negative constraints
+    positive_constraints = torch.nan_to_num(temporal_graph_constraint_matrix, nan=0).to(
+        dtype=torch.bool, non_blocking=True
+    )
+    positive_constraints[..., -1, :, :] = positive_constraints[..., -1, :, :] * mask
+    negative_constraints = torch.nan_to_num(temporal_graph_constraint_matrix, nan=1).to(
+        dtype=torch.bool, non_blocking=True
+    )
+    return positive_constraints, negative_constraints
+
+
 def _create_distribution(
-    dist_class: Type[AdjacencyDistribution], *args, graph_constraint_matrix: torch.Tensor, **kwargs
-) -> ConstrainedAdjacencyDistribution:
+    dist_class: Type[Union[AdjacencyDistribution, TemporalAdjacencyDistribution]],
+    *args,
+    graph_constraint_matrix: torch.Tensor,
+    **kwargs,
+) -> Union[ConstrainedAdjacencyDistribution, TemporalConstrainedAdjacencyDistribution]:
     """Utility function for generating a constrained adjacency distribution with a base distribution.
 
     Args:
-        dist_class (Type[AdjacencyDistribution]): Type of the base adjacency distribution.
+        dist_class (Type[Union[AdjacencyDistribution, TemporalAdjacencyDistribution]): Type of the base adjacency distribution.
         graph_constraint_matrix: Graph constraints: 0 = no edge, 1 = edge, nan: no constraint. Must match the event
                                  shape of the distribution.
 
     Returns:
-        ConstrainedAdjacencyDistribution: Constrained adjacency distribution.
+        Union[ConstrainedAdjacencyDistribution, TemporalConstrainedAdjacencyDistribution]: (Temporal) Constrained adjacency distribution.
     """
 
-    positive_constraints, negative_constraints = get_graph_constraint(graph_constraint_matrix)
+    positive_constraints, negative_constraints = (
+        get_temporal_graph_constraint(graph_constraint_matrix)
+        if issubclass(dist_class, TemporalAdjacencyDistribution)
+        else get_graph_constraint(graph_constraint_matrix)
+    )
 
     dist = dist_class(*args, **kwargs)
+    if isinstance(dist, TemporalAdjacencyDistribution):
+        return TemporalConstrainedAdjacencyDistribution(
+            dist, positive_constraints=positive_constraints, negative_constraints=negative_constraints
+        )
+
     return ConstrainedAdjacencyDistribution(
         dist, positive_constraints=positive_constraints, negative_constraints=negative_constraints
     )
 
 
 def constrained_adjacency(
-    dist_class: Type[AdjacencyDistribution],
-) -> Callable[..., ConstrainedAdjacencyDistribution]:
-    """Utility function that returns a function constructing a constrained adjacency distribution.
+    dist_class: Type[Union[AdjacencyDistribution, TemporalAdjacencyDistribution]],
+) -> Callable[..., Union[ConstrainedAdjacencyDistribution, TemporalConstrainedAdjacencyDistribution]]:
+    """Utility function that returns a function constructing a (temporal) constrained adjacency distribution.
 
     Args:
         dist_class: Type of the base adjacency distribution.
@@ -169,7 +302,7 @@ def constrained_adjacency(
                                  shape of the distribution.
 
     Returns:
-        Callable[..., ConstrainedAdjacencyDistribution]: Utility function creating a ConstrainedAdjacencyDistribution.
+        Utility function creating a (Temporal)ConstrainedAdjacencyDistribution.
     """
 
     return partial(
@@ -200,6 +333,36 @@ class ConstrainedAdjacency(DistributionModule[AdjacencyDistribution]):
     def forward(self) -> ConstrainedAdjacencyDistribution:
         return ConstrainedAdjacencyDistribution(
             self.adjacency_distribution(),
+            positive_constraints=self.positive_constraints,
+            negative_constraints=self.negative_constraints,
+        )
+
+
+class TemporalConstrainedAdjacency(DistributionModule[TemporalAdjacencyDistribution]):
+    """A constrained temporal adjacency distribution module where certain parts edges of in the temporal adjacency matrix are locked."""
+
+    def __init__(
+        self,
+        temporal_adjacency_distribution: DistributionModule[TemporalAdjacencyDistribution],
+        temporal_graph_constraint_matrix: torch.Tensor,
+    ):
+        """
+        Args:
+            temporal_adjacency_distribution: Underlying temporal adjacency distribution module.
+            temporal_graph_constraint_matrix: Constraint matrix with edges defined according to `get_temporal_graph_constraint`.
+        """
+
+        super().__init__()
+        self.temporal_adjacency_distribution = temporal_adjacency_distribution
+        positive_constraints, negative_constraints = get_temporal_graph_constraint(temporal_graph_constraint_matrix)
+        self.positive_constraints: torch.Tensor
+        self.negative_constraints: torch.Tensor
+        self.register_buffer("positive_constraints", positive_constraints)
+        self.register_buffer("negative_constraints", negative_constraints)
+
+    def forward(self) -> TemporalConstrainedAdjacencyDistribution:
+        return TemporalConstrainedAdjacencyDistribution(
+            self.temporal_adjacency_distribution(),
             positive_constraints=self.positive_constraints,
             negative_constraints=self.negative_constraints,
         )

@@ -10,6 +10,7 @@ from causica.functional_relationships.functional_relationships import Functional
 class RFFFunctionalRelationships(FunctionalRelationships):
     """
     A simple random fourier feature-based functional relationship.
+
     The formula implemented here is:
     x_i = sqrt(2/M) * output_scales_i sum_{i}^{M} alpha_i sin( <w_i, pa(x_i)> / length_scale_i )
     """

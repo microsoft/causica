@@ -45,44 +45,79 @@ class JointNoiseModuleSampler(NoiseModuleSampler):
 class UnivariateNormalNoiseModuleSampler(NoiseModuleSampler):
     """Sample a UnivariateNormalNoiseModule, with standard deviation given by a distribution."""
 
-    def __init__(self, std_dist: td.Distribution, dim: int = 1):
+    def __init__(self, std_dist: td.Distribution | float, dim: int = 1):
+        """
+        Args:
+            std_dist: A distribution of standard deviation, or a constant value.
+            dim: Dimension
+        """
         super().__init__()
-        self.std_dist = std_dist
+        if isinstance(std_dist, float):
+            self.std_dist: td.Distribution | torch.Tensor = torch.tensor(std_dist)
+        else:
+            self.std_dist = std_dist
         self.dim = dim
 
     def sample(
         self,
     ):
-        return UnivariateNormalNoiseModule(dim=self.dim, init_log_scale=torch.log(self.std_dist.sample()).item())
+        if isinstance(self.std_dist, torch.Tensor):
+            log_std_sampled = torch.log(self.std_dist)
+        else:
+            log_std_sampled = torch.log(self.std_dist.sample())
+        return UnivariateNormalNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
 
 
 class UnivariateLaplaceNoiseModuleSampler(NoiseModuleSampler):
     """Sample a UnivariateLaplaceNoiseModule, with standard deviation given by a distribution."""
 
-    def __init__(self, std_dist: td.Distribution, dim: int = 1):
+    def __init__(self, std_dist: td.Distribution | float, dim: int = 1):
+        """
+        Args:
+            std_dist: A distribution of standard deviation, or a constant value.
+            dim: Dimension
+        """
         super().__init__()
-        self.std_dist = std_dist
+
+        if isinstance(std_dist, float):
+            self.std_dist: td.Distribution | torch.Tensor = torch.tensor(std_dist)
+        else:
+            self.std_dist = std_dist
         self.dim = dim
 
     def sample(
         self,
     ):
-        log_std_sampled = torch.log(self.std_dist.sample())
+        if isinstance(self.std_dist, float):
+            log_std_sampled = torch.log(torch.tensor(self.std_dist))
+        else:
+            log_std_sampled = torch.log(self.std_dist.sample())
         return UnivariateLaplaceNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
 
 
 class UnivariateCauchyNoiseModuleSampler(NoiseModuleSampler):
     """Sample a UnivariateLaplaceNoiseModule, with standard deviation given by a distribution."""
 
-    def __init__(self, std_dist: td.Distribution, dim: int = 1):
+    def __init__(self, std_dist: td.Distribution | float, dim: int = 1):
+        """
+        Args:
+            std_dist: A distribution of standard deviation, or a constant value.
+            dim: Dimension
+        """
         super().__init__()
-        self.std_dist = std_dist
+        if isinstance(std_dist, float):
+            self.std_dist: td.Distribution | torch.Tensor = torch.tensor(std_dist)
+        else:
+            self.std_dist = std_dist
         self.dim = dim
 
     def sample(
         self,
     ):
-        log_std_sampled = torch.log(self.std_dist.sample())
+        if isinstance(self.std_dist, torch.Tensor):
+            log_std_sampled = torch.log(self.std_dist)
+        else:
+            log_std_sampled = torch.log(self.std_dist.sample())
         return UnivariateCauchyNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
 
 
