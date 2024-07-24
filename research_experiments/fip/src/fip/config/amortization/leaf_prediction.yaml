@@ -1,0 +1,40 @@
+seed_everything: 234  
+model:
+  class_path: fip.tasks.amortization.leaf_prediction.LeafPrediction
+  init_args:
+    learning_rate: 3e-4
+    weight_decay: 5e-9
+    d_model: 128
+    num_heads: 8
+    dim_key: 32
+    num_layers: 4
+    d_ff: 256
+    dropout: 0.
+    max_num_leaf: 100
+    num_to_keep_training: 10
+    distributed: false 
+    elimination_type: "self"
+trainer:
+  max_epochs: 2000
+  accelerator: gpu
+  check_val_every_n_epoch: 10 
+  log_every_n_steps: 10
+  profiler: "simple"
+  devices: 1
+  accumulate_grad_batches: 1
+best_checkpoint_callback:
+  dirpath: "./outputs/"
+  filename: "best_model"
+  save_top_k: 1
+  mode: "min"
+  monitor: "val_loss"
+  every_n_epochs: 1
+last_checkpoint_callback:
+  save_last: true
+  save_top_k: 0  # only the last checkpoint is saved
+early_stopping_callback:
+  monitor: "val_loss"
+  min_delta: 0.0001
+  patience: 500
+  verbose: False
+  mode: "min"

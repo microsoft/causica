@@ -1,5 +1,3 @@
-# This recreates the latest run:
-# The seed of the run was: 65384781
 seed_everything: true
 trainer:
   max_epochs: 2000

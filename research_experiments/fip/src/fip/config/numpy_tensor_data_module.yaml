@@ -1,0 +1,12 @@
+class_path: fip.data_modules.numpy_tensor_data_module.NumpyTensorDataModule
+init_args:
+  data_dir : "fip/data/er_linear_dag_scm/total_nodes_5/seed_1/"
+  train_batch_size:  2000
+  test_batch_size: 2000
+  standardize: true
+  with_true_graph: true
+  split_data_noise: true
+  dod: false
+  num_workers: 0
+  shuffle: true
+  num_interventions: 0
