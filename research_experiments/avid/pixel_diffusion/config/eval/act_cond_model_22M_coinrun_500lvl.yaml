@@ -1,0 +1,25 @@
+seed_everything: 0
+
+checkpoint_path: /host_home/avid_checkpoints/actcond_diffusion_22M_coinrun_500lvl/model.ckpt
+wandb_group: act_cond_model_22M_coinrun_500lvl
+wandb_name: act_cond_model_22M_coinrun_500lvl
+num_batches: 64
+
+data:
+  class_path: dwma.lightning.data_modules.procgen_data.ProcgenDataModule
+  init_args:
+    batch_size: 16
+    train_data_folder: /datasets/coinrun_500lvl_train
+    test_data_folder: /datasets/coinrun_test
+    val_data_folder: /datasets/coinrun_test
+
+trainer:
+  logger:
+    class_path: pytorch_lightning.loggers.WandbLogger
+    init_args:
+      save_dir: /host_home/wandb/
+      offline: False
+      project: avid-eval
+      entity: causica
+  devices: [0]
+  accelerator: "gpu"

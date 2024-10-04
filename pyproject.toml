@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "causica"
-version = "0.4.2"
+version = "0.4.3"
 description = ""
 readme = "README.md"
 authors = ["Microsoft Research - Causica"]
@@ -69,8 +69,15 @@ junit_family = "xunit1"
 
 [tool.mypy]
 ignore_missing_imports = true
+exclude = [
+  "research_experiments/avid"
+]
 
 [tool.pylint.main]
+ignore-paths = [
+  "research_experiments/avid/latent_diffusion/libs",
+]
+
 # Specify a score threshold to be exceeded before program exits with error.
 fail-under = 9.94
 # Use multiple processes to speed up Pylint. Specifying 0 will auto-detect the

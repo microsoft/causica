@@ -1,0 +1,16 @@
+wandb_group: full_finetune_coinrun_500lvl
+wandb_name: full_finetune_coinrun_500lvl
+
+checkpoint_path: "/host_home/avid_checkpoints/pretrained_base_model/epoch=259-step=260000.ckpt"
+model:
+  class_path: dwma.lightning.modules.diffusion_module.DiffusionModule
+  init_args:
+    action_cond: True
+    learning_rate: 2e-5
+
+trainer:
+  devices: [0]
+  callbacks:
+    class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: "/host_home/avid_checkpoints/full_finetune_coinrun_500lvl"
