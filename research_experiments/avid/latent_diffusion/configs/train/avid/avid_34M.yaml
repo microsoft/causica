@@ -1,0 +1,65 @@
+name: avid_rt1_34M
+group: avid_rt1_34M
+logdir: /host_home/avid
+
+base_config_file: configs/train/dynamicrafter_512.yaml
+action_config_file: configs/train/act_cond_diffusion_34M.yaml
+
+target_module: ldwma.models.avid.AVIDAdapter
+adapter_params:
+  condition_adapter_on_base_outputs: True
+  learnt_mask: True
+  init_mask_bias: 0.0
+
+data:
+  target: ldwma.lightning.data_modules.rtx.RTXDataModule
+  params:
+    batch_size: 16
+    target_height: 320
+    target_width: 512
+    dataset_name: "fractal20220817_data"
+    shuffle_buffer: 1000
+    traj_len: 16
+    train_split: "train[:95%]"
+
+lightning:
+  precision: 16
+  trainer:
+    accelerator: "gpu"
+    limit_train_batches: 1000
+    limit_val_batches: 50
+    check_val_every_n_epoch: 1
+    num_nodes: 1
+    benchmark: True
+    accumulate_grad_batches: 1
+    max_steps: 500000
+    log_every_n_steps: 10
+    gradient_clip_algorithm: "norm"
+    gradient_clip_val: 1.0
+    logger:
+      target: pytorch_lightning.loggers.WandbLogger
+      params:
+        save_dir: /host_home/wandb/
+        offline: False
+        project: avid
+        entity: causica
+        log_model: all
+  callbacks:
+    model_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        filename: "{epoch}-{step}"
+        save_weights_only: True
+        every_n_epochs: 5
+        save_top_k: -1
+    batch_logger:
+      target: lvdm.utils.callbacks.ImageLogger
+      params:
+        batch_frequency: 1000
+        max_images: 8
+        log_images_kwargs:
+          ddim_steps: 50
+          unconditional_guidance_scale: 1.0
+          timestep_spacing: uniform_trailing
+          guidance_rescale: 0.7
+          verbose: True

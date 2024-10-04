@@ -1,0 +1,50 @@
+name: avid_145M
+group: avid_145M
+
+num_batches: 64
+
+base_config_file: configs/train/dynamicrafter_512.yaml
+action_config_file: configs/train/act_cond_diffusion_145M.yaml
+
+base_model_checkpoint: /host_home/avid/dynamicrafter_512/model.ckpt
+action_model_checkpoint: /host_home/avid/avid_145M/model.ckpt
+
+target_module: ldwma.models.avid.AVIDAdapter
+adapter_params:
+  condition_adapter_on_base_outputs: True
+  learnt_mask: True
+  init_mask_bias: 0.0
+
+ddim_kwargs:
+  ddim_steps: 50
+  unconditional_guidance_scale: 1.0 # don't use cfg within ddim class
+  timestep_spacing: uniform_trailing
+  guidance_rescale: 0.7
+  ddim_eta: 1.0
+  verbose: True
+
+logger:
+  target: pytorch_lightning.loggers.WandbLogger
+  params:
+    save_dir: /host_home/wandb/
+    offline: False
+    project: avid-eval
+    entity: causica
+
+video_logger_callback:
+  target: lvdm.utils.callbacks.ImageLogger
+  params:
+    batch_frequency: 1
+    reset_metrics_per_batch: False # aggregate metrics over all batches
+    max_wandb_images: 4
+
+data:
+  target: ldwma.lightning.data_modules.rtx.RTXDataModule
+  params:
+    batch_size: 16
+    target_height: 320
+    target_width: 512
+    dataset_name: "fractal20220817_data"
+    shuffle_buffer: 100
+    traj_len: 16
+    deterministic: True # slow but deterministic data loading for eval

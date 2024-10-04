@@ -1,0 +1,26 @@
+wandb_group: classifier_coinrun_noisy_500lvl
+wandb_name: classifier_coinrun_noisy_500lvl
+model:
+  class_path: dwma.lightning.modules.classifier_module.ClassifierModule
+  init_args:
+    init_frames: 2
+    next_frames: 8
+    train_with_noise: True # train on noisy videos
+    classifier:
+      class_path: dwma.models.classifier.GaussianNoiseActionClassifier
+      init_args:
+        num_timesteps: 200
+        model:
+          class_path: dwma.models.classifier.Unet3DEncoder
+          init_args:
+            dim: 80
+            attn_dim_head: 64
+            attn_heads: 8
+            num_actions: 15
+
+trainer:
+  devices: [0]
+  callbacks:
+    class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: "/host_home/avid_checkpoints/classifier_coinrun_noisy_500lvl"

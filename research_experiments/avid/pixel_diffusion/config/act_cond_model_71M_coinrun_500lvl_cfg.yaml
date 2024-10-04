@@ -1,0 +1,25 @@
+wandb_group: actcond_diffusion_71M_coinrun_500lvl_cfg
+wandb_name: actcond_diffusion_71M_coinrun_500lvl_cfg
+model:
+  class_path: dwma.lightning.modules.diffusion_module.DiffusionModule
+  init_args:
+    action_cond: True
+    diffusion_model:
+      class_path: dwma.models.video_diffusion_pytorch.diffusion.GaussianDiffusion
+      init_args:
+        model:
+          class_path: dwma.models.video_diffusion_pytorch.unet3d.Unet3D
+          init_args:
+            dim: 90
+            attn_dim_head: 50
+            attn_heads: 6
+            train_with_cfg: True
+
+trainer:
+  devices: [0]
+  callbacks:
+    class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: "/host_home/avid_checkpoints/actcond_diffusion_71M_coinrun_500lvl_cfg"
+      every_n_epochs: 5
+  accumulate_grad_batches: 2

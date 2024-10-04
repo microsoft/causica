@@ -1,0 +1,24 @@
+wandb_group: pretrained_base_model
+wandb_name: pretrained_base_model
+
+model:
+  class_path: dwma.lightning.modules.diffusion_module.DiffusionModule
+  init_args:
+    action_cond: False
+
+data:
+  class_path: dwma.lightning.data_modules.procgen_data.ProcgenDataModule
+  init_args:
+    precache_files: False
+    cache_files: False
+    train_data_folder: /datasets/procgen_mixed_no_coinrun_train
+    test_data_folder: /datasets/procgen_mixed_no_coinrun_test
+    val_data_folder: /datasets/procgen_mixed_no_coinrun_test
+
+trainer:
+  devices: [0]
+  callbacks:
+    class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: "/host_home/avid_checkpoints/pretrained_base_model"
+      every_n_epochs: 20 # Change this to the desired frequency

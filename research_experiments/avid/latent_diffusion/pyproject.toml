@@ -1,0 +1,71 @@
+[tool.poetry]
+name = "ldwma"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = []
+
+
+[tool.poetry.dependencies]
+python = "~3.10"
+torch = { url = "https://download.pytorch.org/whl/cu118/torch-2.1.0%2Bcu118-cp310-cp310-linux_x86_64.whl#sha256=a81b554184492005543ddc32e96469f9369d778dedd195d73bda9bed407d6589" }
+pytorch-lightning = "1.9.3"
+wandb = "^0.16.2"
+decord = "0.6.0"
+einops = "0.6.0"
+imageio = "2.9.0"
+numpy = "1.24.2"
+omegaconf = "2.1.1"
+opencv-python = "*"
+pandas = "2.0.0"
+pillow = "9.5.0"
+PyYAML = "6.0"
+torchvision = "*"
+tqdm = "4.65.0"
+transformers = "4.25.1"
+moviepy = "*"
+av = "*"
+xformers = "*"
+gradio = "*"
+timm = "*"
+scikit-learn = "*"
+open_clip_torch = "2.22.0"
+kornia = "*"
+octo = {path = "libs/octo", develop = true}
+lvdm = {path = "libs/dynamicrafter", develop = true}
+avid_utils = { path = "../libs/avid_utils", develop = true}
+gcsfs = "^2024.6.0"
+fairscale = "^0.4.13"
+pudb = "^2024.1.1"
+pytorch-fid = "^0.3.0"
+
+
+[tool.poetry.group.dev.dependencies]
+black = {version="^22.6.0", extras=["jupyter"]}
+isort =  "^5.10.1"
+jupyter = "^1.0.0"
+jupytext = "^1.13.8"
+mypy = "^1.0.0"
+pre-commit = "^2.19.0"
+pylint = "^2.14.4"
+pytest = "^7.1.2"
+pytest-cov = "^3.0.0"
+seaborn = "^0.12.2"
+types-python-dateutil = "^2.8.18"
+types-requests = "^2.31.0.10"
+
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+line_length = 120
+profile = "black"
+py_version = 310
+known_first_party = ["ldwma"]
+# Keep import sorts by code jupytext percent block (https://github.com/PyCQA/isort/issues/1338)
+treat_comments_as_code = ["# %%"]
