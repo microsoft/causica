@@ -1,6 +1,6 @@
 import math
-from dataclasses import dataclass, field
 from itertools import product
+from typing import Optional
 
 import torch
 import torch.distributions as td
@@ -15,7 +15,6 @@ from causica.data_generation.samplers.noise_dist_sampler import (
     JointNoiseModuleSampler,
     NoiseModuleSampler,
     UnivariateCauchyNoiseModuleSampler,
-    UnivariateLaplaceNoiseModuleSampler,
     UnivariateNormalNoiseModuleSampler,
 )
 from causica.data_generation.samplers.sem_sampler import SEMSampler
@@ -27,121 +26,73 @@ from causica.distributions.adjacency import (
     StochasticBlockModelDAGDistribution,
     WattsStrogatzDAGDistribution,
 )
-from causica.distributions.signed_uniform import MultivariateSignedUniform
+from causica.distributions.noise.univariate_laplace import UnivariateLaplaceNoiseModule
+from causica.distributions.signed_uniform import signed_uniform_1d
+from fip.data_generation.config_data import (
+    CauchyConfig,
+    ERConfig,
+    GaussianConfig,
+    GRGConfig,
+    HeteroscedasticRFFConfig,
+    LaplaceConfig,
+    LinearConfig,
+    RFFConfig,
+    SBMConfig,
+    SFConfig,
+    WSConfig,
+)
 
 
-@dataclass(frozen=True)
-class GaussianConfig:
-    """Config for the Gaussian Noise Distribution"""
+class UnivariateLaplaceNoiseModuleSampler(NoiseModuleSampler):
+    """Sample a UnivariateLaplaceNoiseModule, with standard deviation given by a distribution."""
 
-    low: float = 0.2
-    high: float = 2.0
+    def __init__(self, std_dist: td.Distribution | float, dim: int = 1):
+        """
+        Args:
+            std_dist: A distribution of standard deviation, or a constant value.
+            dim: Dimension
+        """
+        super().__init__()
+
+        if isinstance(std_dist, float):
+            self.std_dist: td.Distribution | torch.Tensor = torch.tensor(std_dist)
+        else:
+            self.std_dist = std_dist
+        self.dim = dim
+
+    def sample(
+        self,
+    ):
+        if isinstance(self.std_dist, torch.Tensor):
+            log_std_sampled = torch.log(self.std_dist)
+        else:
+            log_std_sampled = torch.log(self.std_dist.sample())
+        return UnivariateLaplaceNoiseModule(dim=self.dim, init_log_scale=log_std_sampled)
 
 
-@dataclass(frozen=True)
-class LaplaceConfig:
-    """Config for the Laplace Noise Distribution"""
-
-    low: float = 0.2
-    high: float = 2.0
-
-
-@dataclass(frozen=True)
-class CauchyConfig:
-    """Config for the Cauchy Noise Distribution"""
-
-    low: float = 0.2
-    high: float = 2.0
-
-
-@dataclass(frozen=True)
-class GRGConfig:
+class MultivariateSignedUniform(td.Distribution):
     """
-    Config for the GRG Graph Distribution
-    """
+    Distribution that is a mixture of two uniform distributions.
 
-    radius: list[float] = field(default_factory=lambda: [0.1])
+    The first uniform distribution is defined on the interval [low, high]
+    and the second is defined on the interval [-high, -low].
+    The mixture is defined by a Bernoulli distribution with a probability of 0.5.
 
-
-@dataclass(frozen=True)
-class WSConfig:
-    """
-    Config for the WS Graph Distribution
-    """
-
-    lattice_dim: list[int] = field(default_factory=lambda: [2, 3])
-    rewire_prob: list[float] = field(default_factory=lambda: [0.3])
-    neighbors: list[int] = field(default_factory=lambda: [1])
-
-
-@dataclass(frozen=True)
-class SBMConfig:
-    """
-    Config for the SBM Graph Distribution
-    """
-
-    edges_per_node: list[int] = field(default_factory=lambda: [2])
-    num_blocks: list[int] = field(default_factory=lambda: [5, 10])
-    damping: list[float] = field(default_factory=lambda: [0.1])
-
-
-@dataclass(frozen=True)
-class ERConfig:
-    """
-    Config for the ER Graph Distribution
+    Args:
+        low: the lower bound of the uniform distribution
+        high: the upper bound of the uniform distribution
+        size: the size of the distribution
     """
 
-    edges_per_node: list[int] = field(default_factory=lambda: [1, 2, 3])
+    def __init__(self, low: float, high: float, size: torch.Size, validate_args: Optional[bool] = None):
+        self.one_dim_dist = signed_uniform_1d(low, high)
+        self.size = size
+        super().__init__(validate_args=validate_args)
 
+    def sample(self, sample_shape=torch.Size()):
+        sample_shape = sample_shape + self.size
 
-@dataclass(frozen=True)
-class SFConfig:
-    """
-    Config for the SF Graph Distribution
-    """
-
-    edges_per_node: list[int] = field(default_factory=lambda: [1, 2, 3])
-    attach_power: list[float] = field(default_factory=lambda: [1.0])
-
-
-@dataclass(frozen=True)
-class LinearConfig:
-    """
-    Config for the Linear Functional Relationship Sampler
-    """
-
-    weight_low: float = 1.0
-    weight_high: float = 3.0
-    bias_low: float = -3.0
-    bias_high: float = 3.0
-
-
-@dataclass(frozen=True)
-class RFFConfig:
-    """
-    Config for the RFF Functional Relationship Sampler
-    """
-
-    num_rf: int = 100
-    length_low: float = 7.0
-    length_high: float = 10.0
-    out_low: float = 10.0
-    out_high: float = 20.0
-    bias_low: float = -3.0
-    bias_high: float = 3.0
-
-
-@dataclass(frozen=True)
-class HeteroscedasticRFFConfig:
-    """
-    Config for the Heteroscedatic RFF Functional Relationship Sampler
-    """
-
-    type_noise: str = "gaussian"
-    num_rf: int = 100
-    length: float = 10.0
-    out: float = 2.0
-    log_scale: bool = True
+        return self.one_dim_dist.sample(sample_shape)
 
 
 class SemSamplerFactory:
@@ -214,10 +165,9 @@ class SemSamplerFactory:
                         }
                         log_functional_rescaling_sampler = None
                     case "laplace":
+                        std_dist = td.Uniform(low=self.config_laplace.low, high=self.config_laplace.high)
                         noise_dist_samplers = {
-                            f"x_{i}": UnivariateLaplaceNoiseModuleSampler(
-                                std_dist=td.Uniform(low=self.config_laplace.low, high=self.config_laplace.high), dim=1
-                            )
+                            f"x_{i}": UnivariateLaplaceNoiseModuleSampler(std_dist=std_dist, dim=1)
                             for i in range(num_nodes)
                         }
                         log_functional_rescaling_sampler = None
@@ -274,6 +224,7 @@ class SemSamplerFactory:
                         adjacency_dist = EdgesPerNodeErdosRenyiDAGDistribution(
                             num_nodes=num_nodes,
                             edges_per_node=self.config_er.edges_per_node,
+                            validate_args=False,
                         )
                     case "sf_in":
                         adjacency_dist = ScaleFreeDAGDistribution(
@@ -281,6 +232,7 @@ class SemSamplerFactory:
                             edges_per_node=self.config_sf.edges_per_node,
                             power=self.config_sf.attach_power,
                             in_degree=True,
+                            validate_args=False,
                         )
                     case "sf_out":
                         adjacency_dist = ScaleFreeDAGDistribution(
@@ -288,6 +240,7 @@ class SemSamplerFactory:
                             edges_per_node=self.config_sf.edges_per_node,
                             power=self.config_sf.attach_power,
                             in_degree=False,
+                            validate_args=False,
                         )
                     case "ws":
                         adjacency_dist = WattsStrogatzDAGDistribution(
@@ -295,6 +248,7 @@ class SemSamplerFactory:
                             lattice_dim=self.config_ws.lattice_dim,
                             rewire_prob=self.config_ws.rewire_prob,
                             neighbors=self.config_ws.neighbors,
+                            validate_args=False,
                         )
                     case "sbm":
                         adjacency_dist = StochasticBlockModelDAGDistribution(
@@ -302,10 +256,13 @@ class SemSamplerFactory:
                             edges_per_node=self.config_sbm.edges_per_node,
                             num_blocks=self.config_sbm.num_blocks,
                             damping=self.config_sbm.damping,
+                            validate_args=False,
                         )
                     case "grg":
                         adjacency_dist = GeometricRandomGraphDAGDistribution(
-                            num_nodes=num_nodes, radius=self.config_grg.radius
+                            num_nodes=num_nodes,
+                            radius=self.config_grg.radius,
+                            validate_args=False,
                         )
                     case _:
                         raise ValueError(f"Unknown type_dist: {type_graph}")
@@ -318,6 +275,7 @@ class SemSamplerFactory:
                                 low=self.config_linear.weight_low,
                                 high=self.config_linear.weight_high,
                                 size=torch.Size([dim, dim]),
+                                validate_args=False,
                             ),
                             shapes_dict=shapes_dict,
                             bias_dist=td.Uniform(

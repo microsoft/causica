@@ -1,39 +1,16 @@
 import argparse
-import math
 import os
 import random
 from enum import Enum
 
 import numpy as np
 import torch
-import torch.distributions as td
-from fip.data_utils.synthetic_data_module import sample_counterfactual
 
-from causica.data_generation.samplers.functional_relationships_sampler import (
-    FunctionalRelationshipsSampler,
-    HeteroscedasticRFFFunctionalRelationshipsSampler,
-    LinearRelationshipsSampler,
-    RFFFunctionalRelationshipsSampler,
-)
-from causica.data_generation.samplers.noise_dist_sampler import (
-    JointNoiseModuleSampler,
-    NoiseModuleSampler,
-    UnivariateCauchyNoiseModuleSampler,
-    UnivariateLaplaceNoiseModuleSampler,
-    UnivariateNormalNoiseModuleSampler,
-)
-from causica.data_generation.samplers.sem_sampler import SEMSampler
-from causica.distributions.adjacency import (
-    AdjacencyDistribution,
-    EdgesPerNodeErdosRenyiDAGDistribution,
-    GeometricRandomGraphDAGDistribution,
-    ScaleFreeDAGDistribution,
-    StochasticBlockModelDAGDistribution,
-    WattsStrogatzDAGDistribution,
-)
-from causica.distributions.signed_uniform import MultivariateSignedUniform
 from causica.distributions.transforms import TensorToTensorDictTransform
 from causica.sem.distribution_parameters_sem import DistributionParametersSEM
+from fip.data_generation.config_data import LinearConfig, RFFConfig, SFConfig
+from fip.data_generation.sem_factory import SemSamplerFactory
+from fip.data_modules.synthetic_data_module import sample_counterfactual
 
 
 class NoiseEnum(Enum):
@@ -69,207 +46,55 @@ class DistEnum(Enum):
     OUT = "out"
 
 
-def gen_sem(
+def gen_from_factory_sem(
     data_dim: int,
     func_type: FuncEnum,
     noise_type: NoiseEnum,
     graph_type: GraphEnum,
     dist_case: DistEnum,
 ) -> DistributionParametersSEM:
-    """Function for generating structural causal model with a random DAG sampled using erdos renyi scheme and support over different noise/functional distributions.
 
-    Args:
-        data_dim: Dimension of data points
-        func_type: Type of functional relationship
-        noise_type: Type of noise distribution
-        graph_type: Type of graph
-        dist_case: in Distribution or out Distribution
-
-    Returns:
-        Structural Causal Model: Object of class DistributionParametersSEM
-    """
-    shapes_dict = {f"x_{i}": torch.Size([1]) for i in range(data_dim)}
-    dim = sum(shape.numel() for shape in shapes_dict.values())
-
-    std_dist: td.Distribution | float
-    noise_dist_samplers: dict[str, NoiseModuleSampler]
-    adjacency_dist: AdjacencyDistribution
-    functional_relationships_sampler: FunctionalRelationshipsSampler
     match dist_case:
         case DistEnum.IN:
-            log_functional_rescaling_sampler = None
+            sem_sampler = SemSamplerFactory(
+                node_nums=[data_dim], noises=[noise_type.value], funcs=[func_type.value], graphs=[graph_type.value]
+            )
+            sem = sem_sampler()[0].sample()
         case DistEnum.OUT:
-            if func_type == FuncEnum.LINEAR and noise_type == NoiseEnum.GAUSSIAN:
-                # in case of LGM, we do not apply the data-dependent transformation of the variance for the noise
-                log_functional_rescaling_sampler = None
-            else:
-                num_rf = 100
-                zeros_vector_rf = torch.zeros((num_rf,), dtype=torch.float32)
-                ones_vector_rf = torch.ones((num_rf,), dtype=torch.float32)
-                zeros_matrix = torch.zeros((num_rf, dim), dtype=torch.float32)
-                ones_vector_dim = torch.ones((dim,), dtype=torch.float32)
-                log_functional_rescaling_sampler = HeteroscedasticRFFFunctionalRelationshipsSampler(
-                    rf_dist=td.MultivariateNormal(zeros_matrix, covariance_matrix=torch.eye(dim)),
-                    coeff_dist=td.MultivariateNormal(zeros_vector_rf, covariance_matrix=torch.eye(num_rf)),
-                    shapes_dict=shapes_dict,
-                    length_dist=10.0,
-                    out_dist=2.0,
-                    angle_dist=td.Uniform(low=zeros_vector_rf, high=2 * math.pi * ones_vector_rf),
-                    log_scale=True,
-                )
+            config_linear = LinearConfig()
+            config_linear.weight_low = 0.5
+            config_linear.weight_high = 4.0
 
-    match noise_type:
-        case NoiseEnum.GAUSSIAN:
-            match dist_case:
-                case DistEnum.IN:
-                    if func_type == FuncEnum.LINEAR:
-                        # in case of LGM, we fix the variance of all the noise to be identifiable
-                        std_dist = td.Uniform(low=0.2, high=2.0).sample().item()
-                    else:
-                        std_dist = td.Uniform(low=0.2, high=2.0)
-                case DistEnum.OUT:
-                    std_dist = 1.0
-                case _:
-                    raise NotImplementedError("Distribution case not supported")
-            noise_dist_samplers = {
-                f"x_{i}": UnivariateNormalNoiseModuleSampler(std_dist=std_dist, dim=1) for i in range(data_dim)
-            }
-        case NoiseEnum.LAPLACE:
-            match dist_case:
-                case DistEnum.IN:
-                    std_dist = td.Uniform(low=0.2, high=2.0)
-                case DistEnum.OUT:
-                    std_dist = 1.0
-                case _:
-                    raise NotImplementedError("Distribution case not supported")
-            noise_dist_samplers = {
-                f"x_{i}": UnivariateLaplaceNoiseModuleSampler(std_dist=std_dist, dim=1) for i in range(data_dim)
-            }
-        case NoiseEnum.CAUCHY:
-            match dist_case:
-                case DistEnum.IN:
-                    std_dist = td.Uniform(low=0.2, high=2.0)
-                case DistEnum.OUT:
-                    std_dist = 1.0
-                case _:
-                    raise NotImplementedError("Distribution case not supported")
-            noise_dist_samplers = {
-                f"x_{i}": UnivariateCauchyNoiseModuleSampler(std_dist=std_dist, dim=1) for i in range(data_dim)
-            }
-        case _:
-            raise NotImplementedError("Noise distribution not supported")
+            config_rff = RFFConfig()
+            config_rff.length_low = 5.0
+            config_rff.length_high = 12.0
+            config_rff.out_low = 8.0
+            config_rff.out_high = 22.0
 
-    joint_noise_module_sampler = JointNoiseModuleSampler(noise_dist_samplers)
-
-    match graph_type:
-        case GraphEnum.ER:
-            adjacency_dist = EdgesPerNodeErdosRenyiDAGDistribution(num_nodes=data_dim, edges_per_node=[1, 2, 3])
-        case GraphEnum.SF_IN:
-            adjacency_dist = ScaleFreeDAGDistribution(
-                num_nodes=data_dim, edges_per_node=[1, 2, 3], power=[1.0], in_degree=True
-            )
-        case GraphEnum.SF_OUT:
-            match dist_case:
-                case DistEnum.IN:
-                    edges_per_node = [1, 2, 3]
-                    power = [1.0]
-                case DistEnum.OUT:
-                    edges_per_node = [2]
-                    power = [0.5, 1.5]
+            match graph_type:
+                case GraphEnum.SF_OUT:
+                    config_sf = SFConfig()
+                    config_sf.edges_per_node = [2]
+                    config_sf.attach_power = [0.5, 1.5]
                 case _:
-                    raise NotImplementedError("Distribution case not supported")
-            adjacency_dist = ScaleFreeDAGDistribution(
-                num_nodes=data_dim, edges_per_node=edges_per_node, power=power, in_degree=False
-            )
-        case GraphEnum.SBM:
-            adjacency_dist = StochasticBlockModelDAGDistribution(
-                num_nodes=data_dim, edges_per_node=[1, 2, 3], num_blocks=[5, 10], damping=[0.1]
-            )
-        case GraphEnum.GRG:
-            adjacency_dist = GeometricRandomGraphDAGDistribution(num_nodes=data_dim, radius=[0.1])
-        case GraphEnum.WS:
-            adjacency_dist = WattsStrogatzDAGDistribution(
-                num_nodes=data_dim, lattice_dim=[2, 3], rewire_prob=[0.3], neighbors=[1]
-            )
-        case _:
-            raise NotImplementedError("Graph type not supported")
+                    config_sf = SFConfig()
 
-    match func_type:
-        case FuncEnum.LINEAR:
-            match dist_case:
-                case DistEnum.IN:
-                    low = 1.0
-                    high = 3.0
-                case DistEnum.OUT:
-                    low = 0.5
-                    high = 4.0
-                case _:
-                    raise NotImplementedError("Distribution case not supported")
-
-            one_vector_dim = torch.ones((dim,), dtype=torch.float32)
-            functional_relationships_sampler = LinearRelationshipsSampler(
-                scale_dist=MultivariateSignedUniform(
-                    low=low,
-                    high=high,
-                    size=torch.Size([dim, dim]),
-                ),
-                shapes_dict=shapes_dict,
-                bias_dist=td.Uniform(
-                    low=-3.0 * one_vector_dim,
-                    high=3.0 * one_vector_dim,
-                ),
+            sem_sampler = SemSamplerFactory(
+                node_nums=[data_dim],
+                noises=[noise_type.value],
+                funcs=[func_type.value],
+                graphs=[graph_type.value],
+                config_rff=config_rff,
+                config_linear=config_linear,
+                config_sf=config_sf,
             )
-        case FuncEnum.RFF:
-            num_rf = 100
-            match dist_case:
-                case DistEnum.IN:
-                    low_l = 7.0
-                    high_l = 10.0
-                    low_c = 10.0
-                    high_c = 20.0
-                case DistEnum.OUT:
-                    low_l = 5.0
-                    high_l = 12.0
-                    low_c = 8.0
-                    high_c = 22.0
-                case _:
-                    raise NotImplementedError("Distribution case not supported")
-            zeros_vector_rf = torch.zeros((num_rf,), dtype=torch.float32)
-            ones_vector_rf = torch.ones((num_rf,), dtype=torch.float32)
-            zeros_matrix = torch.zeros((num_rf, dim), dtype=torch.float32)
-            ones_vector_dim = torch.ones((dim,), dtype=torch.float32)
-            functional_relationships_sampler = RFFFunctionalRelationshipsSampler(
-                rf_dist=td.MultivariateNormal(zeros_matrix, covariance_matrix=torch.eye(dim)),
-                coeff_dist=td.MultivariateNormal(zeros_vector_rf, covariance_matrix=torch.eye(num_rf)),
-                shapes_dict=shapes_dict,
-                bias_dist=td.Uniform(
-                    low=-3.0 * ones_vector_dim,
-                    high=3.0 * ones_vector_dim,
-                ),
-                length_dist=td.Uniform(
-                    low=low_l * ones_vector_dim,
-                    high=high_l * ones_vector_dim,
-                ),
-                out_dist=td.Uniform(
-                    low=low_c * ones_vector_dim,
-                    high=high_c * ones_vector_dim,
-                ),
-                angle_dist=td.Uniform(low=zeros_vector_rf, high=2 * math.pi * ones_vector_rf),
-            )
-        case _:
-            raise NotImplementedError("Functional relationship type not supported")
-
-    sem = SEMSampler(
-        adjacency_dist=adjacency_dist,
-        joint_noise_module_sampler=joint_noise_module_sampler,
-        functional_relationships_sampler=functional_relationships_sampler,
-        log_functional_rescaling_sampler=log_functional_rescaling_sampler,
-    ).sample()
+            sem = sem_sampler()[0].sample()
 
     return sem
 
 
 def main(
+    data_dir: str,
     seed: int,
     val_train_split_ratio: float,
     train_size: int,
@@ -291,9 +116,7 @@ def main(
 
     name_data = f"{graph_type.value}_{func_type.value}_{noise_type.value}_{dist_case.value}"
     base_dir = os.path.join(
-        "src",
-        "fip",
-        "data",
+        data_dir,
         name_data,
         "total_nodes_" + str(data_dim),
         "seed_" + str(seed),
@@ -302,13 +125,14 @@ def main(
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
 
-    sem = gen_sem(
+    sem = gen_from_factory_sem(
         data_dim=data_dim,
         func_type=func_type,
         noise_type=noise_type,
         graph_type=graph_type,
         dist_case=dist_case,
     )
+
     w = np.transpose(sem.graph.numpy())
     f = os.path.join(base_dir, "true_graph.npy")
     np.save(f, w)
@@ -349,10 +173,12 @@ def main(
     # Save the corresponding counterfactual dataset
     for i in range(num_interventions):
         f_data = list_cf[i].factual_data
+        n_data = list_cf[i].noise_data
         cf_data = list_cf[i].counterfactual_data
         int_values = list_cf[i].intervention_values
 
         f_data_np = td_to_tensor_transform.inv(f_data).numpy()
+        n_data_np = td_to_tensor_transform.inv(n_data).numpy()
         cf_data_np = td_to_tensor_transform.inv(cf_data).numpy()
 
         list_keys = list(int_values.keys())
@@ -361,7 +187,7 @@ def main(
         int_index_np = np.ones((num_intervention_samples, 1)) * int_index
         int_values_np = torch.cat(list(int_values.values()), dim=-1).repeat(num_intervention_samples, 1).numpy()
 
-        x_cf = np.concatenate((f_data_np, cf_data_np, int_index_np, int_values_np), axis=1)
+        x_cf = np.concatenate((f_data_np, n_data_np, cf_data_np, int_index_np, int_values_np), axis=1)
         f = os.path.join(base_dir, "x_cf_" + str(i) + ".npy")
         np.save(f, x_cf)
 
@@ -369,6 +195,7 @@ def main(
 if __name__ == "__main__":
     # Input Parsing
     parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", type=str, default="./data")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for initialization")
     parser.add_argument(
         "--val_train_split_ratio",
@@ -402,6 +229,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(
+        args.data_dir,
         args.seed,
         args.val_train_split_ratio,
         args.train_size,

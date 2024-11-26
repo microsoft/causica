@@ -2,9 +2,6 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
-from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
-from fip.methods.scm_learning import SCMLearning
-from fip.task_utils.learnable_loss import LearnableGaussianLLH
 from torch import nn, optim
 
 from causica.graph.evaluation_metrics import (
@@ -13,6 +10,9 @@ from causica.graph.evaluation_metrics import (
     orientation_fallout_recall,
     orientation_precision_recall,
 )
+from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
+from fip.methods.scm_learning import SCMLearning
+from fip.task_utils.learnable_loss import LearnableGaussianLLH
 
 
 class SCMLearningTrueGraph(pl.LightningModule):
@@ -290,8 +290,20 @@ class SCMLearningTrueGraph(pl.LightningModule):
         test_rmse_noise_loss_per_sample = torch.sqrt(torch.mean((n - n_hat) ** 2, dim=1))
         test_rmse_noise_loss = torch.mean(test_rmse_noise_loss_per_sample)
         self.log(
-            "test_rmse_noise_loss",
+            "test_rmse_noise_loss_std",
             test_rmse_noise_loss,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+        )
+
+        x_hat = self.method.noise_to_sample(n)
+        test_rmse_generation_loss_per_sample = torch.sqrt(torch.mean((x - x_hat) ** 2, dim=1))
+        test_rmse_generation_loss = torch.mean(test_rmse_generation_loss_per_sample)
+        self.log(
+            "test_rmse_generation_loss_std",
+            test_rmse_generation_loss,
             prog_bar=True,
             on_step=False,
             on_epoch=True,
@@ -302,7 +314,7 @@ class SCMLearningTrueGraph(pl.LightningModule):
         self.log_pr_and_roc(true_graph, graphs, "test")
 
     def test_step_cf(self, batch):
-        f_data, cf_data, int_index, int_values, _ = batch
+        f_data, n_data, cf_data, int_index, int_values, _ = batch
         batch_size = f_data.shape[0]
 
         mean_data = self.mean_data
@@ -311,15 +323,19 @@ class SCMLearningTrueGraph(pl.LightningModule):
 
         # Infer cf data
         if self.standardize:
-            cf_data_pred = self.method.ite_prediction(f_data, mean_data, std_data, int_index, int_values)
+            cf_data_pred_fake_noise = self.method.ite_prediction(f_data, mean_data, std_data, int_index, int_values)
+            n_hat = n_data / std_data
+            cf_data_pred = self.method.ite_prediction(f_data, mean_data, std_data, int_index, int_values, n_hat=n_hat)
         else:
             mean_cf = torch.zeros_like(mean_data).to(mean_data.device)
             std_cf = torch.ones_like(std_data).to(std_data.device)
-            cf_data_pred = self.method.ite_prediction(f_data, mean_cf, std_cf, int_index, int_values)
+            cf_data_pred_fake_noise = self.method.ite_prediction(f_data, mean_cf, std_cf, int_index, int_values)
+            cf_data_pred = self.method.ite_prediction(f_data, mean_cf, std_cf, int_index, int_values, n_hat=n_data)
 
         # get their standardized version
         cf_data_std = (cf_data - mean_data) / std_data
         cf_data_pred_std = (cf_data_pred - mean_data) / std_data
+        cf_data_pred_fake_noise_std = (cf_data_pred_fake_noise - mean_data) / std_data
 
         cf_root_mse_loss_per_sample = torch.sqrt(torch.mean((cf_data_pred - cf_data) ** 2, dim=1))
         cf_root_mse_loss = torch.mean(cf_root_mse_loss_per_sample)
@@ -333,12 +349,39 @@ class SCMLearningTrueGraph(pl.LightningModule):
             batch_size=batch_size,
         )
 
+        cf_root_mse_loss_per_sample_fake_noise = torch.sqrt(torch.mean((cf_data_pred_fake_noise - cf_data) ** 2, dim=1))
+        cf_root_mse_loss_fake_noise = torch.mean(cf_root_mse_loss_per_sample_fake_noise)
+        self.log(
+            "test_rmse_cf_loss_fake_noise",
+            cf_root_mse_loss_fake_noise,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=self.distributed,
+            batch_size=batch_size,
+        )
+
         cf_root_mse_loss_std_per_sample = torch.sqrt(torch.mean((cf_data_pred_std - cf_data_std) ** 2, dim=1))
         cf_root_mse_loss_std = torch.mean(cf_root_mse_loss_std_per_sample)
 
         self.log(
             "test_rmse_cf_loss_std",
             cf_root_mse_loss_std,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            sync_dist=self.distributed,
+            batch_size=batch_size,
+        )
+
+        cf_root_mse_loss_std_per_sample_fake_noise = torch.sqrt(
+            torch.mean((cf_data_pred_fake_noise_std - cf_data_std) ** 2, dim=1)
+        )
+        cf_root_mse_loss_std_fake_noise = torch.mean(cf_root_mse_loss_std_per_sample_fake_noise)
+
+        self.log(
+            "test_rmse_cf_loss_std_fake_noise",
+            cf_root_mse_loss_std_fake_noise,
             prog_bar=True,
             on_step=False,
             on_epoch=True,
@@ -368,7 +411,7 @@ class SCMLearningTrueGraph(pl.LightningModule):
         val_rmse_noise_loss_per_sample = torch.sqrt(torch.mean((n - n_hat) ** 2, dim=1))
         val_rmse_noise_loss = torch.mean(val_rmse_noise_loss_per_sample)
         self.log(
-            "val_rmse_noise_loss",
+            "val_rmse_noise_loss_std",
             val_rmse_noise_loss,
             prog_bar=True,
             on_step=False,

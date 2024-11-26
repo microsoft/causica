@@ -364,8 +364,7 @@ def main(seed: int, val_train_split_ratio: float, dist_case: NFEnum, dataset_siz
 
     total_nodes = X_train.shape[-1]
     base_dir = os.path.join(
-        "src",
-        "fip",
+        ".",
         "data",
         "nf_" + dist_case.value,
         "total_nodes_" + str(total_nodes),

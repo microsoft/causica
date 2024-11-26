@@ -122,7 +122,7 @@ class DECIModule(VariableSpecModule):
         # Log a version of hparams that are easier to handle for loggers, by converting dataclasses to dicts
         if self.logger is not None:
             hyperparams = {
-                k: asdict(v) if is_dataclass(v) else v
+                k: asdict(v) if is_dataclass(v) and not isinstance(v, type) else v
                 for k, v in self.hparams.items()
                 if not isinstance(v, torch.nn.Module)
             }

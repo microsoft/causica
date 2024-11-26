@@ -3,13 +3,13 @@ import os
 
 from fip.launchers.basic_commands import generate_path_logging, launch_job
 
-path_config: str = "src/fip/config/scm_learning_with_predicted_truth/scm_learning_predicted_leaf.yaml"
-path_data: str = "src/fip/config/numpy_tensor_data_module.yaml"
+path_config: str = "./src/fip/config/scm_learning_with_predicted_truth/scm_learning_predicted_leaf.yaml"
+path_data: str = "./src/fip/config/numpy_tensor_data_module.yaml"
 
 
 def get_info_pretrained_model(run_id: str):
-    path_model_learned = f"src/fip/outputs/{run_id}/outputs/best_model.ckpt"
-    path_config_learned = f"src/fip/outputs/{run_id}/outputs/config.yaml"
+    path_model_learned = f"./src/fip/outputs/{run_id}/outputs/best_model.ckpt"
+    path_config_learned = f"./src/fip/outputs/{run_id}/outputs/config.yaml"
 
     return path_model_learned, path_config_learned
 
@@ -56,8 +56,7 @@ def command_python(
 ):
 
     data_dir = os.path.join(
-        "src",
-        "fip",
+        ".",
         "data",
         dist_case,
         "total_nodes_" + str(total_nodes),

@@ -1,4 +1,5 @@
-seed_everything: 234  
+seed_everything: 234
+
 model:
   class_path: fip.tasks.amortization.leaf_prediction.LeafPrediction
   init_args:
@@ -14,6 +15,7 @@ model:
     num_to_keep_training: 10
     distributed: false 
     elimination_type: "self"
+
 trainer:
   max_epochs: 2000
   accelerator: gpu
@@ -22,6 +24,7 @@ trainer:
   profiler: "simple"
   devices: 1
   accumulate_grad_batches: 1
+
 best_checkpoint_callback:
   dirpath: "./outputs/"
   filename: "best_model"
@@ -29,9 +32,11 @@ best_checkpoint_callback:
   mode: "min"
   monitor: "val_loss"
   every_n_epochs: 1
+
 last_checkpoint_callback:
   save_last: true
   save_top_k: 0  # only the last checkpoint is saved
+
 early_stopping_callback:
   monitor: "val_loss"
   min_delta: 0.0001

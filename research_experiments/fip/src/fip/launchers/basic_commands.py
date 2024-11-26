@@ -18,8 +18,8 @@ def generate_distributed_command(instance_count: int, gpus_per_node: int):
     return " ".join([f"{k}{v}" for k, v in param_distributed])
 
 
-def generate_path_logging(run_name: str):
-    path_logging = f"src/fip/outputs/{run_name}/outputs/"
+def generate_path_logging(run_name: str, dir_model: str = "./src/fip/outputs"):
+    path_logging = f"{dir_model}/{run_name}/outputs/"
     return path_logging
 
 
@@ -45,10 +45,10 @@ def run_local(
     os.system(script)
 
 
-def resume_local(run_name: str):
-    path_config = f"src/fip/outputs/{run_name}/outputs/config.yaml"
-    command_base_script = "python -m fip.entrypoint --config " + path_config
-    script = command_base_script
+def resume_local(run_name: str, dir_model: str = "./src/fip/outputs"):
+    path_config = f"{dir_model}/{run_name}/outputs/config.yaml"
+    script = "python -m fip.entrypoint --config " + path_config
+
     os.system(script)
 
 
@@ -59,9 +59,10 @@ def launch_job(
     local_resume: bool,
     run_name_resume: str,
     num_workers: int,
+    dir_model: str = "./src/fip/outputs",
 ):
     if local_resume:
-        resume_local(run_name_resume)
+        resume_local(run_name_resume, dir_model)
     else:
         run_local(
             command_base_script=command_base_script,

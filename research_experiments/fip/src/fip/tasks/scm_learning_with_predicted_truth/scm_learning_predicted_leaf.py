@@ -4,10 +4,6 @@ from typing import List, Optional, cast
 import pytorch_lightning as pl
 import torch
 import yaml
-from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
-from fip.methods.scm_learning import SCMLearning
-from fip.task_utils.learnable_loss import LearnableGaussianLLH
-from fip.tasks.amortization.leaf_prediction import LeafPrediction
 from pytorch_lightning import Trainer
 from torch import nn, optim
 
@@ -17,6 +13,10 @@ from causica.graph.evaluation_metrics import (
     orientation_fallout_recall,
     orientation_precision_recall,
 )
+from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
+from fip.methods.scm_learning import SCMLearning
+from fip.task_utils.learnable_loss import LearnableGaussianLLH
+from fip.tasks.amortization.leaf_prediction import LeafPrediction
 
 
 class SCMLearningPredLeaf(pl.LightningModule):
@@ -349,7 +349,7 @@ class SCMLearningPredLeaf(pl.LightningModule):
         self.log_pr_and_roc(permuted_true_graph, graphs, "test")
 
     def test_step_cf(self, batch):
-        f_data, cf_data, int_index, int_values, _ = batch
+        f_data, _, cf_data, int_index, int_values, _ = batch
         batch_size = f_data.shape[0]
 
         pred_sig = self.pred_sig
