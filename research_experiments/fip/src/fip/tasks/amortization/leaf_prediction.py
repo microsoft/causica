@@ -4,7 +4,9 @@ from typing import Optional
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from fip.models.avici_models import AmortizedLeaf
+from torch import optim
+
+from fip.models.amortized_models import AmortizedLeaf
 from fip.task_utils.leaf_functions import (
     decreasing_sig_to_perm,
     find_leaf_nodes,
@@ -12,7 +14,6 @@ from fip.task_utils.leaf_functions import (
     remove_leaf_nodes,
     vote_leaf_predicition,
 )
-from torch import optim
 
 
 class LeafPrediction(pl.LightningModule):

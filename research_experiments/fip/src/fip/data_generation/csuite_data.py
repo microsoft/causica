@@ -54,7 +54,7 @@ def compute_counterfactual(noise: NDArray, dic_func: dict[str, Callable]) -> NDA
     x_cf = generate_observational_data(noise_cf, dic_func_cf)
 
     # concatenate all the data
-    x_all = np.concatenate((x_f, x_cf), axis=1)
+    x_all = np.concatenate((x_f, noise, x_cf), axis=1)
     x_all = np.concatenate((x_all, np.array([idx_int] * len(x_all)).reshape(-1, 1)), axis=1)
     x_all = np.concatenate((x_all, np.array([val_int] * len(x_all)).reshape(-1, 1)), axis=1)
 
@@ -413,38 +413,51 @@ def generate_weak_arrow(
 def generate_data(
     seed_tr: int = 10,
     seed_te: int = 20,
-    num_samples: int = 10000,
+    train_size: int = 10000,
+    test_size: int = 10000,
+    val_train_split_ratio: float = 0.25,
     data_type: CsuiteEnum = CsuiteEnum.LINGAUSS,
 ) -> tuple[NDArray, NDArray, NDArray, list[NDArray] | None, NDArray, NDArray]:
+
+    val_size = int(val_train_split_ratio * train_size)
     match data_type:
         case CsuiteEnum.LINGAUSS:
-            x_train, z_train, graph, x_cf_tr = generate_lingauss(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_lingauss(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_lingauss(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_lingauss(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_lingauss(test_size, seed=seed_te)
         case CsuiteEnum.LINEXP:
-            x_train, z_train, graph, x_cf_tr = generate_linexp(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_linexp(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_linexp(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_linexp(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_linexp(test_size, seed=seed_te)
         case CsuiteEnum.NONLINGAUSS:
-            x_train, z_train, graph, x_cf_tr = generate_nonlingauss(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_nonlingauss(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_nonlingauss(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_nonlingauss(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_nonlingauss(test_size, seed=seed_te)
         case CsuiteEnum.NONLIN_SIMPSON:
-            x_train, z_train, graph, x_cf_tr = generate_nonlin_simpson(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_nonlin_simpson(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_nonlin_simpson(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_nonlin_simpson(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_nonlin_simpson(test_size, seed=seed_te)
         case CsuiteEnum.SYMPROD_SIMPSON:
-            x_train, z_train, graph, x_cf_tr = generate_symprod_simpson(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_symprod_simpson(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_symprod_simpson(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_symprod_simpson(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_symprod_simpson(test_size, seed=seed_te)
         case CsuiteEnum.LARGE_BACKDOOR:
-            x_train, z_train, graph, x_cf_tr = generate_large_backdoor(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_large_backdoor(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_large_backdoor(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_large_backdoor(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_large_backdoor(test_size, seed=seed_te)
         case CsuiteEnum.WEAK_ARROW:
-            x_train, z_train, graph, x_cf_tr = generate_weak_arrow(num_samples, seed=seed_tr)
-            x_test, z_test, graph, _ = generate_weak_arrow(num_samples, seed=seed_te)
+            x_train, z_train, graph, x_cf_tr = generate_weak_arrow(train_size, seed=seed_tr)
+            x_val, z_val, *_ = generate_weak_arrow(val_size, seed=seed_tr)
+            x_test, z_test, *_ = generate_weak_arrow(test_size, seed=seed_te)
         case _:
             raise NotImplementedError("Distribution case not supported")
 
-    return x_train, z_train, graph, x_cf_tr, x_test, z_test
+    return x_train, z_train, x_val, z_val, graph, x_cf_tr, x_test, z_test
 
 
-def main(seed: int, val_train_split_ratio: float, dist_case: CsuiteEnum, dataset_size: int):
+def main(
+    data_dir: str, seed: int, val_train_split_ratio: float, dist_case: CsuiteEnum, train_size: int, test_size: int
+):
     # Random Seed
     random.seed(seed)
     np.random.seed(seed)
@@ -453,21 +466,22 @@ def main(seed: int, val_train_split_ratio: float, dist_case: CsuiteEnum, dataset
         torch.cuda.manual_seed_all(seed)
 
     # Generate the dataset
-    X_train, Z_train, graph, list_x_cf, X_test, Z_test = generate_data(
+    X_train, Z_train, X_val, Z_val, graph, list_x_cf, X_test, Z_test = generate_data(
         seed_tr=seed,
         seed_te=10 + seed,
-        num_samples=dataset_size,
+        train_size=train_size,
+        test_size=test_size,
         data_type=dist_case,
+        val_train_split_ratio=val_train_split_ratio,
     )
 
     data_train = np.concatenate((X_train, Z_train), axis=1)
+    data_val = np.concatenate((X_val, Z_val), axis=1)
     data_test = np.concatenate((X_test, Z_test), axis=1)
 
     total_nodes = X_train.shape[-1]
     base_dir = os.path.join(
-        "src",
-        "fip",
-        "data",
+        data_dir,
         dist_case.value,
         "total_nodes_" + str(total_nodes),
         "seed_" + str(seed),
@@ -480,20 +494,16 @@ def main(seed: int, val_train_split_ratio: float, dist_case: CsuiteEnum, dataset
     np.save(f, graph)
 
     # Save the corresponding datasets
-    val_dataset_size = int(val_train_split_ratio * dataset_size)
-    data = data_train[val_dataset_size:]
     f = os.path.join(base_dir, "train" + "_" + "x" + ".npy")
-    np.save(f, data)
+    np.save(f, data_train)
     print("Save training data")
 
-    data = data_train[:val_dataset_size]
     f = os.path.join(base_dir, "val" + "_" + "x" + ".npy")
-    np.save(f, data)
+    np.save(f, data_val)
     print("Save validation data")
 
-    data = data_test
     f = os.path.join(base_dir, "test" + "_" + "x" + ".npy")
-    np.save(f, data)
+    np.save(f, data_test)
     print("Save testing data")
 
     if list_x_cf is not None:
@@ -505,15 +515,19 @@ def main(seed: int, val_train_split_ratio: float, dist_case: CsuiteEnum, dataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", type=str, default="./data")
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--val_train_split_ratio", type=float, default=0.25)
     parser.add_argument("--dist_case", type=CsuiteEnum, help="Distribution case", choices=CsuiteEnum, required=True)
-    parser.add_argument("--dataset_size", type=int, default=10000)
+    parser.add_argument("--train_size", type=int, default=10000)
+    parser.add_argument("--val_train_split_ratio", type=float, default=0.25)
+    parser.add_argument("--test_size", type=int, default=10000, help="Size of the test split")
     args = parser.parse_args()
 
     main(
+        data_dir=args.data_dir,
         seed=args.seed,
         val_train_split_ratio=args.val_train_split_ratio,
         dist_case=args.dist_case,
-        dataset_size=args.dataset_size,
+        train_size=args.train_size,
+        test_size=args.test_size,
     )

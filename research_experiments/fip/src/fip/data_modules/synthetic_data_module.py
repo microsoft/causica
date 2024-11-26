@@ -1,19 +1,55 @@
 import random
+from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional, Union
 
 import pytorch_lightning as pl
 import torch
-from tensordict import TensorDict
+from tensordict import TensorDict, TensorDictBase
 from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 from causica.data_generation.samplers.sem_sampler import SEMSampler
-from causica.datasets.interventional_data import CounterfactualData
 from causica.distributions.transforms import TensorToTensorDictTransform
+from causica.functional_relationships import FunctionalRelationships
 from causica.sem.structural_equation_model import SEM
 
 
+@dataclass
+class CounterfactualDataNoise:
+    """
+    Dataclass to hold the data associated with a counterfactual
+
+    This represents one intervention and reference and many samples from the intervened and reference
+    distributions
+
+    The class also stores `sampled_nodes`, i.e. the ones that are neither intervened or conditioned on
+
+    Args:
+        counterfactual_data: A `TensorDict` with all of the node values (including intervened) of counterfactual data
+        factual_data: A `TensorDict` with all of the node values of the base observations used for the counterfactuals data.
+            This refers to the observations in "What would have happened (CFs) if I would have done (intervention) given
+            I observed (base observation).
+        intervention_values: A dictionary of node names to 1D numpy arrays of the intervened values
+    """
+
+    counterfactual_data: TensorDictBase
+    intervention_values: TensorDictBase
+    factual_data: TensorDictBase
+    noise_data: TensorDictBase
+    sampled_nodes: set[str] = field(init=False)
+
+    def __post_init__(self):
+        assert list(self.counterfactual_data.keys()) == list(self.factual_data.keys())
+        assert self.counterfactual_data.batch_size == self.factual_data.batch_size
+        assert self.intervention_values.batch_size == torch.Size()
+
+        self.sampled_nodes = set(self.counterfactual_data.keys()) - set(self.intervention_values.keys())
+
+
 def sample_intervention_dict(
-    tensordict_data: TensorDict, treatment: str | None = None, proportion_treatment: Optional[float] = None
+    tensordict_data: TensorDict,
+    treatment: str | None = None,
+    proportion_treatment: Optional[float] = None,
+    type_treatment: str = "quantile",
 ) -> TensorDict:
     """Sample an intervention from a given SEM.
 
@@ -26,6 +62,7 @@ def sample_intervention_dict(
         tensordict_data: Base data for sampling an intervention value.
         treatment: The name of the treatment variable. If None, a random variable is chosen across the tensordict keys.
         proportion_treatment: the proportion of the intervened nodes.
+        type_treatment: whether we consider the quantiles or the min-max values of the treatment variables
 
     Returns:
         A TensorDict holding the intervention value.
@@ -45,8 +82,16 @@ def sample_intervention_dict(
     res = TensorDict({}, batch_size=torch.Size())
     for curr_treat in treatment_var:
         treatment_shape = tensordict_data[curr_treat].shape[tensordict_data.batch_dims :]
-        treatment_max = torch.amax(tensordict_data[curr_treat], dim=batch_axes)
-        treatment_min = torch.amin(tensordict_data[curr_treat], dim=batch_axes)
+
+        if type_treatment == "quantile":
+            # take the 0.1 and 0.9 quantiles as the min and max
+            treatment_max = torch.quantile(tensordict_data[curr_treat].reshape(-1, 1), 0.9, dim=0)
+            treatment_min = torch.quantile(tensordict_data[curr_treat].reshape(-1, 1), 0.1, dim=0)
+        else:
+            # take the min and max of the treatment variable
+            treatment_max = torch.amax(tensordict_data[curr_treat], dim=batch_axes)
+            treatment_min = torch.amin(tensordict_data[curr_treat], dim=batch_axes)
+
         treatment_curr = torch.rand(treatment_shape) * (treatment_max - treatment_min) + treatment_min
         res[curr_treat] = treatment_curr
     return res
@@ -58,7 +103,7 @@ def sample_counterfactual(
     noise: TensorDict,
     treatment: str | None = None,
     proportion_treatment: Optional[float] = None,
-) -> CounterfactualData:
+) -> CounterfactualDataNoise:
     """Sample an intervention and it's sample mean from a given SEM.
 
     Args:
@@ -77,7 +122,7 @@ def sample_counterfactual(
 
     counterfactuals = sem.do(intervention_a).noise_to_sample(noise)
 
-    return CounterfactualData(counterfactuals, intervention_a, factual_data)
+    return CounterfactualDataNoise(counterfactuals, intervention_a, factual_data, noise)
 
 
 def sample_dataset(
@@ -104,7 +149,15 @@ def sample_dataset(
     noise = sem.sample_noise(sample_dataset_size)
     observations = sem.noise_to_sample(noise)
 
-    counterfactuals: list[CounterfactualData] | None = [] if sample_counterfactuals and num_interventions > 0 else None
+    # check is func is an attribute of sem
+    if hasattr(sem, "func"):
+        func = sem.func
+    else:
+        func = None
+
+    counterfactuals: list[CounterfactualDataNoise] | None = (
+        [] if sample_counterfactuals and num_interventions > 0 else None
+    )
     for _ in range(num_interventions):
         if isinstance(counterfactuals, list):
             cf_noise = sem.sample_noise(torch.Size([num_intervention_samples]))
@@ -116,7 +169,7 @@ def sample_dataset(
     noise = td_to_tensor_transform.inv(noise)
     observations = td_to_tensor_transform.inv(observations)
 
-    return (observations, noise, sem.graph, counterfactuals)
+    return (observations, noise, sem.graph, counterfactuals, func)
 
 
 class MyCausalDataset(Dataset):
@@ -145,7 +198,7 @@ class MyCausalDataset(Dataset):
         Args:
             sem_sampler: The sampler for SEMs
             sample_dataset_size: The size of the dataset to sample from the SEM
-            dataset_size: The size of this dataset.
+            dataset_size: The number of datasets sampled per sem.
             num_interventions: The number of interventions to sample per dataset. If 0, no interventions are sampled.
             num_intervention_samples: The number of samples to use to estimate the mean.
             num_sems: The number of sems to sample the data from. If 0, each data sample is generated from a new SEM.
@@ -209,6 +262,8 @@ def _tuple_collate_fn(data: Iterable[tuple[torch.Tensor, ...]]) -> tuple[torch.T
             return list(x)
         if x[0] is None:
             return None
+        if isinstance(x[0], FunctionalRelationships):
+            return list(x)
 
         raise ValueError(f"Unexpected type {type(x[0])}")
 
@@ -272,12 +327,8 @@ class SyntheticDataModule(pl.LightningDataModule):
         self.shuffle = shuffle
         self.sample_counterfactuals = sample_counterfactuals
 
-        self.sem_samplers = sem_samplers if isinstance(sem_samplers, list) else sem_samplers()
-        if factor_epoch > 0:
-            self.sem_samplers = factor_epoch * self.sem_samplers
-            if len(self.sem_samplers) < self.num_workers:
-                repeat_factor = max(self.num_workers // len(self.sem_samplers), 1)
-                self.sem_samplers = repeat_factor * self.sem_samplers
+        self.original_sem_samplers = sem_samplers if isinstance(sem_samplers, list) else sem_samplers()
+        self.sem_samplers = factor_epoch * self.original_sem_samplers
 
         self.dataloader_args = {
             "collate_fn": _tuple_collate_fn,
@@ -296,21 +347,32 @@ class SyntheticDataModule(pl.LightningDataModule):
         self.val_dataset: Dataset
 
         self.train_dataset = self._get_dataset(self.train_batch_size)
-        self.val_dataset = self._get_dataset(self.test_batch_size)
+        self.val_dataset = self._get_original_dataset(self.test_batch_size)
+        self.test_dataset = self._get_original_dataset(self.test_batch_size)
 
     def on_before_batch_transfer(self, batch, dataloader_idx):
-        (val_X, val_y, graph, cf_batch) = batch
+        (val_X, val_y, graph, *metadata) = batch
         graph = graph.transpose(-2, -1)  # because the parents are in the columns!
 
         if self.standardize:
-            mean_data, var_data = self.get_mean_and_var(val_X)
-            val_X = self.normalize_data(val_X, mean=mean_data, std=var_data)
-            val_y = self.normalize_data(val_y, std=var_data)
+            mean_data, std_data = self.get_mean_and_std(val_X)
+            val_X = self.normalize_data(val_X, mean=mean_data, std=std_data)
+            val_y = self.normalize_data(val_y, std=std_data)
+        else:
+            mean_data = torch.zeros_like(val_X[:, 0, :].unsqueeze(1))
+            std_data = torch.ones_like(val_X[:, 0, :].unsqueeze(1))
 
-        return (val_X[:, : self.num_samples_used, :], val_y[:, : self.num_samples_used, :], graph, cf_batch)
+        return (
+            val_X[:, : self.num_samples_used, :],
+            val_y[:, : self.num_samples_used, :],
+            graph,
+            mean_data,
+            std_data,
+            *metadata,
+        )
 
-    def get_mean_and_var(self, data, dim=1):
-        """Get the mean and variance of the data"""
+    def get_mean_and_std(self, data, dim=1):
+        """Get the mean and std of the data"""
         mean = data.mean(dim=dim, keepdim=True)
         std = data.std(dim=dim, keepdim=True)
         # if std is zero, replace it with one
@@ -354,6 +416,34 @@ class SyntheticDataModule(pl.LightningDataModule):
         )
         return dataset
 
+    def _get_original_dataset(self, dataset_size: int):
+        """Builds causal datasets given the SEM samplers.
+
+        Args:
+            dataset_size: Number of samples of the causal dataset (ie number of datasets generated).
+
+        Returns:
+            dataset object
+        """
+        ## concatenate the dataset into a single dataset:
+        dataset: Dataset
+        dataset = ConcatDataset(
+            [
+                MyCausalDataset(
+                    sem_sampler=sampler,
+                    sample_dataset_size=self.sample_dataset_size,
+                    dataset_size=dataset_size,
+                    num_sems=self.num_sems,
+                    num_interventions=self.num_interventions,
+                    num_intervention_samples=self.num_intervention_samples,
+                    proportion_treatment=self.proportion_treatment,
+                    sample_counterfactuals=self.sample_counterfactuals,
+                )
+                for sampler in self.original_sem_samplers
+            ]
+        )
+        return dataset
+
     def train_dataloader(self):
         return DataLoader(
             dataset=self.train_dataset, batch_size=self.train_batch_size, shuffle=self.shuffle, **self.dataloader_args
@@ -361,3 +451,6 @@ class SyntheticDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         return DataLoader(dataset=self.val_dataset, batch_size=self.test_batch_size, **self.dataloader_args)
+
+    def test_dataloader(self):
+        return DataLoader(dataset=self.test_dataset, batch_size=self.test_batch_size, **self.dataloader_args)

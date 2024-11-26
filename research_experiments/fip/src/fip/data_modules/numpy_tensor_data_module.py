@@ -35,6 +35,7 @@ class DatasetCounterFactual(Dataset):
         assert num_interventions > 0, "Please provide a positive number of interventions"
 
         self.factual_data = []
+        self.noise_data = []
         self.counterfactual_data = []
         self.intervention_indices = []
         self.intervention_values = []
@@ -45,14 +46,17 @@ class DatasetCounterFactual(Dataset):
                 with fsspec.open(curr_counterfactual_data_path, "rb") as f:
                     curr_counterfactual_data = torch.tensor(np.load(f), dtype=torch.float)
                 assert (
-                    curr_counterfactual_data.shape[1] % 2 == 0
-                ), "The data should be of shape (batch_size, num_nodes * 2 + 2)"
-                self.num_nodes = curr_counterfactual_data.shape[1] // 2 - 1
+                    curr_counterfactual_data.shape[1] - 2
+                ) % 3 == 0, "The data should be of shape (batch_size, num_nodes * 3 + 2)"
+                self.num_nodes = (curr_counterfactual_data.shape[1] - 2) // 3
 
                 x_f = curr_counterfactual_data[:, : self.num_nodes]
                 self.factual_data.append(x_f)
 
-                x_cf = curr_counterfactual_data[:, self.num_nodes : self.num_nodes * 2]
+                n_f = curr_counterfactual_data[:, self.num_nodes : self.num_nodes * 2]
+                self.noise_data.append(n_f)
+
+                x_cf = curr_counterfactual_data[:, self.num_nodes * 2 : self.num_nodes * 3]
                 self.counterfactual_data.append(x_cf)
 
                 intervention_indices = curr_counterfactual_data[:, -2].long()
@@ -72,6 +76,7 @@ class DatasetCounterFactual(Dataset):
     def __getitem__(self, idx):
         res = (
             self.factual_data[idx],
+            self.noise_data[idx],
             self.counterfactual_data[idx],
             self.intervention_indices[idx],
             self.intervention_values[idx],
@@ -373,8 +378,9 @@ class NumpyTensorDataModule(pl.LightningDataModule):
             return x, n, true_graph
 
         if self.num_interventions > 0 and dataloader_idx == 1:
-            x_f, x_cf, intervention_indices, intervention_values, *optional_graph = batch
+            x_f, n_f, x_cf, intervention_indices, intervention_values, *optional_graph = batch
             x_f = x_f.squeeze(0)
+            n_f = n_f.squeeze(0)
             x_cf = x_cf.squeeze(0)
             intervention_indices = intervention_indices.squeeze(0)
             intervention_values = intervention_values.squeeze(0)
@@ -383,7 +389,7 @@ class NumpyTensorDataModule(pl.LightningDataModule):
             else:
                 true_graph = None
 
-            return x_f, x_cf, intervention_indices, intervention_values, true_graph
+            return x_f, n_f, x_cf, intervention_indices, intervention_values, true_graph
 
         return None
 

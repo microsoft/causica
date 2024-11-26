@@ -2,10 +2,6 @@ from typing import Optional
 
 import pytorch_lightning as pl
 import torch
-from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
-from fip.methods.scm_learning import SCMLearning
-from fip.task_utils.leaf_functions import graph_to_perm_torch
-from fip.task_utils.learnable_loss import LearnableGaussianLLH
 from torch import nn, optim
 
 from causica.graph.evaluation_metrics import (
@@ -14,6 +10,10 @@ from causica.graph.evaluation_metrics import (
     orientation_fallout_recall,
     orientation_precision_recall,
 )
+from fip.data_modules.numpy_tensor_data_module import NumpyTensorDataModule
+from fip.methods.scm_learning import SCMLearning
+from fip.task_utils.leaf_functions import graph_to_perm_torch
+from fip.task_utils.learnable_loss import LearnableGaussianLLH
 
 
 class SCMLearningTruePerm(pl.LightningModule):
@@ -311,7 +311,7 @@ class SCMLearningTruePerm(pl.LightningModule):
         self.log_pr_and_roc(permuted_true_graph, graphs, "test")
 
     def test_step_cf(self, batch):
-        f_data, cf_data, int_index, int_values, true_graph = batch
+        f_data, _, cf_data, int_index, int_values, true_graph = batch
         batch_size = f_data.shape[0]
         true_sig = graph_to_perm_torch(true_graph).squeeze(0).to(true_graph.device)
 

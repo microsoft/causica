@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "causica"
-version = "0.4.3"
+version = "0.4.4"
 description = ""
 readme = "README.md"
 authors = ["Microsoft Research - Causica"]
@@ -64,13 +64,15 @@ known_first_party = ["causica"]
 treat_comments_as_code = ["# %%"]
 
 [tool.pytest.ini_options]
+norecursedirs = "integration"
 addopts = "--durations=200"
 junit_family = "xunit1"
 
 [tool.mypy]
 ignore_missing_imports = true
 exclude = [
-  "research_experiments/avid"
+  "research_experiments/avid",
+  "research_experiments/fip",
 ]
 
 [tool.pylint.main]

@@ -15,13 +15,13 @@ class GroundTruthEnum(Enum):
 def generate_config_files(ground_truth_case: GroundTruthEnum):
     match ground_truth_case:
         case GroundTruthEnum.PERM:
-            path_config = "src/fip/config/scm_learning_with_ground_truth/scm_learning_true_perm.yaml"
+            path_config = "./src/fip/config/scm_learning_with_ground_truth/scm_learning_true_perm.yaml"
         case GroundTruthEnum.GRAPH:
-            path_config = "src/fip/config/scm_learning_with_ground_truth/scm_learning_true_graph.yaml"
+            path_config = "./src/fip/config/scm_learning_with_ground_truth/scm_learning_true_graph.yaml"
         case _:
             raise ValueError(f"{ground_truth_case} case not recognized")
 
-    path_data = "src/fip/config/numpy_tensor_data_module.yaml"
+    path_data = "./src/fip/config/numpy_tensor_data_module.yaml"
 
     return path_config, path_data
 
@@ -65,8 +65,7 @@ def command_python(
     accumulate_grad_batches: int,
 ):
     data_dir = os.path.join(
-        "src",
-        "fip",
+        ".",
         "data",
         dist_case,
         "total_nodes_" + str(total_nodes),

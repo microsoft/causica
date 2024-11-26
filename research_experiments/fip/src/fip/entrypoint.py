@@ -1,10 +1,8 @@
-import logging
-import os
-
 import pytorch_lightning as pl
-from fip.my_cli import MyLightningCLI
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import MLFlowLogger
+
+from fip.my_cli import MyLightningCLI
 
 
 class ExplicitLogDirTrainer(Trainer):
@@ -22,9 +20,6 @@ class ExplicitLogDirTrainer(Trainer):
 
 
 def main():
-    # Set Azure logging to warning to prevent spam from HTTP requests
-    logging.getLogger("azure").setLevel(logging.WARNING)
-
     cli = MyLightningCLI(
         model_class=pl.LightningModule,
         datamodule_class=pl.LightningDataModule,
@@ -34,11 +29,10 @@ def main():
         save_config_kwargs={"overwrite": True},
         run=False,
     )
-    run_id = os.environ.get("AZUREML_RUN_ID", None)
-
-    cli.trainer.logger = MLFlowLogger(run_id=run_id)
+    cli.trainer.logger = MLFlowLogger()
     cli.trainer.fit(cli.model, datamodule=cli.datamodule, ckpt_path="last")
-    cli.trainer.test(cli.model, datamodule=cli.datamodule, ckpt_path="best")
+    cli.trainer.validate(cli.model, datamodule=cli.datamodule)
+    cli.trainer.test(cli.model, datamodule=cli.datamodule)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 seed_everything: 5000
+
 model:
   class_path: fip.tasks.scm_learning_with_ground_truth.scm_learning_true_perm.SCMLearningTruePerm
   init_args:
@@ -16,6 +17,7 @@ model:
     cost_type: "dot_product"
     learnable_loss: false
     distributed: false
+
 trainer:
   max_epochs: 1000
   accelerator: gpu
@@ -24,12 +26,14 @@ trainer:
   log_every_n_steps: 10
   inference_mode: false
   profiler: "simple"
+
 early_stopping_callback:
   monitor: "val_loss"
   min_delta: 0.0001
   patience: 500
   verbose: False
   mode: "min"
+
 best_checkpoint_callback:
   dirpath: "./outputs/"
   filename: "best_model"
@@ -37,6 +41,7 @@ best_checkpoint_callback:
   mode: "min"
   monitor: "val_loss"
   every_n_epochs: 1
+  
 last_checkpoint_callback:
   save_last: true
   save_top_k: 0  # only the last checkpoint is saved

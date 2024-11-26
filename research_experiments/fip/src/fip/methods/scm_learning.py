@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+
 from fip.methods.base_method_module import DifferentialCausalDiscovery
 from fip.models.causal_models import CausalTransformer
 
@@ -117,11 +118,13 @@ class SCMLearning(DifferentialCausalDiscovery):
         std_data: torch.Tensor,
         idx_nodes: list[int] | int,
         val_nodes: torch.Tensor,
+        n_hat: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Computes the ITE prediction for the given nodes and values."""
 
         x = (x - mean_data) / std_data
-        n_hat = self.sample_to_noise(x)
+        if n_hat is None:
+            n_hat = self.sample_to_noise(x)
         n_hat_rescale = n_hat * std_data
 
         return self.noise_to_sample_ite(n_hat_rescale, mean_data, std_data, idx_nodes, val_nodes)

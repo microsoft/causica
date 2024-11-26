@@ -158,7 +158,7 @@ class VariableSpecDataModule(DECIDataModule):
                 fit_log_normalizer,
                 default_offset=self.default_offset,
                 min_margin=self.log_normalize_min_margin,
-                keys=log_normalize_keys,
+                keys=list(log_normalize_keys),
             )
             preprocessing.append(fit_log_normalizer_with_key)
 
@@ -169,7 +169,7 @@ class VariableSpecDataModule(DECIDataModule):
 
             fit_standardizer_with_key = functools.partial(
                 fit_standardizer,
-                keys=standardize_keys,
+                keys=list(standardize_keys),
             )
             preprocessing.append(fit_standardizer_with_key)
 
