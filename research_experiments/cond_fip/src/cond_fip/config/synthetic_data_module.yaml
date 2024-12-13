@@ -1,0 +1,46 @@
+class_path: fip.data_modules.synthetic_data_module.SyntheticDataModule
+init_args:
+  sem_samplers:
+    class_path: fip.data_generation.sem_factory.SemSamplerFactory
+    init_args:
+      node_nums: [20]
+      noises: ['gaussian']
+      graphs: ['er', 'sf_in', 'sf_out']
+      funcs: ['linear', 'rff']
+      config_gaussian:
+        low: 0.2
+        high: 2.0
+      config_er:
+        edges_per_node: [1,2,3]
+      config_sf:
+        edges_per_node: [1,2,3]
+        attach_power: [1.]
+      config_linear:
+        weight_low: 1.
+        weight_high: 3. 
+        bias_low: -3.
+        bias_high: 3.
+      config_rff:
+        num_rf: 100
+        length_low: 7.
+        length_high: 10.
+        out_low: 10.
+        out_high: 20.
+        bias_low: -3.
+        bias_high: 3.
+  train_batch_size: 4
+  test_batch_size: 4
+  sample_dataset_size: 400
+  standardize: true
+  num_samples_used: 400
+  num_workers: 23
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  factor_epoch: 32    
+  num_sems: 0
+  shuffle: true
+  num_interventions: 2
+  num_intervention_samples: 100
+  proportion_treatment: 0.
+  sample_counterfactuals: false

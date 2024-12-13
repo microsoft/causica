@@ -1,0 +1,63 @@
+seed_everything: 2048
+
+model:
+  class_path: cond_fip.tasks.cond_fip_training.CondFiPTraining
+  init_args:
+    encoder_model_path: ./src/cond_fip/outputs/amortized_encoder_training_2024-07-02_19-09-00/outputs/best_model.ckpt
+    
+    learning_rate: 1e-4
+    beta1: 0.9
+    beta2: 0.95
+    weight_decay: 1e-10
+    
+    use_scheduler: true
+    linear_warmup_steps: 1000
+    scheduler_steps: 10_000
+    
+    d_model: 256
+    num_heads: 8
+    num_layers: 4
+    d_ff: 512
+    dropout: 0.1
+    dim_key: 64
+    num_layers_dataset: 2
+    
+    distributed: false
+    with_true_target: true
+    final_pair_only: true
+    
+    with_ema: true
+    ema_beta: 0.99
+    ema_update_every: 10
+
+trainer:
+  max_epochs: 7000
+  logger: MLFlowLogger
+  accelerator: gpu
+  check_val_every_n_epoch: 1
+  log_every_n_steps: 10
+  accumulate_grad_batches: 16
+  log_dir: "./src/cond_fip/logging_enc_dec/"
+  inference_mode: false
+  devices: 1
+  num_nodes: 1
+
+early_stopping_callback:
+  monitor: "val_loss"
+  min_delta: 0.0001
+  patience: 500
+  verbose: False
+  mode: "min"
+
+best_checkpoint_callback:
+  dirpath: "./src/cond_fip/logging_enc_dec/"
+  filename: "best_model"
+  save_top_k: 1
+  mode: "min"
+  monitor: "val_loss"
+  every_n_epochs: 1
+
+last_checkpoint_callback:
+  save_last: true
+  filename: "last_model"
+  save_top_k: 0  # only the last checkpoint is saved
