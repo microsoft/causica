@@ -1,0 +1,11 @@
+seed_everything: 2048
+
+model:
+  class_path: cond_fip.tasks.cond_fip_inference.CondFiPInference
+  init_args:
+    enc_dec_model_path: ./src/cond_fip/outputs/amortized_enc_dec_training_2024-09-09_13-51-00/outputs/best_model.ckpt
+
+trainer:
+  logger: MLFlowLogger
+  accelerator: gpu
+  devices: 1

@@ -1,0 +1,12 @@
+class_path: fip.data_modules.numpy_tensor_data_module.NumpyTensorDataModule
+init_args:
+  data_dir : "./data/er_linear_gaussian_in/total_nodes_5/seed_1/"
+  train_batch_size: 400
+  test_batch_size: 400
+  standardize: false
+  with_true_graph: true
+  split_data_noise: true
+  dod: true
+  num_workers: 23
+  shuffle: false
+  num_interventions: 1
