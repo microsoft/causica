@@ -13,13 +13,13 @@ jobs:
       max-parallel: 5
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3.7.0
 
-    - uses: actions/setup-python@v2
+    - uses: actions/setup-python@e9aba2c848f5ebd159c070c61ea2c4e2b122355e # v2.3.4
       with:
         python-version: "3.10"
 
-    - uses: actions/cache@v3
+    - uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3.5.0
       with:
         path: ~/.cache/pypoetry/virtualenvs
         key: ${{ hashFiles('poetry.lock') }}
@@ -36,7 +36,7 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
 
     - name: Verify pre-commit checks
-      uses: pre-commit/action@v3.0.0
+      uses: pre-commit/action@646c83fcd040023954eafda54b4db0192ce70507 # v3.0.0
       with:
         extra_args: --all-files
 
