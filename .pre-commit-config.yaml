@@ -18,7 +18,7 @@ repos:
   hooks:
   - id: poetry lock
     name: poetry lock check
-    entry: poetry lock --check
+    entry: poetry check --lock
     pass_filenames: false
     language: system
 - repo: local
