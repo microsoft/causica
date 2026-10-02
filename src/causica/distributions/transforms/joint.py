@@ -80,7 +80,7 @@ class JointTransform(TypedTransform[TensorDictBase, TensorDictBase]):
 T_co = TypeVar("T_co", bound=nn.Module, covariant=True)
 
 
-class _TypedModuleDict(Generic[T_co], nn.ModuleDict, Mapping[str, T_co]):
+class _TypedModuleDict(Generic[T_co], nn.ModuleDict, Mapping[str, T_co]):  # type: ignore[misc]
     """Allow a ModuleDict to be interpreted as a mapping."""
 
     def __hash__(self) -> int:

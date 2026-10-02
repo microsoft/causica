@@ -48,7 +48,7 @@ class JointNoise(Noise[TensorDict]):
     def noise_to_sample(self, noise: TensorDict) -> TensorDict:
         return self._apply_individually(noise, lambda noise_dist, x: noise_dist.noise_to_sample(x))
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:  # type: ignore[override]
         return TensorDict(
             {name: noise_dist.sample(sample_shape) for name, noise_dist in self._independent_noise_dists.items()},
             batch_size=sample_shape + self.batch_shape,
@@ -73,7 +73,7 @@ class JointNoise(Noise[TensorDict]):
         return torch.sum(torch.stack(log_probs, dim=0), dim=0)
 
     @property
-    def support(self) -> dict[str, Optional[Any]]:
+    def support(self) -> dict[str, Optional[Any]]:  # type: ignore[override]
         return {name: noise_dist.support for name, noise_dist in self._independent_noise_dists.items()}
 
     @property
@@ -98,6 +98,11 @@ class JointNoise(Noise[TensorDict]):
 class ContinuousNoiseDist(Enum):
     SPLINE = "spline"
     GAUSSIAN = "gaussian"
+
+
+# Checkpoints store this enum in their hyperparameters; allowlist it so they load with `torch.load(weights_only=True)`,
+# the default since PyTorch 2.6.
+torch.serialization.add_safe_globals([ContinuousNoiseDist])
 
 
 def create_noise_modules(

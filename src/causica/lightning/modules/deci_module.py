@@ -110,7 +110,7 @@ class DECIModule(VariableSpecModule):
         self.auglag_loss: AugLagLossCalculator = AugLagLossCalculator(init_alpha=init_alpha, init_rho=init_rho)
 
         # Inferred once the datamodule is available using `self.infer_missing_state_from_dataset()`
-        self.num_samples = None
+        self.num_samples: Optional[int] = None
         self.variable_group_shapes = None
         self.variable_types = None
 
@@ -198,6 +198,7 @@ class DECIModule(VariableSpecModule):
     def training_step(self, *args, **kwargs) -> STEP_OUTPUT:
         _ = kwargs
         batch, *_ = args
+        assert self.num_samples is not None
         batch = batch.apply(lambda t: t.to(torch.float32, non_blocking=True))
 
         sem_distribution = self.sem_module()
@@ -306,13 +307,13 @@ class DECIModule(VariableSpecModule):
             add_dataloader_idx=False,
         )
 
-    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True):
+    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False):
         # initialise all the parameters, we can
-        super().load_state_dict(state_dict, strict=False)
+        super().load_state_dict(state_dict, strict=False, assign=assign)
         # setup the model
         self.setup()
         # load the state dict again to fill in the parameters
-        return super().load_state_dict(state_dict, strict=strict)
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def set_extra_state(self, state: Any):
         self.variable_group_shapes = state["shapes"]

@@ -47,7 +47,7 @@ class BernoulliDigraphDistribution(AdjacencyDistribution):
         expanded_logits = self.logits.expand(*(sample_shape + self.logits.shape))
         return gumbel_softmax_binary(logits=expanded_logits, tau=temperature, hard=True)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample from the underyling independent Bernoulli distribution.
 

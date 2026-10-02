@@ -66,9 +66,8 @@ class TypedTransform(Generic[X, Y], Transform):
                 inv = self._inv
         if inv is None:
             inv = _TypedInverseTransform[Y, X](self)
-            self._inv: Union[_TransformRef[_TypedInverseTransform[Y, X]], TypedTransform[Y, X]] = _TransformRef[
-                _TypedInverseTransform[Y, X]
-            ](inv)
+            inv_ref = _TransformRef[_TypedInverseTransform[Y, X]](inv)
+            self._inv: Union[_TransformRef[_TypedInverseTransform[Y, X]], TypedTransform[Y, X]] = inv_ref  # type: ignore[assignment]
         return inv
 
 
@@ -100,9 +99,8 @@ class TransformModule(Generic[X, Y], TypedTransform[X, Y], nn.Module):
                 inv = self._inv
         if inv is None:
             inv = _InverseTransformModule[Y, X](self)
-            self._inv: Union[_TransformRef[_InverseTransformModule[Y, X]], TransformModule[Y, X]] = _TransformRef[
-                _InverseTransformModule[Y, X]
-            ](inv)
+            inv_ref = _TransformRef[_InverseTransformModule[Y, X]](inv)
+            self._inv: Union[_TransformRef[_InverseTransformModule[Y, X]], TransformModule[Y, X]] = inv_ref  # type: ignore[assignment]
         return inv
 
 

@@ -93,4 +93,4 @@ def filter_metrics_wrapper(variable_list: Optional[list[str]], metrics_wrapper: 
 
     filtered_dict = {key: metrics_wrapper.task_metrics[key] for key in variable_list}
 
-    return MultitaskWrapper(filtered_dict)
+    return MultitaskWrapper(filtered_dict)  # type: ignore[arg-type]
