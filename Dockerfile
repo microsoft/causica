@@ -20,7 +20,7 @@ ENV POETRY_CACHE_DIR="/root/.cache/pypoetry" \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_VIRTUALENVS_IN_PROJECT=false \
     POETRY_VERSION=1.8.2
-RUN python -m pip install -U pip setuptools wheel
+RUN python -m pip install -U "pip>=25.3" setuptools wheel
 RUN python -m pip install poetry==$POETRY_VERSION
 
 # Install dependencies separately to allow dependency caching

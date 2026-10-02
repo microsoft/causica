@@ -12,16 +12,16 @@ license = "MIT"
 [tool.poetry.dependencies]
 azureml-mlflow = "^1.46.0"
 dataclasses-json = "^0.5.7"
-jsonargparse = "<4.21.0"  # 4.21.0 breaks lightning cli
+jsonargparse = "^4.39.0"
 mlflow = "^2.0.0"
 numpy = "^1.22.4"
 pandas = "^1.4.2"
 python = "~3.10"
-pytorch-lightning = {version = "^2.1.0", extras= ["extra"]}
+pytorch-lightning = {version = "^2.4.0", extras= ["extra"]}
 seaborn = {version = "^0.12.2", optional = true}
 tensorboard = "^2.9.0"
-tensordict = "^0.1.0"
-torch = "2.0.0"
+tensordict = ">=0.11.0"
+torch = "^2.10.0"
 torchmetrics = "^1.0.3"
 types-PyYAML = "^6.0.12.2"
 igraph ="^0.11.3"
