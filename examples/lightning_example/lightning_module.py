@@ -181,7 +181,7 @@ class ExampleDECIModule(DECIModule):
             {
                 f"{log_prefix}.{key}": val
                 for variable_metric in metrics_wrapper_dict.task_metrics.values()
-                for key, val in variable_metric.items()
+                for key, val in variable_metric.items()  # type: ignore[operator]
             },
             add_dataloader_idx=False,
             on_epoch=True,

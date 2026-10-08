@@ -51,7 +51,7 @@ class SEMDistribution(td.Distribution):
             for graph in graphs.unbind(dim=0)
         ]
 
-    def sample(self, sample_shape: torch.Size = torch.Size()):
+    def sample(self, sample_shape: torch.Size = torch.Size()):  # type: ignore[override]
         graphs = self._adjacency_dist.sample(sample_shape)
         if not sample_shape:
             graphs = graphs[None, ...]

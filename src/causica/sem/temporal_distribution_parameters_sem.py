@@ -18,7 +18,7 @@ def split_lagged_and_instanteneous_values(td: TensorDictBase) -> tuple[TensorDic
         A tuple with the lagged values and the instantaneous values.
     """
     orig_batch_size = td.batch_size
-    new_batch_size = next(td.values()).shape[:-1]
+    new_batch_size = next(iter(td.values())).shape[:-1]
     td.batch_size = new_batch_size
 
     lagged, instantaneous = td[..., :-1], td[..., -1]

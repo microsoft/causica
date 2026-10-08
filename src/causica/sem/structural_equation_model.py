@@ -126,7 +126,7 @@ class SEM(dist.Distribution, abc.ABC):
         """
 
     @torch.no_grad()
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> TensorDict:  # type: ignore[override]
         """
         Sample from the SEM
 

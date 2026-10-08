@@ -80,7 +80,7 @@ class WattsStrogatzDAGDistribution(AdjacencyDistribution):
     def relaxed_sample(self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0) -> torch.Tensor:
         raise NotImplementedError
 
-    def sample(self, sample_shape: torch.Size = torch.Size()):
+    def sample(self, sample_shape: torch.Size = torch.Size()):  # type: ignore[override]
         """
         Sample binary adjacency matrices from the underlying distribution.
 
