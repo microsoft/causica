@@ -7,7 +7,7 @@ authors = []
 
 [tool.poetry.dependencies]
 python = "~3.10"
-torch = "2.0.0"
+torch = "2.13.0"
 numpy = "^1.22.4"
 pytorch-lightning = {version = "^2.1.0", extras= ["extra"]}
 wandb = "^0.16.2"
