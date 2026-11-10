@@ -101,7 +101,7 @@ class TemporalAdjacencyDistribution(td.Distribution):
             [lagged_adj_matrix, inst_adj_matrix.unsqueeze(-3)], dim=-3
         )  # sample_shape + batch_shape + (context_length, num_nodes, num_nodes)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """Sample a binary temporal adjacency matrix from the underlying distribution.
 
         The gradients will not flow through this method, use `relaxed_sample` instead.
@@ -249,7 +249,7 @@ class RhinoLaggedAdjacencyDistribution(LaggedAdjacencyDistribution):
 
         return samples
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample from the underyling independent Bernoulli distribution.
 

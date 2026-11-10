@@ -50,7 +50,7 @@ class ThreeWayAdjacencyDistribution(AdjacencyDistribution):
         )  # (..., n(n-1)/2, 3) binary
         return _triangular_vec_to_matrix(samples)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample a binary adjacency matrix from the underlying distribution.
 

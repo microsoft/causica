@@ -53,7 +53,7 @@ class ErdosRenyiDAGDistribution(AdjacencyDistribution):
     def relaxed_sample(self, sample_shape: torch.Size = torch.Size(), temperature: float = 0.0) -> torch.Tensor:
         raise NotImplementedError
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample a binary adjacency matrix from the underlying distribution.
 

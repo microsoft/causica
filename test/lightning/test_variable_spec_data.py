@@ -220,13 +220,13 @@ def test_save_load_variable_spec_data(tmp_path, log_normalize):
 
     if log_normalize:
         data_module = VariableSpecDataModule(
-            tmp_path,
+            str(tmp_path),
             batch_size=2,
             standardize=False,
             log_normalize=["x1"],
         )
     else:
-        data_module = VariableSpecDataModule(tmp_path, batch_size=2, standardize=["x0"])
+        data_module = VariableSpecDataModule(str(tmp_path), batch_size=2, standardize=["x0"])
 
     data_module.prepare_data()
 

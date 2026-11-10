@@ -93,7 +93,7 @@ class ENCOAdjacencyDistribution(AdjacencyDistribution):
         samples = gumbel_softmax_binary(logits=expanded_logits, tau=temperature, hard=True)
         return samples * (1.0 - torch.eye(self.num_nodes, device=logits.device))
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample from the underyling independent Bernoulli distribution.
 

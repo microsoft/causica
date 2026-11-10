@@ -40,7 +40,7 @@ class SplineNoise(td.TransformedDistribution, Noise):
             )
         super().__init__(
             base_distribution=td.Normal(loc=self.base_loc, scale=self.base_scale),
-            transforms=spline_transforms,
+            transforms=list[td.Transform](spline_transforms),
         )
 
     def sample_to_noise(self, samples: torch.Tensor) -> torch.Tensor:

@@ -55,7 +55,7 @@ class ConstrainedAdjacencyDistribution(AdjacencyDistribution):
         """
         return self._apply_constraints(self.dist.relaxed_sample(sample_shape=sample_shape, temperature=temperature))
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample a binary adjacency matrix from the underlying distribution and apply constraints.
 

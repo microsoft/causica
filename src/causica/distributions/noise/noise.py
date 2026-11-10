@@ -9,7 +9,7 @@ from causica.distributions.distribution_module import DistributionModule
 SampleType = TypeVar("SampleType")
 
 
-class Noise(Generic[SampleType], abc.ABC, td.Distribution):
+class Noise(abc.ABC, td.Distribution, Generic[SampleType]):
     """
     Extend Distributions to allow the noise (usually unparametrized) to be extracted from samples and vice versa.
 
@@ -42,7 +42,7 @@ class Noise(Generic[SampleType], abc.ABC, td.Distribution):
 BaseNoiseType_co = TypeVar("BaseNoiseType_co", bound=Noise, covariant=True)
 
 
-class IndependentNoise(Generic[BaseNoiseType_co], td.Independent, Noise[torch.Tensor]):
+class IndependentNoise(td.Independent, Noise[torch.Tensor], Generic[BaseNoiseType_co]):
     """Like `td.Idenpendent` but also forwards `Noise` specific methods."""
 
     base_dist: BaseNoiseType_co

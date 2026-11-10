@@ -28,7 +28,7 @@ class FixedAdjacencyDistribution(AdjacencyDistribution):
         _ = temperature
         return self.sample(sample_shape=sample_shape)
 
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Return the underlying adjacency matrix.
 

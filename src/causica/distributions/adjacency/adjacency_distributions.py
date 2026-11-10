@@ -43,7 +43,7 @@ class AdjacencyDistribution(td.Distribution, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:
+    def sample(self, sample_shape: torch.Size = torch.Size()) -> torch.Tensor:  # type: ignore[override]
         """
         Sample a binary adjacency matrix from the underlying distribution.
 

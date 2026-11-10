@@ -71,7 +71,7 @@ class Standardizer(TransformModule[torch.Tensor, torch.Tensor], td.AffineTransfo
         if mean is not None and std is not None:
             loc = -mean / std
             scale = 1 / std
-        super().__init__(loc, scale, *args, **kwargs)
+        super().__init__(loc, scale, *args, **kwargs)  # type: ignore[arg-type]
         del self.loc, self.scale  # Unset these temporarily to allow registering as buffers
 
         self.loc: torch.Tensor
